@@ -1,6 +1,6 @@
 /**
  * Find NSNs for Master DB items that have mfr_part_number but no NSN.
- * Match against Lam Links k08_tab + D365 NSN barcodes.
+ * Match against LamLinks k08_tab + D365 NSN barcodes.
  * Validate by comparing descriptions.
  * Write back to Master DB.
  */
@@ -28,8 +28,8 @@ async function main() {
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const startTime = Date.now();
 
-  // Step 1: Build Lam Links part→NSN lookup
-  console.log("Loading Lam Links item master (273K items)...");
+  // Step 1: Build LamLinks part→NSN lookup
+  console.log("Loading LamLinks item master (273K items)...");
   const llItems = JSON.parse(
     readFileSync(join(__dirname, "..", "data", "llk-discovery", "item-master.json"), "utf-8")
   );
@@ -109,7 +109,7 @@ async function main() {
     const mfr = (item.mfr_part_number || "").trim().toUpperCase();
     const mdbDesc = item.description || "";
 
-    // Try exact match in Lam Links
+    // Try exact match in LamLinks
     let match = llByPart.get(mfr);
 
     // Try common variations
@@ -144,7 +144,7 @@ async function main() {
 
   console.log(`\n=== INTERNAL MATCHING RESULTS ===`);
   console.log(`Items checked: ${allItems.length.toLocaleString()}`);
-  console.log(`Confirmed (Lam Links + D365): ${confirmed.length}`);
+  console.log(`Confirmed (LamLinks + D365): ${confirmed.length}`);
   console.log(`Rejected (low similarity): ${rejected.length}`);
   console.log(`No internal match: ${noMatch.toLocaleString()}`);
 

@@ -40,7 +40,7 @@ export default function FscCodesPage() {
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">FSC Categories</h1>
-          <p className="text-muted mt-1">Manage which Federal Supply Classifications we bid on in Lam Links</p>
+          <p className="text-muted mt-1">Manage which Federal Supply Classifications we bid on in LamLinks</p>
         </div>
         <button className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover transition-colors">
           <Database className="h-4 w-4" />
@@ -53,7 +53,7 @@ export default function FscCodesPage() {
         <div className="rounded-lg border border-card-border bg-card-bg p-4">
           <p className="text-sm text-muted">Active Categories</p>
           <p className="text-2xl font-bold mt-1 text-green-600">{active.length}</p>
-          <p className="text-xs text-muted mt-1">Registered in Lam Links</p>
+          <p className="text-xs text-muted mt-1">Registered in LamLinks</p>
         </div>
         <div className="rounded-lg border border-card-border bg-card-bg p-4">
           <p className="text-sm text-muted">Total NSNs Tracked</p>
@@ -105,7 +105,7 @@ export default function FscCodesPage() {
       <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
         <div className="px-6 py-4 border-b border-card-border">
           <h2 className="text-lg font-semibold">Not Active — Expansion Candidates</h2>
-          <p className="text-xs text-muted mt-1">Categories we could add to Lam Links if we have supplier access</p>
+          <p className="text-xs text-muted mt-1">Categories we could add to LamLinks if we have supplier access</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

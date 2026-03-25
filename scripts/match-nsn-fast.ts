@@ -1,7 +1,7 @@
 /**
- * Fast NSN matching — search Master DB for Lam Links part numbers.
+ * Fast NSN matching — search Master DB for LamLinks part numbers.
  * Instead of paginating through 192K Master DB items,
- * take the 262K Lam Links part→NSN mappings and search Master DB for each.
+ * take the 262K LamLinks part→NSN mappings and search Master DB for each.
  * Writes matches back immediately in batches.
  */
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
@@ -51,8 +51,8 @@ async function main() {
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const startTime = Date.now();
 
-  // Load Lam Links part→NSN
-  console.log("Loading Lam Links part→NSN mappings...");
+  // Load LamLinks part→NSN
+  console.log("Loading LamLinks part→NSN mappings...");
   const llItems = JSON.parse(
     readFileSync(join(__dirname, "..", "data", "llk-discovery", "item-master.json"), "utf-8")
   );

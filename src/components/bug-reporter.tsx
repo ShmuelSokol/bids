@@ -24,32 +24,35 @@ export function BugReporter() {
     setMarkupMode(false);
 
     try {
-      // Dynamic import so html2canvas isn't bundled unless used
       const html2canvas = (await import("html2canvas")).default;
 
-      // Wait for page to settle after closing modal
-      await new Promise((r) => setTimeout(r, 300));
+      // Wait for hydration + rendering to complete
+      await new Promise((r) => setTimeout(r, 500));
+
+      const scrollY = window.scrollY;
+      const viewH = window.innerHeight;
+      const viewW = document.documentElement.clientWidth;
 
       const canvas = await html2canvas(document.body, {
         scale: 1,
         logging: false,
-        windowWidth: document.documentElement.clientWidth,
-        windowHeight: window.innerHeight,
-        height: window.innerHeight,
-        y: window.scrollY,
-        useCORS: true,
-        allowTaint: true,
-        imageTimeout: 8000,
-        ignoreElements: (el: Element) => {
-          // Skip the bug button itself and any fixed overlays
-          return el.id === "bug-btn" || el.getAttribute("data-bug-ignore") === "true";
-        },
+        windowWidth: viewW,
+        windowHeight: viewH,
+        height: viewH,
+        y: scrollY,
+        useCORS: false,
+        allowTaint: false,
+        imageTimeout: 5000,
         onclone: (clonedDoc: Document) => {
-          // Hide cross-origin images that might cause taint errors
+          // Hide ALL images to avoid cross-origin taint errors
           clonedDoc.querySelectorAll("img").forEach((img) => {
-            if (img.src && !img.src.startsWith(window.location.origin) && !img.src.startsWith("data:")) {
+            if (img.src && !img.src.startsWith("data:")) {
               img.style.visibility = "hidden";
             }
+          });
+          // Hide iframes and videos
+          clonedDoc.querySelectorAll("iframe, video").forEach((el) => {
+            (el as HTMLElement).style.display = "none";
           });
         },
       });
@@ -58,7 +61,25 @@ export function BugReporter() {
       setScreenshot(dataUrl);
     } catch (err) {
       console.error("Screenshot capture failed:", err);
-      setScreenshot(null);
+      // Fallback: capture just a blank canvas with page info
+      try {
+        const fallback = document.createElement("canvas");
+        fallback.width = 800;
+        fallback.height = 200;
+        const ctx = fallback.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#f0f0f0";
+          ctx.fillRect(0, 0, 800, 200);
+          ctx.fillStyle = "#333";
+          ctx.font = "14px sans-serif";
+          ctx.fillText("Screenshot capture failed — page: " + window.location.pathname, 20, 40);
+          ctx.fillText("Time: " + new Date().toLocaleString(), 20, 70);
+          ctx.fillText("Please describe what you see in the description field.", 20, 100);
+          setScreenshot(fallback.toDataURL("image/png"));
+        }
+      } catch {
+        setScreenshot(null);
+      }
     }
 
     setCapturing(false);

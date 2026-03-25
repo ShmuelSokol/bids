@@ -5,7 +5,7 @@ export default function ImportPage() {
     <div className="p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Data Import</h1>
-        <p className="text-muted mt-1">Import data from EDI files, Lam Links, Dynamics AX, and public sources</p>
+        <p className="text-muted mt-1">Import data from EDI files, LamLinks, Dynamics AX, and public sources</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -17,7 +17,7 @@ export default function ImportPage() {
           </div>
           <div className="p-6">
             <p className="text-sm text-muted mb-4">
-              Upload raw EDI files from Lam Links. Supports transaction sets:
+              Upload raw EDI files from LamLinks. Supports transaction sets:
               840 (solicitations), 850 (orders), 810 (invoices), 856 (ASN).
             </p>
             <div className="border-2 border-dashed border-card-border rounded-lg p-8 text-center mb-4 hover:border-accent transition-colors cursor-pointer">
@@ -29,7 +29,7 @@ export default function ImportPage() {
               <AlertCircle className="h-4 w-4 shrink-0 text-accent mt-0.5" />
               <div>
                 <p className="font-medium text-foreground">How to get EDI files:</p>
-                <p>Ask Abe to re-enable EDI file forwarding in Lam Links. Files are forwarded daily to a folder — point them here.</p>
+                <p>Ask Abe to re-enable EDI file forwarding in LamLinks. Files are forwarded daily to a folder — point them here.</p>
               </div>
             </div>
           </div>
@@ -124,19 +124,19 @@ export default function ImportPage() {
           </div>
         </div>
 
-        {/* Lam Links Export */}
+        {/* LamLinks Export */}
         <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
           <div className="px-6 py-4 border-b border-card-border flex items-center gap-2">
             <Database className="h-5 w-5 text-yellow-600" />
-            <h2 className="text-lg font-semibold">Lam Links Export</h2>
+            <h2 className="text-lg font-semibold">LamLinks Export</h2>
           </div>
           <div className="p-6">
             <p className="text-sm text-muted mb-4">
-              Import solicitation history, bid history, and award data exported from Lam Links. Abe can export this from the solicitation tab.
+              Import solicitation history, bid history, and award data exported from LamLinks. Abe can export this from the solicitation tab.
             </p>
             <div className="border-2 border-dashed border-card-border rounded-lg p-8 text-center mb-4 hover:border-yellow-400 transition-colors cursor-pointer">
               <Upload className="mx-auto h-8 w-8 text-muted mb-2" />
-              <p className="text-sm font-medium">Drop Lam Links export here</p>
+              <p className="text-sm font-medium">Drop LamLinks export here</p>
               <p className="text-xs text-muted mt-1">.csv, .xlsx — exported from solicitation/award tabs</p>
             </div>
           </div>

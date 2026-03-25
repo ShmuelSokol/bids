@@ -1,7 +1,7 @@
 /**
  * In-memory NSN matching — loads both datasets locally, matches in seconds.
  * 1. Master DB export (ndjson) — items with mfr_part_number, no NSN
- * 2. Lam Links item master (json) — 262K part→NSN mappings
+ * 2. LamLinks item master (json) — 262K part→NSN mappings
  * 3. D365 barcodes (json) — 24K item→NSN mappings
  * 4. External: govcagecodes.com for remaining unmatched
  * 5. Write back via POST /api/dibs/nsn
@@ -68,8 +68,8 @@ async function main() {
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const startTime = Date.now();
 
-  // Step 1: Load Lam Links
-  console.log("Loading Lam Links item master...");
+  // Step 1: Load LamLinks
+  console.log("Loading LamLinks item master...");
   const llItems = JSON.parse(
     readFileSync(join(__dirname, "..", "data", "llk-discovery", "item-master.json"), "utf-8")
   );
@@ -129,7 +129,7 @@ async function main() {
     const mfr = (item.mfr_part_number || "").trim().toUpperCase();
     const mdbDesc = item.description || "";
 
-    // Try Lam Links — exact, then stripped
+    // Try LamLinks — exact, then stripped
     let match = llByPart.get(mfr);
     if (!match) match = llByPart.get(mfr.replace(/[-\s]/g, ""));
     if (!match) match = llByPart.get(mfr.replace(/^0+/, ""));

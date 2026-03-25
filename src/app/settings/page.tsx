@@ -35,7 +35,7 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between p-3 rounded-lg border border-card-border">
               <div>
-                <p className="text-sm font-medium">Lam Links EDI</p>
+                <p className="text-sm font-medium">LamLinks EDI</p>
                 <p className="text-xs text-muted">EDI pipe for solicitations, quotes, WAF</p>
               </div>
               <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">$7K/year</span>
@@ -59,7 +59,7 @@ export default function SettingsPage() {
                 <p className="text-sm font-medium">WAF (Invoicing)</p>
                 <p className="text-xs text-muted">Government invoice submission & payment status</p>
               </div>
-              <span className="text-xs font-medium text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full">Via Lam Links</span>
+              <span className="text-xs font-medium text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full">Via LamLinks</span>
             </div>
           </div>
         </div>
@@ -84,7 +84,7 @@ export default function SettingsPage() {
             <h2 className="text-lg font-semibold group-hover:text-accent">FSC Categories</h2>
             <Database className="h-5 w-5 text-muted group-hover:text-accent" />
           </div>
-          <p className="text-sm text-muted mb-3">Manage which FSC codes are active in Lam Links. Find expansion opportunities.</p>
+          <p className="text-sm text-muted mb-3">Manage which FSC codes are active in LamLinks. Find expansion opportunities.</p>
           <div className="flex gap-4 text-xs text-muted">
             <span>39 of 54 categories active</span>
             <span>Hundreds more available</span>
@@ -110,7 +110,7 @@ export default function SettingsPage() {
             <h2 className="text-lg font-semibold group-hover:text-accent">Data Import</h2>
             <Upload className="h-5 w-5 text-muted group-hover:text-accent" />
           </div>
-          <p className="text-sm text-muted mb-3">Import EDI files, Lam Links exports, Dynamics AX data, bid history</p>
+          <p className="text-sm text-muted mb-3">Import EDI files, LamLinks exports, Dynamics AX data, bid history</p>
           <div className="flex gap-4 text-xs text-muted">
             <span>EDI parser ready</span>
             <span>CSV/Excel upload</span>

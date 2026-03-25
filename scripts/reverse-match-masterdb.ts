@@ -1,5 +1,5 @@
 /**
- * Reverse match: Take Lam Links items with known NSNs,
+ * Reverse match: Take LamLinks items with known NSNs,
  * search Master DB for their part numbers.
  * If found, we can write the NSN back to Master DB.
  */
@@ -43,7 +43,7 @@ async function main() {
     readFileSync(join(__dirname, "..", "data", "llk-discovery", "nsn-partnos-for-matching.json"), "utf-8")
   );
 
-  console.log(`Searching Master DB for ${items.length} Lam Links part numbers...\n`);
+  console.log(`Searching Master DB for ${items.length} LamLinks part numbers...\n`);
 
   const matches: any[] = [];
   const falsePositives: any[] = [];

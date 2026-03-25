@@ -79,7 +79,7 @@ export default function ExpansionPage() {
         <div className="px-6 py-4 border-b border-green-200 bg-green-50/50 flex items-center gap-2">
           <Zap className="h-5 w-5 text-green-600" />
           <h2 className="text-lg font-semibold text-green-800">New Category Opportunities</h2>
-          <span className="text-xs text-green-600 ml-2">Add these to Lam Links to see new solicitations</span>
+          <span className="text-xs text-green-600 ml-2">Add these to LamLinks to see new solicitations</span>
         </div>
         <div className="divide-y divide-card-border">
           {inactive.map((cat) => (

@@ -6,7 +6,7 @@
  * a real browser (Playwright) to navigate.
  *
  * WARNING: This is fragile. DIBBS UI changes will break it.
- * This is a stopgap until we get Lam Links SQL access or their API.
+ * This is a stopgap until we get LamLinks SQL access or their API.
  *
  * Capabilities:
  * - Login with DoD consent banner acceptance

@@ -1,10 +1,10 @@
 /**
  * Bulk NSN matching: Match Master DB items (192K with mfr_part_number)
- * against Lam Links k08_tab (365K items with NSNs) and D365 barcodes (25K NSNs).
+ * against LamLinks k08_tab (365K items with NSNs) and D365 barcodes (25K NSNs).
  * Validates by comparing descriptions. Writes NSNs back to Master DB.
  *
  * Strategy:
- * 1. Load Lam Links part→NSN lookup (from k08_tab)
+ * 1. Load LamLinks part→NSN lookup (from k08_tab)
  * 2. Load D365 barcode→NSN lookup
  * 3. Paginate through ALL Master DB items
  * 4. For each item with mfr_part_number, try matching against both lookups
@@ -72,8 +72,8 @@ async function main() {
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const startTime = Date.now();
 
-  // Step 1: Build Lam Links part→NSN lookup
-  console.log("Loading Lam Links item master...");
+  // Step 1: Build LamLinks part→NSN lookup
+  console.log("Loading LamLinks item master...");
   const llItems = JSON.parse(
     readFileSync(join(__dirname, "..", "data", "llk-discovery", "item-master.json"), "utf-8")
   );
@@ -88,7 +88,7 @@ async function main() {
       llLookup.set(partno, { nsn: `${fsc}-${niin}`, desc });
     }
   }
-  console.log(`  ${llLookup.size.toLocaleString()} part→NSN mappings loaded from Lam Links\n`);
+  console.log(`  ${llLookup.size.toLocaleString()} part→NSN mappings loaded from LamLinks\n`);
 
   // Step 2: Build D365 barcode→NSN lookup
   console.log("Loading D365 barcodes...");
@@ -150,7 +150,7 @@ async function main() {
         const mfrUpper = mfr.toUpperCase();
         const mdbDesc = item.description || "";
 
-        // Try Lam Links match
+        // Try LamLinks match
         let match = llLookup.get(mfrUpper);
 
         // Try without common suffixes/prefixes

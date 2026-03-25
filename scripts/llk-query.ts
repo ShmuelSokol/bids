@@ -1,5 +1,5 @@
 /**
- * Reusable Lam Links SQL query runner.
+ * Reusable LamLinks SQL query runner.
  *
  * Usage:
  *   npx tsx scripts/llk-query.ts "SELECT TOP 10 * FROM k08_tab"

@@ -68,7 +68,7 @@ export default async function AnalyticsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Analytics & Intelligence</h1>
         <p className="text-muted mt-1">
-          Real data from Lam Links — 492K bids, 257K awards, 332 FSC categories
+          Real data from LamLinks — 492K bids, 257K awards, 332 FSC categories
         </p>
       </div>
 

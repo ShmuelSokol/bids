@@ -1,5 +1,5 @@
 /**
- * Try matching Lam Links part numbers against Master DB items.
+ * Try matching LamLinks part numbers against Master DB items.
  * Tests multiple matching strategies:
  * 1. Direct SKU match (part number appears in Master DB SKU)
  * 2. Stripped SKU match (remove common prefixes/suffixes)
@@ -35,7 +35,7 @@ async function main() {
     readFileSync(join(__dirname, "..", "data", "llk-discovery", "sample-partnos.json"), "utf-8")
   );
 
-  console.log(`Testing ${items.length} Lam Links part numbers against Master DB...\n`);
+  console.log(`Testing ${items.length} LamLinks part numbers against Master DB...\n`);
 
   let matches = 0;
   let tested = 0;
