@@ -9,7 +9,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 const API = "https://masterdb.everreadygroup.com/api/dibs/items";
-const KEY = "dDOUwJxbhLLVQ_40H8OWRtwwER6QoFmayDiTHcQrDW8";
+const KEY = process.env.MASTERDB_API_KEY!;
 
 interface LlkItem {
   partno: string;

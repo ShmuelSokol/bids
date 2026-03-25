@@ -7,7 +7,7 @@ import { join } from "path";
 
 const SUPABASE_URL = "https://jzgvdfzboknpcrhymjob.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6Z3ZkZnpib2tucGNyaHltam9iIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ2NjU2NiwiZXhwIjoyMDkwMDQyNTY2fQ.u1GycK2kRPFjYrj75VteWyFEfuUb7bbO91uwNp6VMzo";
+  process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const DATA_DIR = join(__dirname, "..", "data", "llk-discovery");
@@ -30,7 +30,7 @@ async function main() {
 
   // Use the SQL endpoint via management API
   const mgmtUrl = "https://api.supabase.com/v1/projects/jzgvdfzboknpcrhymjob/database/query";
-  const mgmtToken = "sbp_a72fd1c5ebac1a37e5c7a29d5967290e6ee377f3";
+  const mgmtToken = process.env.SUPABASE_MGMT_TOKEN!;
 
   const sql = `
     -- FSC Heatmap

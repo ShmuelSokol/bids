@@ -9,7 +9,7 @@ import { join } from "path";
 
 const API = "https://masterdb.everreadygroup.com/api/dibs/items";
 const NSN_API = "https://masterdb.everreadygroup.com/api/dibs/nsn";
-const KEY = "dDOUwJxbhLLVQ_40H8OWRtwwER6QoFmayDiTHcQrDW8";
+const KEY = process.env.MASTERDB_API_KEY!;
 const OUTPUT_DIR = join(__dirname, "..", "data", "nsn-matching");
 
 function descSimilarity(a: string, b: string): number {

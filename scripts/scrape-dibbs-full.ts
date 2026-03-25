@@ -14,7 +14,7 @@ const DIBBS_BASE = "https://www.dibbs.bsm.dla.mil";
 const DIR = join(__dirname, "..", "data", "dibbs");
 const supabase = createClient(
   "https://jzgvdfzboknpcrhymjob.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6Z3ZkZnpib2tucGNyaHltam9iIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ2NjU2NiwiZXhwIjoyMDkwMDQyNTY2fQ.u1GycK2kRPFjYrj75VteWyFEfuUb7bbO91uwNp6VMzo"
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 // Hot + warm FSCs from our heatmap analysis
@@ -247,7 +247,7 @@ async function main() {
   await fetch("https://api.supabase.com/v1/projects/jzgvdfzboknpcrhymjob/database/query", {
     method: "POST",
     headers: {
-      Authorization: "Bearer sbp_v0_484815b13adb8ee0a78457e0a087b2cb6502bd91",
+      Authorization: `Bearer ${process.env.SUPABASE_MGMT_TOKEN}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
