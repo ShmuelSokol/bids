@@ -16,16 +16,16 @@
  * - Pull procurement history for specific NSNs
  */
 
-// Dynamic import — playwright is a dev/local dependency only
-let chromium: any;
+// Playwright is optional — only available when installed locally
 type Browser = any;
 type Page = any;
-async function getPlaywright() {
-  if (!chromium) {
-    const pw = await import("playwright");
-    chromium = pw.chromium;
+function getPlaywright() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require(/* webpackIgnore: true */ "playwright").chromium;
+  } catch {
+    throw new Error("Playwright is not installed. Run: npm install playwright");
   }
-  return chromium;
 }
 
 const DIBBS_BASE = "https://www.dibbs.bsm.dla.mil";
