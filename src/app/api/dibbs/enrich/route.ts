@@ -12,6 +12,10 @@ import { join } from "path";
 // Build NSN lookups at module level (cached between requests)
 let axNsnSet: Set<string> | null = null;
 let axCostMap: Map<string, number> | null = null;
+let _poCostsByNsn = new Map<string, { cost: number; date: number }[]>();
+let _agreementCostByNsn = new Map<string, number>();
+const TWO_MONTHS = 60 * 86400000;
+const THREE_MONTHS = 90 * 86400000;
 let mdbNsnSet: Set<string> | null = null;
 let mdbCostMap: Map<string, number> | null = null;
 let pricingMap: Map<string, { lastPrice: number; avgPrice: number; count: number }> | null = null;
@@ -44,7 +48,8 @@ async function loadAXNsns(): Promise<Set<string>> {
     const THREE_MONTHS = 90 * 86400000;
 
     // Collect all PO costs per NSN
-    const poCostsByNsn = new Map<string, { cost: number; date: number }[]>();
+    _poCostsByNsn = new Map<string, { cost: number; date: number }[]>();
+    const poCostsByNsn = _poCostsByNsn;
     try {
       const poLines = JSON.parse(
         readFileSync(join(process.cwd(), "data", "d365", "po-lines.json"), "utf-8")
@@ -62,7 +67,8 @@ async function loadAXNsns(): Promise<Set<string>> {
     } catch {}
 
     // Collect cheapest price agreement per NSN (across all vendors)
-    const agreementCostByNsn = new Map<string, number>();
+    _agreementCostByNsn = new Map<string, number>();
+    const agreementCostByNsn = _agreementCostByNsn;
     try {
       const agreements = JSON.parse(
         readFileSync(join(process.cwd(), "data", "d365", "purchase-price-agreements.json"), "utf-8")
@@ -199,7 +205,13 @@ export async function POST() {
     suggested_price: number | null;
     our_cost: number | null;
     margin_pct: number | null;
+    cost_source: string | null;
+    price_source: string | null;
   }[] = [];
+
+  const now = Date.now();
+  const poCostsByNsn = _poCostsByNsn;
+  const agreementCostByNsn = _agreementCostByNsn;
 
   for (const sol of solicitations) {
     const nsn = sol.nsn;
@@ -214,23 +226,60 @@ export async function POST() {
 
     if (source) {
       const history = pricing.get(nsn);
-      // Cost waterfall: AX (PO/agreements) → Master DB cost
-      const cost = axCostMap?.get(nsn) || mdbCostMap?.get(nsn) || null;
 
-      // Pricing logic:
-      // 1. If we have cost data, apply Abe's empirical markup by price bracket
-      // 2. If no cost but have award history, use last award + bracket-adjusted increment
-      // 3. If neither, no suggestion
+      // Cost waterfall — track where it came from
+      let cost: number | null = null;
+      let costSource: string | null = null;
+
+      // Check PO history by recency
+      const poHistory = poCostsByNsn.get(nsn);
+      if (poHistory && poHistory.length > 0) {
+        const recent2mo = poHistory.filter((p) => now - p.date <= TWO_MONTHS);
+        const recent3mo = poHistory.filter((p) => now - p.date <= THREE_MONTHS);
+
+        if (recent2mo.length > 0) {
+          cost = Math.min(...recent2mo.map((p) => p.cost));
+          costSource = "AX PO (last 2 months)";
+        } else if (recent3mo.length > 0) {
+          cost = Math.min(...recent3mo.map((p) => p.cost));
+          costSource = "AX PO (last 3 months)";
+        } else {
+          poHistory.sort((a, b) => b.date - a.date);
+          cost = poHistory[0].cost;
+          costSource = "AX PO (older)";
+        }
+      }
+
+      // #3: Master DB cost (before price agreements — user requested this priority)
+      if (!cost) {
+        const mdbCost = mdbCostMap?.get(nsn);
+        if (mdbCost && mdbCost > 0) {
+          cost = mdbCost;
+          costSource = "Master DB catalog";
+        }
+      }
+
+      // #4: Price agreement fallback (cheapest vendor)
+      if (!cost) {
+        const agreementCost = agreementCostByNsn.get(nsn);
+        if (agreementCost) {
+          cost = agreementCost;
+          costSource = "AX price agreement (cheapest vendor)";
+        }
+      }
+
+      // Pricing logic — track source
       let suggestedPrice: number | null = null;
+      let priceSource: string | null = null;
 
       if (cost && cost > 0) {
-        // Apply Abe's markup based on cost bracket
         let markup: number;
         if (cost < 25) markup = 1.64;
         else if (cost < 100) markup = 1.36;
         else if (cost < 500) markup = 1.21;
         else markup = 1.16;
         suggestedPrice = Math.round(cost * markup * 100) / 100;
+        priceSource = `${costSource} × ${markup}x markup`;
         withCostCount++;
       } else if (history) {
         const lastPrice = history.lastPrice;
@@ -240,6 +289,7 @@ export async function POST() {
         else if (lastPrice < 500) increment = 1.015;
         else increment = 1.01;
         suggestedPrice = Math.round(lastPrice * increment * 100) / 100;
+        priceSource = `Last award $${lastPrice.toFixed(2)} + ${((increment - 1) * 100).toFixed(1)}%`;
       }
 
       const marginPct =
@@ -255,6 +305,8 @@ export async function POST() {
         suggested_price: suggestedPrice,
         our_cost: cost,
         margin_pct: marginPct,
+        cost_source: costSource,
+        price_source: priceSource,
       });
       sourceableCount++;
     }
@@ -273,6 +325,8 @@ export async function POST() {
           suggested_price: u.suggested_price,
           our_cost: u.our_cost,
           margin_pct: u.margin_pct,
+          cost_source: u.cost_source,
+          price_source: u.price_source,
         })
         .eq("id", u.id);
     }
