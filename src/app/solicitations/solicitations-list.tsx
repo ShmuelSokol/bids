@@ -28,6 +28,8 @@ interface Solicitation {
   source: string | null;
   source_item: string | null;
   suggested_price: number | null;
+  our_cost: number | null;
+  margin_pct: number | null;
   bid_status: string | null;
   final_price: number | null;
   bid_comment: string | null;
@@ -403,7 +405,18 @@ export function SolicitationsList({
                       <>
                         {s.suggested_price && (
                           <div className="mb-2">
-                            <div className="text-xs text-muted">Suggested (+2%)</div>
+                            {s.our_cost ? (
+                              <div className="flex items-center gap-3 justify-end text-xs text-muted mb-1">
+                                <span>Cost: <span className="font-mono font-medium text-foreground">${s.our_cost.toFixed(2)}</span></span>
+                                {s.margin_pct !== null && (
+                                  <span className={`font-medium ${s.margin_pct >= 20 ? "text-green-600" : s.margin_pct >= 10 ? "text-yellow-600" : "text-red-600"}`}>
+                                    {s.margin_pct}% margin
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-muted mb-1">Based on last award</div>
+                            )}
                             <div className="text-lg font-bold font-mono text-green-600">
                               ${s.suggested_price.toFixed(2)}
                             </div>

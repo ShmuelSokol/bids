@@ -11,6 +11,7 @@ import { join } from "path";
 
 // Build NSN lookups at module level (cached between requests)
 let axNsnSet: Set<string> | null = null;
+let axCostMap: Map<string, number> | null = null;
 let mdbNsnSet: Set<string> | null = null;
 let pricingMap: Map<string, { lastPrice: number; avgPrice: number; count: number }> | null = null;
 
@@ -21,12 +22,45 @@ async function loadAXNsns(): Promise<Set<string>> {
       readFileSync(join(process.cwd(), "data", "d365", "barcodes.json"), "utf-8")
     );
     axNsnSet = new Set<string>();
+    // Build ItemNumber→NSN map
+    const itemToNsn = new Map<string, string>();
     for (const b of barcodes) {
       if (b.BarcodeSetupId !== "NSN" || b.Barcode.length !== 13) continue;
       const raw = b.Barcode;
       const nsn = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 9)}-${raw.slice(9)}`;
       axNsnSet.add(nsn);
+      itemToNsn.set(b.ItemNumber, nsn);
     }
+
+    // Build NSN→cost from PO lines (most recent purchase price per NSN)
+    axCostMap = new Map<string, number>();
+    try {
+      const poLines = JSON.parse(
+        readFileSync(join(process.cwd(), "data", "d365", "po-lines.json"), "utf-8")
+      );
+      for (const po of poLines) {
+        if (!po.PurchasePrice || po.PurchasePrice <= 0) continue;
+        const nsn = itemToNsn.get(po.ItemNumber);
+        if (nsn && !axCostMap.has(nsn)) {
+          axCostMap.set(nsn, po.PurchasePrice);
+        }
+      }
+    } catch {}
+
+    // Also load price agreements as fallback
+    try {
+      const agreements = JSON.parse(
+        readFileSync(join(process.cwd(), "data", "d365", "purchase-price-agreements.json"), "utf-8")
+      );
+      for (const pa of agreements) {
+        if (!pa.Price || pa.Price <= 0) continue;
+        const nsn = itemToNsn.get(pa.ItemNumber);
+        if (nsn && !axCostMap.has(nsn)) {
+          axCostMap.set(nsn, pa.Price);
+        }
+      }
+    } catch {}
+
     return axNsnSet;
   } catch {
     return new Set();
@@ -102,7 +136,16 @@ export async function POST() {
   }
 
   let sourceableCount = 0;
-  const updates: { id: number; is_sourceable: boolean; source: string; source_item: string; suggested_price: number | null }[] = [];
+  let withCostCount = 0;
+  const updates: {
+    id: number;
+    is_sourceable: boolean;
+    source: string;
+    source_item: string;
+    suggested_price: number | null;
+    our_cost: number | null;
+    margin_pct: number | null;
+  }[] = [];
 
   for (const sol of solicitations) {
     const nsn = sol.nsn;
@@ -117,20 +160,37 @@ export async function POST() {
 
     if (source) {
       const history = pricing.get(nsn);
-      // Abe's empirical pricing logic (from 2,591 bid-to-cost matches):
-      // <$25: 1.64x, $25-100: 1.36x, $100-500: 1.21x, $500+: 1.16x
-      // When no cost data, use last award + 2% increment
+      const cost = axCostMap?.get(nsn) || null;
+
+      // Pricing logic:
+      // 1. If we have cost data, apply Abe's empirical markup by price bracket
+      // 2. If no cost but have award history, use last award + bracket-adjusted increment
+      // 3. If neither, no suggestion
       let suggestedPrice: number | null = null;
-      if (history) {
-        const lastPrice = history.lastPrice;
-        // Use price-bracket-adjusted increment based on Abe's patterns
+
+      if (cost && cost > 0) {
+        // Apply Abe's markup based on cost bracket
         let markup: number;
-        if (lastPrice < 25) markup = 1.03; // small bump on cheap items (already high margin)
-        else if (lastPrice < 100) markup = 1.02; // standard 2% increment
-        else if (lastPrice < 500) markup = 1.015; // smaller increment on mid-range
-        else markup = 1.01; // minimal increment on big ticket
-        suggestedPrice = Math.round(lastPrice * markup * 100) / 100;
+        if (cost < 25) markup = 1.64;
+        else if (cost < 100) markup = 1.36;
+        else if (cost < 500) markup = 1.21;
+        else markup = 1.16;
+        suggestedPrice = Math.round(cost * markup * 100) / 100;
+        withCostCount++;
+      } else if (history) {
+        const lastPrice = history.lastPrice;
+        let increment: number;
+        if (lastPrice < 25) increment = 1.03;
+        else if (lastPrice < 100) increment = 1.02;
+        else if (lastPrice < 500) increment = 1.015;
+        else increment = 1.01;
+        suggestedPrice = Math.round(lastPrice * increment * 100) / 100;
       }
+
+      const marginPct =
+        suggestedPrice && cost && cost > 0
+          ? Math.round(((suggestedPrice - cost) / suggestedPrice) * 100)
+          : null;
 
       updates.push({
         id: sol.id,
@@ -138,6 +198,8 @@ export async function POST() {
         source,
         source_item: nsn,
         suggested_price: suggestedPrice,
+        our_cost: cost,
+        margin_pct: marginPct,
       });
       sourceableCount++;
     }
@@ -154,6 +216,8 @@ export async function POST() {
           source: u.source,
           source_item: u.source_item,
           suggested_price: u.suggested_price,
+          our_cost: u.our_cost,
+          margin_pct: u.margin_pct,
         })
         .eq("id", u.id);
     }
@@ -163,6 +227,7 @@ export async function POST() {
     success: true,
     total_checked: solicitations.length,
     sourceable: sourceableCount,
+    with_cost_data: withCostCount,
     ax_matches: updates.filter((u) => u.source === "ax").length,
     masterdb_matches: updates.filter((u) => u.source === "masterdb").length,
   });
