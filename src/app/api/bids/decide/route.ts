@@ -15,8 +15,11 @@ export async function POST(req: NextRequest) {
     quantity,
     suggested_price,
     final_price,
+    lead_time_days,
     comment,
     status,
+    source,
+    source_item,
   } = body;
 
   if (!solicitation_number || !nsn || !status) {
@@ -28,21 +31,25 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServiceClient();
 
-  const { error } = await supabase.from("bid_decisions").upsert(
-    {
-      solicitation_number,
-      nsn,
-      nomenclature,
-      quantity,
-      suggested_price,
-      final_price,
-      comment,
-      status,
-      decided_by: user.profile?.full_name || user.user.email,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "solicitation_number,nsn" }
-  );
+  const record: Record<string, unknown> = {
+    solicitation_number,
+    nsn,
+    nomenclature,
+    quantity,
+    suggested_price,
+    final_price,
+    lead_time_days: lead_time_days || 45,
+    comment,
+    status,
+    source,
+    source_item,
+    decided_by: user.profile?.full_name || user.user.email,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("bid_decisions")
+    .upsert(record, { onConflict: "solicitation_number,nsn" });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
