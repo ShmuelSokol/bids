@@ -13,6 +13,7 @@ import { join } from "path";
 let axNsnSet: Set<string> | null = null;
 let axCostMap: Map<string, number> | null = null;
 let mdbNsnSet: Set<string> | null = null;
+let mdbCostMap: Map<string, number> | null = null;
 let pricingMap: Map<string, { lastPrice: number; avgPrice: number; count: number }> | null = null;
 
 async function loadAXNsns(): Promise<Set<string>> {
@@ -32,8 +33,18 @@ async function loadAXNsns(): Promise<Set<string>> {
       itemToNsn.set(b.ItemNumber, nsn);
     }
 
-    // Build NSN→cost from PO lines (most recent purchase price per NSN)
+    // Build NSN→best cost using Abe's rules:
+    // 1. If PO within 2 months → use cheapest from that window
+    // 2. If PO within 3 months → use cheapest from that window
+    // 3. Else cheapest price agreement across all vendors
+    // 4. Else most recent PO price
     axCostMap = new Map<string, number>();
+    const now = Date.now();
+    const TWO_MONTHS = 60 * 86400000;
+    const THREE_MONTHS = 90 * 86400000;
+
+    // Collect all PO costs per NSN
+    const poCostsByNsn = new Map<string, { cost: number; date: number }[]>();
     try {
       const poLines = JSON.parse(
         readFileSync(join(process.cwd(), "data", "d365", "po-lines.json"), "utf-8")
@@ -41,13 +52,17 @@ async function loadAXNsns(): Promise<Set<string>> {
       for (const po of poLines) {
         if (!po.PurchasePrice || po.PurchasePrice <= 0) continue;
         const nsn = itemToNsn.get(po.ItemNumber);
-        if (nsn && !axCostMap.has(nsn)) {
-          axCostMap.set(nsn, po.PurchasePrice);
-        }
+        if (!nsn) continue;
+        if (!poCostsByNsn.has(nsn)) poCostsByNsn.set(nsn, []);
+        poCostsByNsn.get(nsn)!.push({
+          cost: po.PurchasePrice,
+          date: new Date(po.RequestedDeliveryDate).getTime(),
+        });
       }
     } catch {}
 
-    // Also load price agreements as fallback
+    // Collect cheapest price agreement per NSN (across all vendors)
+    const agreementCostByNsn = new Map<string, number>();
     try {
       const agreements = JSON.parse(
         readFileSync(join(process.cwd(), "data", "d365", "purchase-price-agreements.json"), "utf-8")
@@ -55,11 +70,41 @@ async function loadAXNsns(): Promise<Set<string>> {
       for (const pa of agreements) {
         if (!pa.Price || pa.Price <= 0) continue;
         const nsn = itemToNsn.get(pa.ItemNumber);
-        if (nsn && !axCostMap.has(nsn)) {
-          axCostMap.set(nsn, pa.Price);
+        if (!nsn) continue;
+        const current = agreementCostByNsn.get(nsn);
+        if (!current || pa.Price < current) {
+          agreementCostByNsn.set(nsn, pa.Price);
         }
       }
     } catch {}
+
+    // Determine best cost per NSN
+    const allNsns = new Set([...poCostsByNsn.keys(), ...agreementCostByNsn.keys()]);
+    for (const nsn of allNsns) {
+      const poHistory = poCostsByNsn.get(nsn) || [];
+      const recent2mo = poHistory.filter((p) => now - p.date <= TWO_MONTHS);
+      const recent3mo = poHistory.filter((p) => now - p.date <= THREE_MONTHS);
+
+      let bestCost: number;
+      if (recent2mo.length > 0) {
+        // Cheapest PO in last 2 months
+        bestCost = Math.min(...recent2mo.map((p) => p.cost));
+      } else if (recent3mo.length > 0) {
+        // Cheapest PO in last 3 months
+        bestCost = Math.min(...recent3mo.map((p) => p.cost));
+      } else if (agreementCostByNsn.has(nsn)) {
+        // Cheapest price agreement (any vendor)
+        bestCost = agreementCostByNsn.get(nsn)!;
+      } else if (poHistory.length > 0) {
+        // Most recent PO
+        poHistory.sort((a, b) => b.date - a.date);
+        bestCost = poHistory[0].cost;
+      } else {
+        continue;
+      }
+
+      axCostMap.set(nsn, bestCost);
+    }
 
     return axNsnSet;
   } catch {
@@ -79,11 +124,20 @@ async function loadMdbNsns(): Promise<Set<string>> {
     if (!resp.ok) return new Set();
     const text = await resp.text();
     mdbNsnSet = new Set<string>();
+    mdbCostMap = new Map<string, number>();
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       try {
         const item = JSON.parse(line);
-        if (item.nsn) mdbNsnSet.add(item.nsn);
+        if (item.nsn) {
+          mdbNsnSet.add(item.nsn);
+          if (item.cost && item.cost > 0) {
+            const existing = mdbCostMap.get(item.nsn);
+            if (!existing || item.cost < existing) {
+              mdbCostMap.set(item.nsn, item.cost);
+            }
+          }
+        }
       } catch {}
     }
     return mdbNsnSet;
@@ -160,7 +214,8 @@ export async function POST() {
 
     if (source) {
       const history = pricing.get(nsn);
-      const cost = axCostMap?.get(nsn) || null;
+      // Cost waterfall: AX (PO/agreements) → Master DB cost
+      const cost = axCostMap?.get(nsn) || mdbCostMap?.get(nsn) || null;
 
       // Pricing logic:
       // 1. If we have cost data, apply Abe's empirical markup by price bracket
