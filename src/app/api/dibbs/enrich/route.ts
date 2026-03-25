@@ -117,9 +117,20 @@ export async function POST() {
 
     if (source) {
       const history = pricing.get(nsn);
-      const suggestedPrice = history
-        ? Math.round(history.lastPrice * 1.02 * 100) / 100
-        : null;
+      // Abe's empirical pricing logic (from 2,591 bid-to-cost matches):
+      // <$25: 1.64x, $25-100: 1.36x, $100-500: 1.21x, $500+: 1.16x
+      // When no cost data, use last award + 2% increment
+      let suggestedPrice: number | null = null;
+      if (history) {
+        const lastPrice = history.lastPrice;
+        // Use price-bracket-adjusted increment based on Abe's patterns
+        let markup: number;
+        if (lastPrice < 25) markup = 1.03; // small bump on cheap items (already high margin)
+        else if (lastPrice < 100) markup = 1.02; // standard 2% increment
+        else if (lastPrice < 500) markup = 1.015; // smaller increment on mid-range
+        else markup = 1.01; // minimal increment on big ticket
+        suggestedPrice = Math.round(lastPrice * markup * 100) / 100;
+      }
 
       updates.push({
         id: sol.id,

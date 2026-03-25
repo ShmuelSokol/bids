@@ -23,6 +23,12 @@ export const metadata: Metadata = {
     "Defense Department solicitation bidding, order management, and invoicing",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -31,9 +37,8 @@ export default async function RootLayout({
   const currentUser = await getCurrentUser().catch(() => null);
   const isLoggedIn = !!currentUser;
 
-  // Check if user must reset password
   const hdrs = await headers();
-  const pathname = hdrs.get("x-pathname") || hdrs.get("x-invoke-path") || "";
+  const pathname = hdrs.get("x-pathname") || "";
   const isSetPasswordPage = pathname.includes("/login/set-password");
   const isLoginPage = pathname.includes("/login");
   const isApiRoute = pathname.includes("/api/");
@@ -55,7 +60,7 @@ export default async function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="h-full flex">
+      <body className="h-full flex flex-col md:flex-row">
         {showChrome && <Sidebar user={currentUser} />}
         <main className="flex-1 overflow-auto">{children}</main>
         {showChrome && <BugReporter />}
