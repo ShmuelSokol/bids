@@ -6,7 +6,7 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 
 const DIBBS_BASE = "https://www.dibbs.bsm.dla.mil";
-const USERNAME = "0AG0901";
+const USERNAME = process.env.DIBBS_USERNAME || "";
 const PASSWORD = "REDACTED";
 const DIR = join(__dirname, "..", "data", "dibbs-screenshots");
 

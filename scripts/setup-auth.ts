@@ -32,7 +32,7 @@ async function main() {
   const { data: userData, error: userErr } =
     await supabase.auth.admin.createUser({
       email: "ssokol@everreadygroup.com",
-      password: "D1bs-Admin-2026!",
+      password: process.env.DIBS_ADMIN_PW || "",
       email_confirm: true,
       user_metadata: { full_name: "Shmuel Sokol" },
     });
@@ -60,7 +60,7 @@ async function main() {
   const { data: abeData, error: abeErr } =
     await supabase.auth.admin.createUser({
       email: "abe@everreadygroup.com",
-      password: "D1bs-Abe-2026!",
+      password: process.env.DIBS_ABE_PW || "",
       email_confirm: true,
       user_metadata: { full_name: "Abe" },
     });
@@ -137,8 +137,8 @@ async function main() {
   }
 
   console.log("\nAuth users created:");
-  console.log("  Admin: ssokol@everreadygroup.com / D1bs-Admin-2026!");
-  console.log("  User:  abe@everreadygroup.com / D1bs-Abe-2026!");
+  console.log("  Admin: ssokol@everreadygroup.com");
+  console.log("  User:  abe@everreadygroup.com");
 }
 
 main().catch(console.error);

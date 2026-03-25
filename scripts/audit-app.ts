@@ -9,7 +9,7 @@ import { join } from "path";
 const BASE = "http://localhost:3000";
 const DIR = join(__dirname, "..", "data", "audit-screenshots");
 const EMAIL = "ssokol@everreadygroup.com";
-const PASSWORD = "D1bs-Admin-2026!";
+const PASSWORD = "process.env.DIBS_ADMIN_PW || """;
 
 let screenshotNum = 0;
 async function shot(page: Page, name: string) {
