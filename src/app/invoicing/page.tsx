@@ -47,6 +47,7 @@ export default function InvoicingPage() {
 
   return (
     <div className="p-8">
+      <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-700">Demo data — will connect to D365 invoices and WAF/PIEE</div>
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Invoicing</h1>
@@ -55,11 +56,11 @@ export default function InvoicingPage() {
         <div className="flex gap-3">
           <button className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors">
             <Upload className="h-4 w-4" />
-            Import Remittance
+            Import Remittance <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded">Soon</span>
           </button>
-          <button className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors">
+          <button disabled className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2.5 text-sm font-medium opacity-50 cursor-not-allowed">
             <Download className="h-4 w-4" />
-            Export from AX
+            Export from AX <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded">Soon</span>
           </button>
         </div>
       </div>
@@ -99,11 +100,11 @@ export default function InvoicingPage() {
           <div className="flex gap-2">
             <button className="flex items-center gap-2 rounded-lg border border-accent/30 bg-white px-3 py-2 text-sm font-medium text-accent hover:bg-blue-50 transition-colors">
               <Download className="h-4 w-4" />
-              Export for LamLinks
+              Export for LamLinks <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded">Soon</span>
             </button>
             <button className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover transition-colors">
               <Check className="h-4 w-4" />
-              Submit All to WAF
+              Submit All to WAF <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded">Soon</span>
             </button>
           </div>
         </div>
@@ -164,7 +165,7 @@ export default function InvoicingPage() {
             </div>
             <button className="flex items-center gap-2 text-sm text-accent hover:text-accent-hover font-medium">
               <Mail className="h-4 w-4" />
-              Batch Email COs
+              Batch Email COs <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded">Soon</span>
             </button>
           </div>
           <div className="overflow-x-auto">

@@ -55,6 +55,7 @@ export default function ShippingPage() {
 
   return (
     <div className="p-8">
+      <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-700">Demo data — will connect to D365 shipment tracking</div>
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Shipping</h1>

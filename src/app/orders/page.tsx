@@ -55,15 +55,19 @@ export default function OrdersPage() {
 
   return (
     <div className="p-8">
+      <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-700">
+        Demo data — will connect to D365 sales orders (account DD219) for live order data
+      </div>
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Orders</h1>
           <p className="text-muted mt-1">{orders.length} orders — {stockOrders.length} in stock, {needsOrdering.length} need ordering, {inProgress.length} in progress</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors">
+          <button disabled className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2.5 text-sm font-medium opacity-50 cursor-not-allowed" title="Coming soon — will sync orders from D365">
             <Filter className="h-4 w-4" />
             Import from AX
+            <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">Soon</span>
           </button>
         </div>
       </div>
@@ -112,7 +116,7 @@ export default function OrdersPage() {
                       <div className="text-xs text-muted">est. cost</div>
                     </div>
                     <button className="flex items-center gap-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors">
-                      Create PO <ArrowRight className="h-4 w-4" />
+                      Create PO <ArrowRight className="h-4 w-4" /><span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded">Soon</span>
                     </button>
                   </div>
                 </div>
@@ -131,7 +135,7 @@ export default function OrdersPage() {
               <h2 className="text-lg font-semibold">In Stock — Ready to Process ({stockOrders.length})</h2>
             </div>
             <button className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover transition-colors">
-              Confirm All & Send to Warehouse
+              Confirm All & Send to Warehouse <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded ml-1">Soon</span>
             </button>
           </div>
           <div className="overflow-x-auto">

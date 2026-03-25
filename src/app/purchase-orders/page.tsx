@@ -62,14 +62,15 @@ export default function PurchaseOrdersPage() {
 
   return (
     <div className="p-8">
+      <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-700">Demo data — will connect to D365 for live purchase orders</div>
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Purchase Orders</h1>
           <p className="text-muted mt-1">Manage supplier POs — auto-consolidated from government orders</p>
         </div>
-        <button className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover transition-colors">
+        <button disabled title="Coming soon" className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white opacity-50 cursor-not-allowed">
           <Plus className="h-4 w-4" />
-          Create PO
+          Create PO <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded">Soon</span>
         </button>
       </div>
 
@@ -118,7 +119,7 @@ export default function PurchaseOrdersPage() {
                   <div className="text-xl font-bold font-mono">${po.totalCost.toFixed(2)}</div>
                   {po.status === "DRAFT" && (
                     <button className="mt-2 flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors">
-                      <Check className="h-3 w-3" /> Submit PO
+                      <Check className="h-3 w-3" /> Submit PO <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded">Soon</span>
                     </button>
                   )}
                 </div>
