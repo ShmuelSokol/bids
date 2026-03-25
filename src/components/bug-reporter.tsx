@@ -26,60 +26,53 @@ export function BugReporter() {
     try {
       const html2canvas = (await import("html2canvas")).default;
 
-      // Wait for hydration + rendering to complete
+      // Wait for rendering
       await new Promise((r) => setTimeout(r, 500));
 
-      const scrollY = window.scrollY;
-      const viewH = window.innerHeight;
-      const viewW = document.documentElement.clientWidth;
+      // Target the main content area, not the full body (avoids sidebar CSS issues)
+      const target = document.querySelector("main") || document.body;
 
-      const canvas = await html2canvas(document.body, {
+      const canvas = await html2canvas(target as HTMLElement, {
         scale: 1,
         logging: false,
-        windowWidth: viewW,
-        windowHeight: viewH,
-        height: viewH,
-        y: scrollY,
-        useCORS: false,
-        allowTaint: false,
+        useCORS: true,
+        allowTaint: true,
         imageTimeout: 5000,
+        backgroundColor: "#f8fafc",
         onclone: (clonedDoc: Document) => {
-          // Hide ALL images to avoid cross-origin taint errors
-          clonedDoc.querySelectorAll("img").forEach((img) => {
-            if (img.src && !img.src.startsWith("data:")) {
-              img.style.visibility = "hidden";
-            }
-          });
-          // Hide iframes and videos
-          clonedDoc.querySelectorAll("iframe, video").forEach((el) => {
-            (el as HTMLElement).style.display = "none";
-          });
+          // Remove problematic elements
+          clonedDoc
+            .querySelectorAll("iframe, video, script")
+            .forEach((el) => el.remove());
         },
       });
 
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      // allowTaint can cause toDataURL to throw — try it, fall back to png
+      let dataUrl: string;
+      try {
+        dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      } catch {
+        // Tainted canvas — retry without taint
+        const canvas2 = await html2canvas(target as HTMLElement, {
+          scale: 1,
+          logging: false,
+          useCORS: false,
+          allowTaint: false,
+          imageTimeout: 5000,
+          backgroundColor: "#f8fafc",
+          onclone: (clonedDoc: Document) => {
+            clonedDoc
+              .querySelectorAll("img, iframe, video, script")
+              .forEach((el) => el.remove());
+          },
+        });
+        dataUrl = canvas2.toDataURL("image/jpeg", 0.85);
+      }
+
       setScreenshot(dataUrl);
     } catch (err) {
       console.error("Screenshot capture failed:", err);
-      // Fallback: capture just a blank canvas with page info
-      try {
-        const fallback = document.createElement("canvas");
-        fallback.width = 800;
-        fallback.height = 200;
-        const ctx = fallback.getContext("2d");
-        if (ctx) {
-          ctx.fillStyle = "#f0f0f0";
-          ctx.fillRect(0, 0, 800, 200);
-          ctx.fillStyle = "#333";
-          ctx.font = "14px sans-serif";
-          ctx.fillText("Screenshot capture failed — page: " + window.location.pathname, 20, 40);
-          ctx.fillText("Time: " + new Date().toLocaleString(), 20, 70);
-          ctx.fillText("Please describe what you see in the description field.", 20, 100);
-          setScreenshot(fallback.toDataURL("image/png"));
-        }
-      } catch {
-        setScreenshot(null);
-      }
+      setScreenshot(null);
     }
 
     setCapturing(false);
