@@ -27,7 +27,8 @@ export function BugReporter() {
       // Dynamic import so html2canvas isn't bundled unless used
       const html2canvas = (await import("html2canvas")).default;
 
-      await new Promise((r) => setTimeout(r, 100));
+      // Wait for page to settle after closing modal
+      await new Promise((r) => setTimeout(r, 300));
 
       const canvas = await html2canvas(document.body, {
         scale: 1,
@@ -36,15 +37,27 @@ export function BugReporter() {
         windowHeight: window.innerHeight,
         height: window.innerHeight,
         y: window.scrollY,
-        useCORS: false,
-        allowTaint: false,
-        imageTimeout: 5000,
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 8000,
+        ignoreElements: (el: Element) => {
+          // Skip the bug button itself and any fixed overlays
+          return el.id === "bug-btn" || el.getAttribute("data-bug-ignore") === "true";
+        },
+        onclone: (clonedDoc: Document) => {
+          // Hide cross-origin images that might cause taint errors
+          clonedDoc.querySelectorAll("img").forEach((img) => {
+            if (img.src && !img.src.startsWith(window.location.origin) && !img.src.startsWith("data:")) {
+              img.style.visibility = "hidden";
+            }
+          });
+        },
       });
 
       const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
       setScreenshot(dataUrl);
-    } catch {
-      // Screenshot failed — still allow submission
+    } catch (err) {
+      console.error("Screenshot capture failed:", err);
       setScreenshot(null);
     }
 
