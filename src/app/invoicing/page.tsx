@@ -99,7 +99,7 @@ export default function InvoicingPage() {
           <div className="flex gap-2">
             <button className="flex items-center gap-2 rounded-lg border border-accent/30 bg-white px-3 py-2 text-sm font-medium text-accent hover:bg-blue-50 transition-colors">
               <Download className="h-4 w-4" />
-              Export for Lamb Links
+              Export for Lam Links
             </button>
             <button className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover transition-colors">
               <Check className="h-4 w-4" />

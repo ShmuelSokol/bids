@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   FileSearch,
@@ -11,6 +11,7 @@ import {
   BarChart3,
   Settings,
   Package,
+  LogOut,
 } from "lucide-react";
 
 const navigation = [
@@ -24,8 +25,22 @@ const navigation = [
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  user?: {
+    user: { email?: string };
+    profile: { full_name?: string; role?: string } | null;
+  } | null;
+}
+
+export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <div className="flex h-full w-64 flex-col bg-sidebar-bg">
@@ -43,7 +58,8 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navigation.map((item) => {
-          const isActive = pathname === item.href ||
+          const isActive =
+            pathname === item.href ||
             (item.href !== "/" && pathname.startsWith(item.href));
           return (
             <Link
@@ -62,11 +78,27 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
+      {/* User + Logout */}
       <div className="border-t border-white/10 px-4 py-4">
-        <div className="text-xs text-sidebar-text/50">
-          DIBS v0.1.0
-        </div>
+        {user && (
+          <div className="flex items-center justify-between">
+            <div className="min-w-0">
+              <p className="text-sm text-white font-medium truncate">
+                {user.profile?.full_name || user.user.email}
+              </p>
+              <p className="text-xs text-sidebar-text/50 capitalize">
+                {user.profile?.role || "viewer"}
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Sign out"
+              className="text-sidebar-text/50 hover:text-white p-1.5 rounded-lg hover:bg-sidebar-hover transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

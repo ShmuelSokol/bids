@@ -7,7 +7,7 @@ import { generateInvoiceBatchEdi, type InvoiceForEdi } from "@/lib/edi-generator
  * Accepts an array of invoices and generates an EDI X12 810C file
  * ready for submission to WAWF via Mil-Pac VAN or direct SFTP.
  *
- * This replaces the 45 min/day of clicking in Lamb Links.
+ * This replaces the 45 min/day of clicking in Lam Links.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();

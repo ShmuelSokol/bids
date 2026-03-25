@@ -1,20 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateUser } from "@/lib/auth";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { username, password } = body;
+  const { email, password } = await req.json();
 
-  if (!username || !password) {
-    return NextResponse.json({ error: "Username and password required" }, { status: 400 });
+  if (!email || !password) {
+    return NextResponse.json(
+      { error: "Email and password required" },
+      { status: 400 }
+    );
   }
 
-  const user = authenticateUser(username, password);
-  if (!user) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 401 });
   }
 
-  // In production: use proper session management (NextAuth, JWT, etc.)
-  // For now, return user info — client stores in state
-  return NextResponse.json({ user });
+  const response = NextResponse.json({ success: true, user: data.user });
+
+  response.cookies.set("sb-access-token", data.session.access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 7,
+    path: "/",
+  });
+  response.cookies.set("sb-refresh-token", data.session.refresh_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 30,
+    path: "/",
+  });
+
+  return response;
 }

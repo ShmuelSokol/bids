@@ -85,7 +85,7 @@ export default function SolicitationsPage() {
         <div className="flex gap-3">
           <button className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors">
             <FileSearch className="h-4 w-4" />
-            Import from Lamb Links
+            Import from Lam Links
           </button>
           <button className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover transition-colors">
             Export Batch Quotes

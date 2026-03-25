@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginPage() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,7 +20,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
 
       if (!res.ok) {
@@ -29,6 +30,7 @@ export default function LoginPage() {
       }
 
       router.push("/");
+      router.refresh();
     } catch {
       setError("Connection error");
     } finally {
@@ -47,31 +49,42 @@ export default function LoginPage() {
           <p className="text-muted mt-1">Government Bidding System</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="rounded-xl border border-card-border bg-card-bg shadow-sm p-6 space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-xl border border-card-border bg-card-bg shadow-sm p-6 space-y-4"
+        >
           {error && (
-            <div className="rounded-lg bg-red-50 text-red-700 px-4 py-2 text-sm">{error}</div>
+            <div className="rounded-lg bg-red-50 text-red-700 px-4 py-2 text-sm">
+              {error}
+            </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-muted mb-1">Username</label>
+            <label className="block text-sm font-medium text-muted mb-1">
+              Email
+            </label>
             <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-lg border border-card-border px-3 py-2.5 text-sm"
-              placeholder="Enter username"
+              placeholder="you@everreadygroup.com"
               autoFocus
+              required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-muted mb-1">Password</label>
+            <label className="block text-sm font-medium text-muted mb-1">
+              Password
+            </label>
             <input
               type="password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-lg border border-card-border px-3 py-2.5 text-sm"
               placeholder="Enter password"
+              required
             />
           </div>
 
@@ -83,9 +96,15 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign In"}
           </button>
 
-          <p className="text-xs text-muted text-center">
-            CAGE Code: 0AG09 / ERG Supply
-          </p>
+          <div className="flex items-center justify-between text-xs">
+            <Link
+              href="/login/forgot-password"
+              className="text-accent hover:text-accent-hover font-medium"
+            >
+              Forgot password?
+            </Link>
+            <span className="text-muted">CAGE 0AG09 / ERG Supply</span>
+          </div>
         </form>
       </div>
     </div>
