@@ -1,0 +1,42 @@
+name: DIBBS Daily Scrape
+
+on:
+  schedule:
+    # 6:00 AM ET (11:00 UTC) — catch overnight posts before Abe starts
+    - cron: '0 11 * * 1-5'
+    # 12:00 PM ET (17:00 UTC) — catch morning posts
+    - cron: '0 17 * * 1-5'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Run DIBBS scrape (today's solicitations)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/scrape-dibbs-daily.ts
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dibbs-solicitations-${{ github.run_number }}
+          path: data/dibbs/
+          retention-days: 30
