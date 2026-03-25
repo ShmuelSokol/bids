@@ -16,7 +16,17 @@
  * - Pull procurement history for specific NSNs
  */
 
-import { chromium, type Browser, type Page } from "playwright";
+// Dynamic import — playwright is a dev/local dependency only
+let chromium: any;
+type Browser = any;
+type Page = any;
+async function getPlaywright() {
+  if (!chromium) {
+    const pw = await import("playwright");
+    chromium = pw.chromium;
+  }
+  return chromium;
+}
 
 const DIBBS_BASE = "https://www.dibbs.bsm.dla.mil";
 
@@ -61,7 +71,8 @@ let browser: Browser | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.isConnected()) {
-    browser = await chromium.launch({
+    const pw = await getPlaywright();
+    browser = await pw.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
