@@ -6,10 +6,24 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:push": "prisma db push",
+    "db:seed": "npx tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "scrape:dibbs": "npx tsx scripts/scrape-dibbs.ts --all",
+    "scrape:solicitations": "npx tsx scripts/scrape-dibbs.ts --solicitations",
+    "scrape:awards": "npx tsx scripts/scrape-dibbs.ts --awards",
+    "scrape:competitors": "npx tsx scripts/scrape-dibbs.ts --competitors",
+    "scrape:batch": "npx tsx scripts/scrape-dibbs.ts --batch"
   },
   "dependencies": {
+    "@prisma/client": "^6.5.0",
+    "@supabase/supabase-js": "^2.100.0",
+    "lucide-react": "^0.474.0",
+    "msnodesqlv8": "^5.1.5",
+    "mssql": "^12.2.1",
     "next": "16.2.1",
+    "playwright": "^1.50.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -20,7 +34,12 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "prisma": "^6.5.0",
     "tailwindcss": "^4",
+    "tsx": "^4.19.0",
     "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
   }
 }

@@ -1,0 +1,542 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Reference Data ─────────────────────────────────────────
+
+model FscCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(false) @map("is_active") // true = we're registered for this category
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  nsns              Nsn[]
+  solicitations     Solicitation[]
+  pricingRules      PricingRule[]
+
+  @@map("fsc_codes")
+}
+
+model Nsn {
+  id          String    @id @default(cuid())
+  nsnCode     String    @unique @map("nsn_code")
+  description String
+  fscCodeId   String    @map("fsc_code_id")
+  fscCode     FscCode   @relation(fields: [fscCodeId], references: [id])
+  isMedical   Boolean   @default(false) @map("is_medical")
+  typicalQup  String?   @map("typical_qup")
+  fobTerms    FobTerms  @default(DESTINATION) @map("fob_terms")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  solicitations      Solicitation[]
+  orders             Order[]
+  bidHistory         BidHistory[]
+  inventory          Inventory[]
+  supplierCatalog    SupplierCatalog[]
+  competitorActivity CompetitorActivity[]
+  pricingRules       PricingRule[]
+
+  @@map("nsns")
+}
+
+enum FobTerms {
+  DESTINATION // we pay freight (medical/surgical)
+  ORIGIN      // government pays freight (industrial/hardware)
+}
+
+model Vendor {
+  id              String   @id @default(cuid())
+  name            String
+  cageCode        String?  @unique @map("cage_code")
+  contactName     String?  @map("contact_name")
+  email           String?
+  phone           String?
+  website         String?
+  sellsDirectToGov Boolean @default(false) @map("sells_direct_to_gov")
+  pricingType     VendorPricingType @default(NEGOTIATED) @map("pricing_type")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  solicitationParts SolicitationPart[]
+  purchaseOrders    PurchaseOrder[]
+  supplierCatalog   SupplierCatalog[]
+  orders            Order[]
+
+  @@map("vendors")
+}
+
+enum VendorPricingType {
+  LIST        // everyone pays same price (e.g., McMaster)
+  NEGOTIATED  // we have a negotiated discount
+  CONTRACT    // fixed contract pricing
+}
+
+model SupplierCatalog {
+  id          String   @id @default(cuid())
+  vendorId    String   @map("vendor_id")
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
+  partNumber  String   @map("part_number")
+  nsnId       String?  @map("nsn_id")
+  nsn         Nsn?     @relation(fields: [nsnId], references: [id])
+  description String?
+  ourCost     Float?   @map("our_cost")
+  listPrice   Float?   @map("list_price")
+  unitOfMeasure String? @map("unit_of_measure")
+  isActive    Boolean  @default(true) @map("is_active")
+  lastUpdated DateTime? @map("last_updated")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([vendorId, partNumber])
+  @@map("supplier_catalog")
+}
+
+model Competitor {
+  id              String   @id @default(cuid())
+  cageCode        String   @unique @map("cage_code")
+  name            String
+  estimatedVolume String?  @map("estimated_volume") // e.g., "2719 awards/15 days"
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  activity CompetitorActivity[]
+
+  @@map("competitors")
+}
+
+model CompetitorActivity {
+  id              String     @id @default(cuid())
+  competitorId    String     @map("competitor_id")
+  competitor      Competitor @relation(fields: [competitorId], references: [id])
+  nsnId           String     @map("nsn_id")
+  nsn             Nsn        @relation(fields: [nsnId], references: [id])
+  price           Float
+  quantity        Int?
+  awardDate       DateTime   @map("award_date")
+  contractNumber  String?    @map("contract_number")
+  notes           String?
+  createdAt       DateTime   @default(now())
+
+  @@map("competitor_activity")
+}
+
+model ShippingLocation {
+  id           String   @id @default(cuid())
+  name         String
+  addressLine1 String   @map("address_line_1")
+  addressLine2 String?  @map("address_line_2")
+  city         String
+  state        String
+  zipCode      String   @map("zip_code")
+  isMedical    Boolean  @default(false) @map("is_medical")
+  isDepot      Boolean  @default(false) @map("is_depot")
+  isNavy       Boolean  @default(false) @map("is_navy")
+  region       String?  // east, west, pacific
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  shipments        Shipment[]
+  addressOverrides AddressOverride[]
+  solicitationLines SolicitationLine[]
+
+  @@map("shipping_locations")
+}
+
+// ─── Solicitation & Bidding ─────────────────────────────────
+
+model Solicitation {
+  id                  String             @id @default(cuid())
+  solicitationNumber  String             @unique @map("solicitation_number")
+  nsnId               String             @map("nsn_id")
+  nsn                 Nsn                @relation(fields: [nsnId], references: [id])
+  fscCodeId           String?            @map("fsc_code_id")
+  fscCode             FscCode?           @relation(fields: [fscCodeId], references: [id])
+  totalQuantity       Int                @map("total_quantity")
+  totalLines          Int                @default(1) @map("total_lines")
+  unitOfMeasure       String?            @map("unit_of_measure")
+  fobTerms            FobTerms           @default(DESTINATION) @map("fob_terms")
+  dueDate             DateTime           @map("due_date")
+  status              SolicitationStatus @default(NEW)
+  isBreadAndButter    Boolean            @default(false) @map("is_bread_and_butter") // green highlight in Lamb Links
+  notes               String?
+  rawEdiData          String?            @map("raw_edi_data")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  lines    SolicitationLine[]
+  parts    SolicitationPart[]
+  bids     Bid[]
+  contract Contract?
+
+  @@map("solicitations")
+}
+
+enum SolicitationStatus {
+  NEW
+  REVIEWING
+  BID_SUBMITTED
+  AWARDED
+  LOST
+  EXPIRED
+  SKIPPED
+  CANCELLED
+}
+
+model SolicitationLine {
+  id                 String            @id @default(cuid())
+  solicitationId     String            @map("solicitation_id")
+  solicitation       Solicitation      @relation(fields: [solicitationId], references: [id])
+  lineNumber         Int               @map("line_number")
+  quantity           Int
+  shipToZip          String?           @map("ship_to_zip")
+  shipToLocationId   String?           @map("ship_to_location_id")
+  shipToLocation     ShippingLocation? @relation(fields: [shipToLocationId], references: [id])
+  tcn                String?
+  destinationName    String?           @map("destination_name")
+  createdAt          DateTime          @default(now())
+
+  @@unique([solicitationId, lineNumber])
+  @@map("solicitation_lines")
+}
+
+model SolicitationPart {
+  id              String       @id @default(cuid())
+  solicitationId  String       @map("solicitation_id")
+  solicitation    Solicitation @relation(fields: [solicitationId], references: [id])
+  vendorId        String       @map("vendor_id")
+  vendor          Vendor       @relation(fields: [vendorId], references: [id])
+  partNumber      String       @map("part_number")
+  description     String?
+  createdAt       DateTime     @default(now())
+
+  @@map("solicitation_parts")
+}
+
+model Bid {
+  id              String       @id @default(cuid())
+  solicitationId  String       @map("solicitation_id")
+  solicitation    Solicitation @relation(fields: [solicitationId], references: [id])
+  unitPrice       Float        @map("unit_price")
+  totalPrice      Float        @map("total_price")
+  leadTimeDays    Int          @default(50) @map("lead_time_days")
+  costBasis       Float?       @map("cost_basis")       // what we'd pay for the item
+  freightEstimate Float?       @map("freight_estimate")  // estimated shipping cost (FOB dest)
+  markupPercent   Float?       @map("markup_percent")
+  pricingRationale String?     @map("pricing_rationale") // why this price was chosen
+  notes           String?
+  submittedAt     DateTime?    @map("submitted_at")
+  status          BidStatus    @default(DRAFT)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("bids")
+}
+
+enum BidStatus {
+  DRAFT
+  SUBMITTED
+  WON
+  LOST
+}
+
+model BidHistory {
+  id              String   @id @default(cuid())
+  nsnId           String   @map("nsn_id")
+  nsn             Nsn      @relation(fields: [nsnId], references: [id])
+  winnerCageCode  String?  @map("winner_cage_code")
+  winnerName      String?  @map("winner_name")
+  winningPrice    Float    @map("winning_price")
+  ourPrice        Float?   @map("our_price")
+  quantity        Int?
+  destinationZip  String?  @map("destination_zip")
+  awardDate       DateTime @map("award_date")
+  contractNumber  String?  @map("contract_number")
+  wasIdpo         Boolean  @default(false) @map("was_idpo")
+  fobTerms        FobTerms? @map("fob_terms")
+  weWon           Boolean  @default(false) @map("we_won")
+  createdAt       DateTime @default(now())
+
+  @@map("bid_history")
+}
+
+model PricingRule {
+  id         String      @id @default(cuid())
+  nsnId      String?     @map("nsn_id")
+  nsn        Nsn?        @relation(fields: [nsnId], references: [id])
+  fscCodeId  String?     @map("fsc_code_id")
+  fscCode    FscCode?    @relation(fields: [fscCodeId], references: [id])
+  ruleType   PricingRuleType @map("rule_type")
+  params     Json?       // flexible params: { minMarkup, maxMarkup, incrementPct, etc. }
+  notes      String?
+  isActive   Boolean     @default(true) @map("is_active")
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@map("pricing_rules")
+}
+
+enum PricingRuleType {
+  INCREMENT     // slowly raise price each bid (no competition)
+  COMPETE       // match/undercut competitor
+  HOLD          // hold at current price
+  NEW_ITEM      // standard markup for first-time items
+  MANUFACTURER  // manufacturer sells direct, undercut by pennies
+  SKIP          // don't bid (vendor sells direct, blocked, etc.)
+}
+
+// ─── Orders & Fulfillment ───────────────────────────────────
+
+model Contract {
+  id                String         @id @default(cuid())
+  contractNumber    String         @unique @map("contract_number")
+  solicitationId    String         @unique @map("solicitation_id")
+  solicitation      Solicitation   @relation(fields: [solicitationId], references: [id])
+  awardDate         DateTime       @map("award_date")
+  shipByDate        DateTime       @map("ship_by_date")
+  totalValue        Float?         @map("total_value")
+  fobTerms          FobTerms       @default(DESTINATION) @map("fob_terms")
+  isIdpo            Boolean        @default(false) @map("is_idpo")
+  idpoParentNumber  String?        @map("idpo_parent_number")
+  idpoDeliveryCount Int?           @map("idpo_delivery_count")
+  requiresInspection Boolean       @default(false) @map("requires_inspection")
+  isFms             Boolean        @default(false) @map("is_fms") // Foreign Military Sales
+  status            ContractStatus @default(ACTIVE)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  orders Order[]
+
+  @@map("contracts")
+}
+
+enum ContractStatus {
+  ACTIVE
+  FULFILLED
+  CANCELLED
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  contractId     String      @map("contract_id")
+  contract       Contract    @relation(fields: [contractId], references: [id])
+  nsnId          String      @map("nsn_id")
+  nsn            Nsn         @relation(fields: [nsnId], references: [id])
+  quantity       Int
+  qup            String?
+  tcn            String?     @unique
+  unitPrice      Float       @map("unit_price")
+  totalPrice     Float       @map("total_price")
+  fobTerms       FobTerms    @default(DESTINATION) @map("fob_terms")
+  isStockFill    Boolean     @default(false) @map("is_stock_fill")
+  sourceVendorId String?     @map("source_vendor_id")
+  sourceVendor   Vendor?     @relation(fields: [sourceVendorId], references: [id])
+  expectedCost   Float?      @map("expected_cost")
+  status         OrderStatus @default(RECEIVED)
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  purchaseOrderItems PurchaseOrderItem[]
+  shipment           Shipment?
+  invoice            Invoice?
+
+  @@map("orders")
+}
+
+enum OrderStatus {
+  RECEIVED
+  SOURCING
+  PO_PLACED
+  IN_STOCK
+  PACKING
+  SHIPPED
+  DELIVERED
+}
+
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  poNumber      String   @unique @map("po_number")
+  vendorId      String   @map("vendor_id")
+  vendor        Vendor   @relation(fields: [vendorId], references: [id])
+  isGovernment  Boolean  @default(true) @map("is_government")
+  notes         String?
+  status        POStatus @default(DRAFT)
+  totalCost     Float?   @map("total_cost")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  items PurchaseOrderItem[]
+
+  @@map("purchase_orders")
+}
+
+enum POStatus {
+  DRAFT
+  SUBMITTED
+  CONFIRMED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String        @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  orderId         String        @map("order_id")
+  order           Order         @relation(fields: [orderId], references: [id])
+  quantity        Int
+  unitCost        Float         @map("unit_cost")
+  createdAt       DateTime      @default(now())
+
+  @@map("purchase_order_items")
+}
+
+model Inventory {
+  id             String    @id @default(cuid())
+  nsnId          String    @map("nsn_id")
+  nsn            Nsn       @relation(fields: [nsnId], references: [id])
+  quantityOnHand Int       @map("quantity_on_hand")
+  location       String?
+  lotNumber      String?   @map("lot_number")
+  expirationDate DateTime? @map("expiration_date")
+  lastCountedAt  DateTime? @map("last_counted_at")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("inventory")
+}
+
+// ─── Shipping & Compliance ──────────────────────────────────
+
+model Shipment {
+  id                 String           @id @default(cuid())
+  orderId            String           @unique @map("order_id")
+  order              Order            @relation(fields: [orderId], references: [id])
+  shippingLocationId String           @map("shipping_location_id")
+  shippingLocation   ShippingLocation @relation(fields: [shippingLocationId], references: [id])
+  trackingNumber     String?          @map("tracking_number")
+  carrier            String?
+  weight             Float?
+  labelsPrinted      Boolean          @default(false) @map("labels_printed")
+  packingSlipPrinted Boolean          @default(false) @map("packing_slip_printed")
+  consolidationGroup String?          @map("consolidation_group") // group ID for combined shipments to same depot
+  shippedAt          DateTime?        @map("shipped_at")
+  deliveredAt        DateTime?        @map("delivered_at")
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@map("shipments")
+}
+
+model AddressOverride {
+  id                   String           @id @default(cuid())
+  shippingLocationId   String           @map("shipping_location_id")
+  shippingLocation     ShippingLocation @relation(fields: [shippingLocationId], references: [id])
+  overrideAddressLine1 String           @map("override_address_line_1")
+  overrideAddressLine2 String?          @map("override_address_line_2")
+  overrideCity         String           @map("override_city")
+  overrideState        String           @map("override_state")
+  overrideZipCode      String           @map("override_zip_code")
+  tcnPrefixRule        String?          @map("tcn_prefix_rule") // e.g., "FP" prefix = medical override
+  productClassification String?         @map("product_classification") // medical, surgical, etc.
+  ruleType             String           @map("rule_type")
+  notes                String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@map("address_overrides")
+}
+
+// ─── Invoicing & Payment ────────────────────────────────────
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique @map("invoice_number")
+  originalAxNumber String?      @map("original_ax_number") // full AX invoice number (e.g., CIN00012345)
+  strippedNumber  String?       @map("stripped_number")    // 7-char version for government
+  lineSuffix      String?       @map("line_suffix")        // A, B, C for multi-line contracts
+  orderId         String        @unique @map("order_id")
+  order           Order         @relation(fields: [orderId], references: [id])
+  amount          Float
+  wafType         String?       @map("waf_type")           // 810 (invoice) or 856 (receipt)
+  isFastPay       Boolean       @default(false) @map("is_fast_pay")
+  submittedVia    String?       @map("submitted_via")      // lamb_links or waf_direct
+  submittedAt     DateTime?     @map("submitted_at")
+  status          InvoiceStatus @default(DRAFT)
+  wafReference    String?       @map("waf_reference")
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  paymentLines     PaymentLine[]
+  paymentFollowups PaymentFollowup[]
+
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SUBMITTED
+  PAID
+  PARTIAL
+  DISPUTED
+  OVERDUE
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  wireDate    DateTime @map("wire_date")
+  totalAmount Float    @map("total_amount")
+  reference   String?
+  createdAt   DateTime @default(now())
+
+  lines PaymentLine[]
+
+  @@map("payments")
+}
+
+model PaymentLine {
+  id        String   @id @default(cuid())
+  paymentId String   @map("payment_id")
+  payment   Payment  @relation(fields: [paymentId], references: [id])
+  invoiceId String   @map("invoice_id")
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  amount    Float
+  createdAt DateTime @default(now())
+
+  @@map("payment_lines")
+}
+
+model PaymentFollowup {
+  id                     String   @id @default(cuid())
+  invoiceId              String   @map("invoice_id")
+  invoice                Invoice  @relation(fields: [invoiceId], references: [id])
+  contractingOfficerEmail String? @map("contracting_officer_email")
+  emailSentAt            DateTime? @map("email_sent_at")
+  response               String?
+  wafStatus              String?  @map("waf_status") // waiting, paid, missing_info
+  status                 FollowupStatus @default(PENDING)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("payment_followups")
+}
+
+enum FollowupStatus {
+  PENDING
+  EMAIL_SENT
+  RESPONDED
+  RESOLVED
+  ESCALATED
+}
