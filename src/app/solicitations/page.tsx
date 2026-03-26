@@ -20,43 +20,29 @@ async function paginateAll(supabase: any, table: string, select: string, options
 async function getData() {
   const supabase = createServiceClient();
 
-  // Run ALL queries in parallel for speed
-  const [solicitations, decisions, awards, abeBidsHist, liveBids, lastSync] = await Promise.all([
-    // Solicitations — all 14K
-    paginateAll(supabase, "dibbs_solicitations", "*", { order: "scraped_at" }),
+  // Run queries in parallel — but DON'T load awards/bids upfront (lazy loaded)
+  const [solicitations, decisions, liveBids, lastSync] = await Promise.all([
+    // Solicitations — all 14K (minimal columns for speed)
+    paginateAll(supabase, "dibbs_solicitations",
+      "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count",
+      { order: "scraped_at" }
+    ),
     // Decisions
     supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
-    // Awards — only last 6 months + limit fields for speed
-    paginateAll(supabase, "awards", "fsc, niin, unit_price, quantity, description, award_date, contract_number, cage", { order: "award_date" }),
-    // Abe bids — historical
-    paginateAll(supabase, "abe_bids", "nsn, bid_price, lead_time_days, bid_qty, bid_date, fob", { order: "bid_date" }),
-    // Live bids — today
+    // Live bids — today only (small)
     supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
     // Last sync
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
   ]);
 
-  // Merge live bids into abe_bids
-  const abeBids = [...abeBidsHist];
-  for (const lb of liveBids) {
-    abeBids.push({ nsn: lb.nsn, bid_price: lb.bid_price, lead_time_days: lb.lead_days, bid_qty: lb.bid_qty, bid_date: lb.bid_time, fob: lb.fob });
-  }
-
-  // Build lookups
+  // Build lookups from live bids
   const liveBidsBySol = new Set(liveBids.map((lb: any) => lb.solicitation_number?.trim()).filter(Boolean));
   const decisionMap: Record<string, any> = {};
   for (const d of decisions) decisionMap[`${d.solicitation_number}_${d.nsn}`] = d;
-  const lastAwardByNsn = new Map<string, number>();
-  for (const a of awards) {
-    const nsn = `${a.fsc}-${a.niin}`;
-    if (!lastAwardByNsn.has(nsn) && a.unit_price > 0) lastAwardByNsn.set(nsn, a.unit_price);
-  }
 
-  // Enrich
+  // Enrich (without awards — those are lazy loaded now)
   const enriched = solicitations.map((s: any) => {
     const decision = decisionMap[`${s.solicitation_number}_${s.nsn}`];
-    const lastAward = lastAwardByNsn.get(s.nsn);
-    const estValue = s.potential_value || (s.suggested_price ? s.suggested_price * (s.quantity || 1) : null) || (lastAward ? lastAward * (s.quantity || 1) : null);
     const bidToday = liveBidsBySol.has(s.solicitation_number?.trim());
     return {
       ...s,
@@ -65,8 +51,6 @@ async function getData() {
       bid_comment: decision?.comment || null,
       decided_by: decision?.decided_by || null,
       already_bid: s.already_bid || bidToday,
-      est_value: estValue,
-      last_award_price: lastAward || null,
     };
   });
 
@@ -78,7 +62,7 @@ async function getData() {
     skipped: enriched.filter((s: any) => s.bid_status === "skipped").length,
   };
 
-  return { solicitations: enriched, counts, awards, abeBids, lastSync };
+  return { solicitations: enriched, counts, lastSync };
 }
 
 export default async function SolicitationsPage({
@@ -86,7 +70,7 @@ export default async function SolicitationsPage({
 }: {
   searchParams: Promise<{ filter?: string; sort?: string }>;
 }) {
-  const { solicitations, counts, awards, abeBids, lastSync } = await getData();
+  const { solicitations, counts, lastSync } = await getData();
   const params = await searchParams;
 
   return (
@@ -101,8 +85,8 @@ export default async function SolicitationsPage({
       <SolicitationsList
         initialData={solicitations}
         counts={counts}
-        awardHistory={awards}
-        abeBidHistory={abeBids}
+        awardHistory={[]}
+        abeBidHistory={[]}
         initialFilter={params.filter}
         initialSort={params.sort}
         lastSync={lastSync}

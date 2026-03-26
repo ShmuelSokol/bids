@@ -128,7 +128,11 @@ export function SolicitationsList({
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
 
-  // Build award history lookup
+  // Lazy-load award + bid history per NSN (instead of loading 74K+10K upfront)
+  const [historyCache, setHistoryCache] = useState<Map<string, { awards: AwardHistory[]; bids: AbeBid[] }>>(new Map());
+  const [loadingHistory, setLoadingHistory] = useState<string | null>(null);
+
+  // Also keep any server-provided data as fallback
   const historyByNsn = useMemo(() => {
     const map = new Map<string, AwardHistory[]>();
     for (const a of awardHistory) {
@@ -139,7 +143,6 @@ export function SolicitationsList({
     return map;
   }, [awardHistory]);
 
-  // Build Abe's bid history lookup
   const abeBidsByNsn = useMemo(() => {
     const map = new Map<string, AbeBid[]>();
     for (const b of abeBidHistory) {
@@ -148,6 +151,21 @@ export function SolicitationsList({
     }
     return map;
   }, [abeBidHistory]);
+
+  // Fetch history when detail panel opens
+  async function loadNsnHistory(nsn: string) {
+    if (historyCache.has(nsn)) return;
+    setLoadingHistory(nsn);
+    try {
+      const res = await fetch(`/api/awards/search?nsn=${encodeURIComponent(nsn)}`);
+      const data = await res.json();
+      setHistoryCache(prev => {
+        const next = new Map(prev);
+        next.set(nsn, { awards: data.awards || [], bids: data.bids || [] });
+        return next;
+      });
+    } catch {} finally { setLoadingHistory(null); }
+  }
 
   // Compute counts client-side — applies same isOpen + already_bid logic as filters
   const counts = useMemo(() => {
@@ -785,14 +803,20 @@ export function SolicitationsList({
               {filtered.map((s) => {
                 const potValue = (s as any)._potentialValue || s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
                 const isEditing = editingId === s.id;
-                const history = historyByNsn.get(s.nsn) || [];
-                const abeBids = abeBidsByNsn.get(s.nsn) || [];
+                // Use lazy-loaded cache first, fall back to server-provided data
+                const cached = historyCache.get(s.nsn);
+                const history = cached?.awards || historyByNsn.get(s.nsn) || [];
+                const abeBids = cached?.bids || abeBidsByNsn.get(s.nsn) || [];
 
                 return (
                   <>
                     <tr
                       key={s.id}
-                      onClick={() => setDetailId(detailId === s.id ? null : s.id)}
+                      onClick={() => {
+                        const newId = detailId === s.id ? null : s.id;
+                        setDetailId(newId);
+                        if (newId && !historyCache.has(s.nsn)) loadNsnHistory(s.nsn);
+                      }}
                       className={`border-b border-card-border hover:bg-gray-50/50 cursor-pointer ${
                         detailId === s.id ? "bg-accent/5 ring-1 ring-accent/20" :
                         s.bid_status === "submitted" ? "bg-purple-50/30" :
