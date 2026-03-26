@@ -1,308 +1,228 @@
-import { StatCard } from "@/components/stat-card";
+import { createServiceClient } from "@/lib/supabase-server";
 import Link from "next/link";
 import {
-  FileSearch,
-  ShoppingCart,
-  Receipt,
-  TrendingUp,
-  Target,
-  Flame,
-  Database,
+  Zap,
   DollarSign,
+  AlertTriangle,
+  TrendingUp,
+  Package,
+  Clock,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+async function getData() {
+  const supabase = createServiceClient();
 
-async function getDashboardData() {
-  const [heatmapRes, expansionRes, awardsRes, usaRes] = await Promise.all([
-    supabase.from("fsc_heatmap").select("*"),
-    supabase.from("fsc_expansion").select("*"),
-    supabase.from("awards").select("*").order("award_date", { ascending: false }).limit(10),
-    supabase.from("usaspending_awards").select("award_amount").limit(10000),
-  ]);
+  const { data: solicitations } = await supabase
+    .from("dibbs_solicitations")
+    .select("*")
+    .order("scraped_at", { ascending: false })
+    .limit(500);
 
-  const heatmap = heatmapRes.data ?? [];
-  const expansion = expansionRes.data ?? [];
-  const awards = awardsRes.data ?? [];
-  const usaAwards = usaRes.data ?? [];
+  const { data: decisions } = await supabase
+    .from("bid_decisions")
+    .select("solicitation_number, nsn, status");
 
-  const hot = heatmap.filter((r) => r.bucket === "hot");
-  const warm = heatmap.filter((r) => r.bucket === "warm");
-  const cold = heatmap.filter((r) => r.bucket === "cold");
+  const decisionMap = new Map<string, string>();
+  for (const d of decisions || []) {
+    decisionMap.set(`${d.solicitation_number}_${d.nsn}`, d.status);
+  }
 
-  const totalBids = heatmap.reduce((s, r) => s + (r.total_bids || 0), 0);
-  const bidsLastMonth = heatmap.reduce((s, r) => s + (r.bids_last_month || 0), 0);
-  const bids6mo = heatmap.reduce((s, r) => s + (r.bids_last_6_months || 0), 0);
+  const all = solicitations || [];
+  const sourceable = all.filter(
+    (s) =>
+      s.is_sourceable &&
+      !decisionMap.has(`${s.solicitation_number}_${s.nsn}`)
+  );
+  const quoted = all.filter(
+    (s) =>
+      decisionMap.get(`${s.solicitation_number}_${s.nsn}`) === "quoted"
+  );
+  const submitted = all.filter(
+    (s) =>
+      decisionMap.get(`${s.solicitation_number}_${s.nsn}`) === "submitted"
+  );
+  const noSource = all.filter((s) => !s.is_sourceable);
 
-  const unbidOpps = expansion.filter((r) => r.status === "unbid" && r.sols_last_6mo > 0);
-  const totalUnbidSols = unbidOpps.reduce((s, r) => s + (r.sols_last_6mo || 0), 0);
+  const topByValue = [...sourceable]
+    .map((s) => ({
+      ...s,
+      potential_value: (s.suggested_price || 0) * (s.quantity || 1),
+    }))
+    .filter((s) => s.potential_value > 0)
+    .sort((a, b) => b.potential_value - a.potential_value)
+    .slice(0, 10);
 
-  const dlaTotal = usaAwards.reduce((s, r) => s + (r.award_amount || 0), 0);
+  const { count: heatmapCount } = await supabase
+    .from("fsc_heatmap")
+    .select("*", { count: "exact", head: true })
+    .eq("bucket", "hot");
 
   return {
-    hot: hot.length,
-    warm: warm.length,
-    cold: cold.length,
-    totalBids,
-    bidsLastMonth,
-    bids6mo,
-    unbidFSCs: unbidOpps.length,
-    totalUnbidSols,
-    dlaTotal,
-    topHotFSCs: hot.sort((a, b) => b.bids_last_month - a.bids_last_month).slice(0, 8),
-    recentAwards: awards,
-    topExpansion: unbidOpps.sort((a, b) => b.sols_last_6mo - a.sols_last_6mo).slice(0, 8),
+    total: all.length,
+    sourceable: sourceable.length,
+    quoted: quoted.length,
+    submitted: submitted.length,
+    noSource: noSource.length,
+    topByValue,
+    hotFscs: heatmapCount || 0,
   };
 }
 
 export default async function Dashboard() {
-  const data = await getDashboardData();
+  const data = await getData();
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">DIBS Dashboard</h1>
         <p className="text-muted mt-1">
-          Government Bidding Intelligence — ERG Supply (CAGE 0AG09)
+          ERG Supply (CAGE 0AG09) — Government Bidding Intelligence
         </p>
       </div>
 
-      {/* Top Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          title="Hot FSC Categories"
-          value={data.hot}
-          subtitle={`${data.warm} warm, ${data.cold} cold`}
-          icon={Flame}
-          color="red"
-        />
-        <StatCard
-          title="Bids Last Month"
-          value={data.bidsLastMonth.toLocaleString()}
-          subtitle={`${data.totalBids.toLocaleString()} all time`}
-          icon={FileSearch}
-          color="blue"
-        />
-        <StatCard
-          title="Expansion Opportunities"
-          value={data.unbidFSCs}
-          subtitle={`${data.totalUnbidSols.toLocaleString()} unbid solicitations`}
-          icon={Target}
-          color="green"
-        />
-        <StatCard
-          title="DLA Spend (6mo sample)"
-          value={`$${(data.dlaTotal / 1e9).toFixed(1)}B`}
-          subtitle="USASpending.gov"
-          icon={DollarSign}
-          color="yellow"
-        />
+      {/* Solicitation Pipeline — THE HERO */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <Link
+          href="/solicitations?filter=sourceable"
+          className="rounded-xl border-2 border-green-300 bg-green-50 p-4 text-center hover:border-green-500 transition-colors"
+        >
+          <Zap className="h-5 w-5 mx-auto mb-1 text-green-600" />
+          <div className="text-3xl font-bold text-green-700">
+            {data.sourceable}
+          </div>
+          <div className="text-xs font-medium text-green-600">Sourceable</div>
+          <div className="text-[10px] text-green-500 mt-0.5">Ready to bid</div>
+        </Link>
+
+        <Link
+          href="/solicitations?filter=quoted"
+          className="rounded-xl border-2 border-blue-300 bg-blue-50 p-4 text-center hover:border-blue-500 transition-colors"
+        >
+          <DollarSign className="h-5 w-5 mx-auto mb-1 text-blue-600" />
+          <div className="text-3xl font-bold text-blue-700">{data.quoted}</div>
+          <div className="text-xs font-medium text-blue-600">Quoted</div>
+          <div className="text-[10px] text-blue-500 mt-0.5">Ready to submit</div>
+        </Link>
+
+        <Link
+          href="/solicitations?filter=submitted"
+          className="rounded-xl border-2 border-purple-300 bg-purple-50 p-4 text-center hover:border-purple-500 transition-colors"
+        >
+          <Package className="h-5 w-5 mx-auto mb-1 text-purple-600" />
+          <div className="text-3xl font-bold text-purple-700">{data.submitted}</div>
+          <div className="text-xs font-medium text-purple-600">Submitted</div>
+        </Link>
+
+        <Link
+          href="/solicitations?filter=all_unsourced"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-center hover:border-amber-500 transition-colors"
+        >
+          <AlertTriangle className="h-5 w-5 mx-auto mb-1 text-amber-600" />
+          <div className="text-3xl font-bold text-amber-700">{data.noSource}</div>
+          <div className="text-xs font-medium text-amber-600">No Source</div>
+        </Link>
+
+        <Link
+          href="/solicitations?filter=all"
+          className="rounded-xl border border-card-border bg-card-bg p-4 text-center hover:border-accent transition-colors"
+        >
+          <Clock className="h-5 w-5 mx-auto mb-1 text-muted" />
+          <div className="text-3xl font-bold">{data.total}</div>
+          <div className="text-xs font-medium text-muted">Total</div>
+        </Link>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Hot FSCs */}
-        <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
+      {/* Top Sourceable by Value */}
+      {data.topByValue.length > 0 && (
+        <div className="rounded-xl border border-card-border bg-card-bg shadow-sm mb-6">
           <div className="px-6 py-4 border-b border-card-border flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Hot FSC Categories</h2>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-green-600" />
+              <h2 className="text-lg font-semibold">Top Sourceable — Highest Value</h2>
+            </div>
             <Link
-              href="/analytics"
+              href="/solicitations?filter=sourceable&sort=value"
               className="text-sm text-accent hover:text-accent-hover font-medium"
             >
-              View Heatmap
+              View All →
             </Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-card-border text-left text-muted">
-                  <th className="px-6 py-3 font-medium">FSC</th>
-                  <th className="px-6 py-3 font-medium text-right">Last Month</th>
-                  <th className="px-6 py-3 font-medium text-right">Last 6mo</th>
-                  <th className="px-6 py-3 font-medium text-right">All Time</th>
+                  <th className="px-4 py-3 font-medium">NSN</th>
+                  <th className="px-4 py-3 font-medium">Item</th>
+                  <th className="px-4 py-3 font-medium text-right">Qty</th>
+                  <th className="px-4 py-3 font-medium text-right">Cost</th>
+                  <th className="px-4 py-3 font-medium text-right">Suggested</th>
+                  <th className="px-4 py-3 font-medium text-right">Margin</th>
+                  <th className="px-4 py-3 font-medium text-right">Potential Value</th>
+                  <th className="px-4 py-3 font-medium">Due</th>
                 </tr>
               </thead>
               <tbody>
-                {data.topHotFSCs.map((f) => (
-                  <tr
-                    key={f.fsc_code}
-                    className="border-b border-card-border last:border-0 hover:bg-gray-50"
-                  >
-                    <td className="px-6 py-3 font-mono font-medium">
-                      {f.fsc_code}
+                {data.topByValue.map((s) => (
+                  <tr key={s.id} className="border-b border-card-border last:border-0 hover:bg-green-50/50">
+                    <td className="px-4 py-2 font-mono text-xs text-accent">{s.nsn}</td>
+                    <td className="px-4 py-2">
+                      <div className="truncate max-w-[200px]">{s.nomenclature || "—"}</div>
+                      {s.cost_source && <div className="text-[10px] text-muted">{s.cost_source}</div>}
                     </td>
-                    <td className="px-6 py-3 text-right font-mono">
-                      {f.bids_last_month.toLocaleString()}
+                    <td className="px-4 py-2 text-right">{s.quantity}</td>
+                    <td className="px-4 py-2 text-right font-mono text-muted">
+                      {s.our_cost ? `$${s.our_cost.toFixed(2)}` : "—"}
                     </td>
-                    <td className="px-6 py-3 text-right font-mono text-muted">
-                      {f.bids_last_6_months.toLocaleString()}
+                    <td className="px-4 py-2 text-right font-mono font-medium text-green-600">
+                      ${s.suggested_price?.toFixed(2)}
                     </td>
-                    <td className="px-6 py-3 text-right font-mono text-muted">
-                      {f.total_bids.toLocaleString()}
+                    <td className="px-4 py-2 text-right">
+                      {s.margin_pct !== null ? (
+                        <span className={`font-medium ${s.margin_pct >= 20 ? "text-green-600" : s.margin_pct >= 10 ? "text-yellow-600" : "text-red-600"}`}>
+                          {s.margin_pct}%
+                        </span>
+                      ) : "—"}
                     </td>
+                    <td className="px-4 py-2 text-right font-mono font-bold">
+                      ${s.potential_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-muted whitespace-nowrap">{s.return_by_date}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
-
-        {/* Recent Awards */}
-        <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
-          <div className="px-6 py-4 border-b border-card-border flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Recent Awards</h2>
-            <Link
-              href="/orders"
-              className="text-sm text-accent hover:text-accent-hover font-medium"
-            >
-              View All
-            </Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-card-border text-left text-muted">
-                  <th className="px-6 py-3 font-medium">Item</th>
-                  <th className="px-6 py-3 font-medium text-right">Price</th>
-                  <th className="px-6 py-3 font-medium text-right">Qty</th>
-                  <th className="px-6 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentAwards.map((a) => (
-                  <tr
-                    key={a.id}
-                    className="border-b border-card-border last:border-0 hover:bg-gray-50"
-                  >
-                    <td className="px-6 py-3">
-                      <div className="truncate max-w-[200px]" title={a.description}>
-                        {a.description || "—"}
-                      </div>
-                      <div className="text-xs text-muted font-mono">
-                        {a.fsc}-{a.niin}
-                      </div>
-                    </td>
-                    <td className="px-6 py-3 text-right font-mono">
-                      ${a.unit_price?.toFixed(2)}
-                    </td>
-                    <td className="px-6 py-3 text-right">{a.quantity}</td>
-                    <td className="px-6 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                          a.ship_status === "Shipped"
-                            ? "bg-green-100 text-green-700"
-                            : a.ship_status === "Closed"
-                              ? "bg-gray-100 text-gray-600"
-                              : "bg-blue-100 text-blue-700"
-                        }`}
-                      >
-                        {a.ship_status || "—"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Expansion Opportunities */}
-      <div className="mt-6 rounded-xl border border-card-border bg-card-bg shadow-sm">
-        <div className="px-6 py-4 border-b border-card-border flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Top Expansion Opportunities</h2>
-          <span className="text-sm text-muted">
-            {data.unbidFSCs} FSCs with solicitations Abe isn't bidding on
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-card-border text-left text-muted">
-                <th className="px-6 py-3 font-medium">FSC</th>
-                <th className="px-6 py-3 font-medium text-right">Sols (6mo)</th>
-                <th className="px-6 py-3 font-medium text-right">Historical Bids</th>
-                <th className="px-6 py-3 font-medium text-right">All-time Sols</th>
-                <th className="px-6 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topExpansion.map((e) => (
-                <tr
-                  key={e.fsc_code}
-                  className="border-b border-card-border last:border-0 hover:bg-gray-50"
-                >
-                  <td className="px-6 py-3 font-mono font-medium">{e.fsc_code}</td>
-                  <td className="px-6 py-3 text-right font-mono">
-                    {e.sols_last_6mo?.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-3 text-right font-mono text-muted">
-                    {e.bids_placed?.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-3 text-right font-mono text-muted">
-                    {e.solicitations_received?.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        e.bids_placed > 0
-                          ? "bg-yellow-100 text-yellow-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {e.bids_placed > 0 ? "DROPPED" : "NEVER BID"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
 
       {/* Quick Links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-        <Link
-          href="/analytics"
-          className="flex items-center gap-3 rounded-xl border border-card-border bg-card-bg p-4 hover:border-accent transition-colors"
-        >
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Link href="/solicitations" className="flex items-center gap-3 rounded-xl border-2 border-accent/30 bg-accent/5 p-4 hover:border-accent transition-colors">
+          <Zap className="h-5 w-5 text-accent" />
+          <div>
+            <p className="text-sm font-medium">Solicitations</p>
+            <p className="text-xs text-muted">Review, bid, submit</p>
+          </div>
+        </Link>
+        <Link href="/orders" className="flex items-center gap-3 rounded-xl border border-card-border bg-card-bg p-4 hover:border-accent transition-colors">
+          <Package className="h-5 w-5 text-muted" />
+          <div>
+            <p className="text-sm font-medium">Orders</p>
+            <p className="text-xs text-muted">Process & ship</p>
+          </div>
+        </Link>
+        <Link href="/analytics" className="flex items-center gap-3 rounded-xl border border-card-border bg-card-bg p-4 hover:border-accent transition-colors">
           <TrendingUp className="h-5 w-5 text-muted" />
           <div>
             <p className="text-sm font-medium">Analytics</p>
-            <p className="text-xs text-muted">FSC heatmap & win rates</p>
+            <p className="text-xs text-muted">{data.hotFscs} hot FSCs</p>
           </div>
         </Link>
-        <Link
-          href="/orders"
-          className="flex items-center gap-3 rounded-xl border border-card-border bg-card-bg p-4 hover:border-accent transition-colors"
-        >
-          <ShoppingCart className="h-5 w-5 text-muted" />
-          <div>
-            <p className="text-sm font-medium">Awards</p>
-            <p className="text-xs text-muted">5,000 recent orders</p>
-          </div>
-        </Link>
-        <Link
-          href="/solicitations"
-          className="flex items-center gap-3 rounded-xl border border-card-border bg-card-bg p-4 hover:border-accent transition-colors"
-        >
-          <FileSearch className="h-5 w-5 text-muted" />
-          <div>
-            <p className="text-sm font-medium">Solicitations</p>
-            <p className="text-xs text-muted">Bid review & pricing</p>
-          </div>
-        </Link>
-        <Link
-          href="/settings"
-          className="flex items-center gap-3 rounded-xl border border-card-border bg-card-bg p-4 hover:border-accent transition-colors"
-        >
-          <Database className="h-5 w-5 text-muted" />
+        <Link href="/settings" className="flex items-center gap-3 rounded-xl border border-card-border bg-card-bg p-4 hover:border-accent transition-colors">
+          <Clock className="h-5 w-5 text-muted" />
           <div>
             <p className="text-sm font-medium">Settings</p>
-            <p className="text-xs text-muted">Data connections</p>
+            <p className="text-xs text-muted">Data sources</p>
           </div>
         </Link>
       </div>

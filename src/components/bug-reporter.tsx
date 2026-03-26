@@ -240,7 +240,7 @@ export function BugReporter() {
       <button
         onClick={startCapture}
         title="Report a Bug"
-        className="fixed bottom-5 right-5 z-[99998] w-14 h-14 bg-white rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center border-0 cursor-pointer"
+        className="fixed bottom-5 right-5 z-[99998] w-14 h-14 bg-white rounded-full shadow-xl hover:scale-110 transition-transform flex items-center justify-center border border-gray-200 cursor-pointer"
       >
         <svg
           viewBox="0 0 100 100"
