@@ -79,13 +79,13 @@ export function AwardsList({
     if (dateFrom) {
       items = items.filter((a) => {
         if (!a.award_date) return false;
-        return new Date(a.award_date) >= new Date(dateFrom);
+        return a.award_date.slice(0, 10) >= dateFrom;
       });
     }
     if (dateTo) {
       items = items.filter((a) => {
         if (!a.award_date) return false;
-        return new Date(a.award_date) <= new Date(dateTo + "T23:59:59");
+        return a.award_date.slice(0, 10) <= dateTo;
       });
     }
 
@@ -233,7 +233,7 @@ export function AwardsList({
             <div>
               <label className="text-xs text-muted block mb-1">From</label>
               <input
-                type="datetime-local"
+                type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
                 className="rounded-lg border border-card-border px-3 py-1.5 text-sm"
@@ -242,7 +242,7 @@ export function AwardsList({
             <div>
               <label className="text-xs text-muted block mb-1">To</label>
               <input
-                type="datetime-local"
+                type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
                 className="rounded-lg border border-card-border px-3 py-1.5 text-sm"

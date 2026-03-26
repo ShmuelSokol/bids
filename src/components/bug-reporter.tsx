@@ -21,9 +21,9 @@ export function BugReporter() {
   const undoStackRef = useRef<ImageData[]>([]);
   const baseImageRef = useRef<HTMLImageElement | null>(null);
 
-  // Load screenshot into canvas when screenshot changes (NOT on open toggle)
+  // Load screenshot into canvas when screenshot changes OR markup activates
   useEffect(() => {
-    if (!screenshot || !canvasRef.current) return;
+    if (!screenshot || !markupActive || !canvasRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -39,7 +39,7 @@ export function BugReporter() {
       undoStackRef.current = [ctx.getImageData(0, 0, canvas.width, canvas.height)];
     };
     img.src = screenshot;
-  }, [screenshot]);
+  }, [screenshot, markupActive]);
 
   const startCapture = useCallback(async () => {
     setSuccess(null);
@@ -308,6 +308,8 @@ export function BugReporter() {
       const data = await res.json();
       if (data.success) {
         setSuccess({ number: data.issue_number, url: data.issue_url });
+        // Trigger notification bar to refresh immediately
+        window.dispatchEvent(new CustomEvent("bug-submitted"));
         setTimeout(() => { setOpen(false); setSuccess(null); setScreenshot(null); }, 3000);
       }
     } catch (err) {
