@@ -23,11 +23,17 @@ async function getData() {
 
   // Two fast queries instead of paginating 14K rows
   const [sourceableItems, recentItems, decisions, liveBids, lastSync] = await Promise.all([
-    // Sourceable items — 2 pages to cover all 1.3K
+    // Sourceable items — 2 parallel range queries
     Promise.all([
-      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(0, 999).then((r: any) => r.data || []),
-      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(1000, 1999).then((r: any) => r.data || []),
-    ]).then(([a, b]) => [...a, ...b]),
+      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(0, 999),
+      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(1000, 1999),
+    ]).then(([a, b]) => {
+      const items = [...(a.data || []), ...(b.data || [])];
+      if (a.error) console.error("Supabase sourceable p1 error:", a.error.message);
+      if (b.error) console.error("Supabase sourceable p2 error:", b.error.message);
+      console.log(`Loaded ${items.length} sourceable items`);
+      return items;
+    }),
     // Recent unsourceable (last 30 days, for search)
     supabase.from("dibbs_solicitations").select(cols)
       .eq("is_sourceable", false)
