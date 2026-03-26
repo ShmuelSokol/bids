@@ -19,16 +19,17 @@ async function paginateAll(supabase: any, table: string, select: string, options
 async function getData() {
   const supabase = createServiceClient();
 
-  // Load sourceable + recent items (not all 14K — Railway times out)
-  // Sourceable items (~1.3K) + items with bid decisions + live bid matches
+  const cols = "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count";
+
+  // Two fast queries instead of paginating 14K rows
   const [sourceableItems, recentItems, decisions, liveBids, lastSync] = await Promise.all([
-    paginateAll(supabase, "dibbs_solicitations",
-      "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count",
-      { order: "scraped_at" }
-    ).then((all: any[]) => all.filter((s: any) => s.is_sourceable)),
-    // Recent unsourceable items (last 30 days for search)
-    supabase.from("dibbs_solicitations")
-      .select("id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count")
+    // Sourceable items — 2 pages to cover all 1.3K
+    Promise.all([
+      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(0, 999).then((r: any) => r.data || []),
+      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(1000, 1999).then((r: any) => r.data || []),
+    ]).then(([a, b]) => [...a, ...b]),
+    // Recent unsourceable (last 30 days, for search)
+    supabase.from("dibbs_solicitations").select(cols)
       .eq("is_sourceable", false)
       .gte("scraped_at", new Date(Date.now() - 30 * 86400000).toISOString())
       .order("scraped_at", { ascending: false })
