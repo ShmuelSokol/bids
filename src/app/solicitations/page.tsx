@@ -22,7 +22,7 @@ async function getData() {
   const cols = "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, data_source, competitor_cage, award_count";
 
   // Two fast queries instead of paginating 14K rows
-  const [sourceableItems, recentItems, decisions, liveBids, lastSync] = await Promise.all([
+  const [sourceableItems, recentItems, decisions, liveBids, lastSync, nsnMatches] = await Promise.all([
     // Sourceable items — 2 parallel range queries
     Promise.all([
       supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(0, 999),
@@ -44,10 +44,18 @@ async function getData() {
     supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
     supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
+    // NSN matches for unsourceable items
+    supabase.from("nsn_matches").select("nsn, match_type, confidence, matched_part_number, matched_description, matched_source").limit(1000).then((r: any) => r.data || []),
   ]);
 
   // Merge sourceable + recent unsourceable
   const solicitations = [...sourceableItems, ...recentItems];
+
+  // Build match lookup
+  const matchByNsn = new Map<string, any>();
+  for (const m of nsnMatches) {
+    if (!matchByNsn.has(m.nsn) || m.confidence === "HIGH") matchByNsn.set(m.nsn, m);
+  }
 
   const liveBidsBySol = new Set(liveBids.map((lb: any) => lb.solicitation_number?.trim()).filter(Boolean));
   const decisionMap: Record<string, any> = {};
@@ -63,6 +71,7 @@ async function getData() {
       bid_comment: decision?.comment || null,
       decided_by: decision?.decided_by || null,
       already_bid: s.already_bid || bidToday,
+      nsn_match: matchByNsn.get(s.nsn) || null,
     };
   });
 

@@ -113,8 +113,10 @@ async function main() {
     console.log(`  Part file not ready: ${e.message}`);
   }
 
-  // Step 3: Process IDENTIFICATION and combine with management + part data
+  // Step 3: Process IDENTIFICATION — save ALL NIINs with whatever data we have
+  // FSC comes from matching against existing solicitations or set to empty
   console.log("\nStep 3: Processing FLIS_IDENTIFICATION (16.9M NIINs)...");
+  console.log("  (Saving NIINs with management prices + part numbers, FSC determined later)");
 
   await processFile("C:/tmp/fullexport-FLIS_IDENTIFICATION.csv", (headers, row) => {
     const get = (name: string) => row[headers.indexOf(name)] || "";
@@ -123,10 +125,13 @@ async function main() {
 
     const mgmt = mgmtMap.get(niin);
     const part = partMap.get(niin);
-    const fsc = mgmt?.fsc || "";
-    if (!fsc) return null; // Skip NIINs without FSC
 
-    const nsn = `${fsc}-${niin.substring(0, 2)}-${niin.substring(2, 5)}-${niin.substring(5, 9)}`;
+    // Skip if no useful data at all
+    if (!mgmt && !part) return null;
+
+    const formattedNiin = `${niin.substring(0, 2)}-${niin.substring(2, 5)}-${niin.substring(5, 9)}`;
+    // Use NIIN as NSN key (without FSC prefix) — will be matched later
+    const nsn = `0000-${formattedNiin}`; // placeholder FSC
 
     return {
       nsn,

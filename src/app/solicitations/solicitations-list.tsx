@@ -912,6 +912,15 @@ export function SolicitationsList({
                             {s.data_source === "lamlinks" && (
                               <span className="text-[9px] px-1 rounded bg-cyan-50 text-cyan-700 font-medium">LL</span>
                             )}
+                            {(s as any).nsn_match && (
+                              <span className={`text-[9px] px-1 rounded font-medium ${
+                                (s as any).nsn_match.confidence === "HIGH" ? "bg-green-100 text-green-700" :
+                                (s as any).nsn_match.confidence === "MEDIUM" ? "bg-yellow-100 text-yellow-700" :
+                                "bg-gray-100 text-gray-600"
+                              }`} title={`${(s as any).nsn_match.match_type}: ${(s as any).nsn_match.matched_part_number} — ${(s as any).nsn_match.matched_description}`}>
+                                {(s as any).nsn_match.confidence === "HIGH" ? "P/N Match" : "~Match"}
+                              </span>
+                            )}
                             {(s.award_count ?? 0) > 0 && (
                               <span className="text-[9px] px-1 rounded bg-orange-50 text-orange-700" title={s.competitor_cage || ""}>{s.award_count} competitors</span>
                             )}
