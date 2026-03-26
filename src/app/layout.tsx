@@ -53,7 +53,10 @@ export default async function RootLayout({
     redirect("/login/set-password");
   }
 
-  const showChrome = isLoggedIn && !currentUser?.profile?.must_reset_password;
+  // Always show sidebar/bug reporter on non-login pages
+  // The middleware handles auth — if user got past middleware, they're logged in
+  const isLoginRoute = pathname.includes("/login");
+  const showChrome = !isLoginRoute;
 
   return (
     <html

@@ -73,10 +73,29 @@ export async function POST() {
     }
   } catch {}
 
+  // Load active LamLinks FSCs (hot + warm)
+  const activeLLFscs = new Set<string>();
+  const { data: heatmap } = await supabase
+    .from("fsc_heatmap")
+    .select("fsc_code")
+    .in("bucket", ["hot", "warm"]);
+  (heatmap || []).forEach((h) => activeLLFscs.add(h.fsc_code));
+
+  // Load item weights from awards for shipping estimate
+  const { data: weightData } = await supabase
+    .from("awards")
+    .select("fsc, niin, fob")
+    .limit(5000);
+  const fobByNsn = new Map<string, string>();
+  for (const w of weightData || []) {
+    const nsn = `${w.fsc}-${w.niin}`;
+    if (w.fob && !fobByNsn.has(nsn)) fobByNsn.set(nsn, w.fob);
+  }
+
   // Get unenriched solicitations
   const { data: solicitations } = await supabase
     .from("dibbs_solicitations")
-    .select("id, nsn, nomenclature, quantity")
+    .select("id, nsn, nomenclature, quantity, fsc")
     .eq("is_sourceable", false);
 
   if (!solicitations || solicitations.length === 0) {
@@ -137,6 +156,31 @@ export async function POST() {
         ? Math.round(((suggestedPrice - cost) / suggestedPrice) * 100)
         : null;
 
+    // Channel: lamlinks if FSC is active in LL, dibbs_only if not
+    const fsc = sol.fsc || nsn.slice(0, 4);
+    const channel = activeLLFscs.has(fsc) ? "lamlinks" : "dibbs_only";
+
+    // FOB from award history
+    const fob = fobByNsn.get(nsn) || null;
+
+    // Estimated shipping (FOB Dest = we pay, rough estimate based on price bracket)
+    // Average shipping: <$25=~$5, $25-100=~$8, $100-500=~$12, $500+=~$20
+    let estShipping: number | null = null;
+    if (fob === "D" && suggestedPrice) {
+      if (suggestedPrice < 25) estShipping = 5;
+      else if (suggestedPrice < 100) estShipping = 8;
+      else if (suggestedPrice < 500) estShipping = 12;
+      else estShipping = 20;
+    }
+
+    // Adjusted margin (subtract shipping from profit)
+    const adjMarginPct =
+      suggestedPrice && cost && cost > 0 && estShipping !== null
+        ? Math.round(((suggestedPrice - cost - estShipping) / suggestedPrice) * 100)
+        : marginPct;
+
+    const potentialValue = suggestedPrice ? suggestedPrice * (sol.quantity || 1) : null;
+
     await supabase
       .from("dibbs_solicitations")
       .update({
@@ -145,9 +189,13 @@ export async function POST() {
         source_item: nsn,
         suggested_price: suggestedPrice,
         our_cost: cost,
-        margin_pct: marginPct,
+        margin_pct: adjMarginPct,
         cost_source: costSource,
         price_source: priceSource,
+        channel,
+        fob,
+        est_shipping: estShipping,
+        potential_value: potentialValue,
       })
       .eq("id", sol.id);
 

@@ -35,6 +35,10 @@ interface Solicitation {
   margin_pct: number | null;
   cost_source: string | null;
   price_source: string | null;
+  channel: string | null;
+  fob: string | null;
+  est_shipping: number | null;
+  potential_value: number | null;
   bid_status: string | null;
   final_price: number | null;
   bid_comment: string | null;
@@ -370,9 +374,10 @@ export function SolicitationsList({
                 <th className="px-3 py-2 text-right"><SortHeader field="price">Suggested</SortHeader></th>
                 <th className="px-3 py-2 text-right"><SortHeader field="margin">Margin</SortHeader></th>
                 <th className="px-3 py-2 text-right"><SortHeader field="value">Pot. Value</SortHeader></th>
+                <th className="px-3 py-2 font-medium">FOB</th>
                 <th className="px-3 py-2"><SortHeader field="due">Due</SortHeader></th>
-                <th className="px-3 py-2 font-medium">Source</th>
-                <th className="px-3 py-2 font-medium w-24"></th>
+                <th className="px-3 py-2 font-medium">Channel</th>
+                <th className="px-3 py-2 font-medium w-20"></th>
               </tr>
             </thead>
             <tbody>
@@ -428,10 +433,13 @@ export function SolicitationsList({
                         {s.our_cost ? `$${s.our_cost.toFixed(2)}` : "—"}
                         {s.cost_source && <div className="text-[9px] text-muted/60 truncate max-w-[80px]">{s.cost_source}</div>}
                       </td>
-                      <td className="px-3 py-2 text-right font-mono font-medium text-green-600">
+                      <td className="px-3 py-2 text-right font-mono font-medium text-green-600" title={s.price_source || ""}>
                         {s.bid_status === "quoted" || s.bid_status === "submitted"
                           ? `$${(s.final_price || 0).toFixed(2)}`
                           : s.suggested_price ? `$${s.suggested_price.toFixed(2)}` : "—"}
+                        {s.price_source && !s.bid_status && (
+                          <div className="text-[9px] text-muted/60 font-normal truncate max-w-[100px]">{s.price_source}</div>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right">
                         {s.margin_pct !== null ? (
@@ -443,9 +451,27 @@ export function SolicitationsList({
                       <td className="px-3 py-2 text-right font-mono text-xs font-bold">
                         {potValue > 0 ? `$${potValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
                       </td>
+                      <td className="px-3 py-2 text-center">
+                        {s.fob ? (
+                          <span className={`text-[10px] font-medium px-1 rounded ${s.fob === "D" ? "bg-blue-50 text-blue-700" : "bg-gray-50 text-gray-600"}`}>
+                            {s.fob === "D" ? "Dest" : "Orig"}
+                          </span>
+                        ) : "—"}
+                        {s.est_shipping && s.fob === "D" && (
+                          <div className="text-[9px] text-muted">~${s.est_shipping} ship</div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">{s.return_by_date}</td>
-                      <td className="px-3 py-2 text-[10px] text-muted">
-                        {s.source === "ax" ? "AX" : s.source === "masterdb" ? "MDB" : "—"}
+                      <td className="px-3 py-2">
+                        {s.channel === "dibbs_only" ? (
+                          <span className="text-[10px] px-1 rounded bg-orange-100 text-orange-700 font-medium" title="FSC not active in LamLinks — found via DIBBS scrape">
+                            DIBBS only
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-1 rounded bg-gray-50 text-gray-500">
+                            {s.source === "ax" ? "AX" : s.source === "masterdb" ? "MDB" : "LL"}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         {s.is_sourceable && !s.bid_status && !isEditing && (
@@ -465,7 +491,7 @@ export function SolicitationsList({
                     {/* Inline edit row */}
                     {isEditing && (
                       <tr key={`edit-${s.id}`} className="border-b border-card-border bg-green-50/30">
-                        <td colSpan={filter === "quoted" ? 11 : 10} className="px-3 py-2">
+                        <td colSpan={filter === "quoted" ? 12 : 11} className="px-3 py-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-muted">Price:</span>
@@ -498,7 +524,7 @@ export function SolicitationsList({
                     {/* Bid history expansion */}
                     {expandedNsn === s.nsn && history.length > 0 && (
                       <tr key={`hist-${s.id}`} className="border-b border-card-border bg-blue-50/20">
-                        <td colSpan={filter === "quoted" ? 11 : 10} className="px-3 py-2">
+                        <td colSpan={filter === "quoted" ? 12 : 11} className="px-3 py-2">
                           <div className="text-xs font-medium text-muted mb-1">
                             Award History — {history.length} prior awards for {s.nsn}
                           </div>
