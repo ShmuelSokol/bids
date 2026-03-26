@@ -13,7 +13,7 @@ export async function GET() {
       `https://api.github.com/repos/${OWNER}/${REPO}/issues?state=all&per_page=20&sort=created&direction=desc`,
       {
         headers: { Accept: "application/vnd.github.v3+json" },
-        next: { revalidate: 120 }, // cache 2 minutes
+        cache: "no-store", // always fresh — bug submissions need instant visibility
       }
     );
 
@@ -35,7 +35,7 @@ export async function GET() {
               `https://api.github.com/repos/${OWNER}/${REPO}/issues/${issue.number}/comments?per_page=5`,
               {
                 headers: { Accept: "application/vnd.github.v3+json" },
-                next: { revalidate: 120 },
+                cache: "no-store",
               }
             );
             if (commentsRes.ok) {
