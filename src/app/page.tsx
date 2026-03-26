@@ -88,10 +88,10 @@ export default async function Dashboard() {
 
       {/* Total Potential Value */}
       {data.totalPotentialValue > 0 && (
-        <div className="mb-4 rounded-xl border-2 border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 p-5 flex items-center justify-between">
+        <Link href="/solicitations?filter=sourceable&sort=value" className="block mb-4 rounded-xl border-2 border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 p-5 flex items-center justify-between hover:border-green-500 transition-colors">
           <div>
             <div className="text-sm font-medium text-green-700">Total Open Bid Potential</div>
-            <div className="text-xs text-green-600 mt-0.5">{data.sourceable} sourceable solicitations ready to bid on</div>
+            <div className="text-xs text-green-600 mt-0.5">{data.sourceable} sourceable solicitations ready to bid on →</div>
           </div>
           <div className="text-3xl md:text-4xl font-bold font-mono text-green-700">
             ${data.totalPotentialValue >= 1e6
@@ -100,7 +100,7 @@ export default async function Dashboard() {
                 ? (data.totalPotentialValue / 1e3).toFixed(1) + "K"
                 : data.totalPotentialValue.toFixed(2)}
           </div>
-        </div>
+        </Link>
       )}
 
       {/* Solicitation Pipeline */}
