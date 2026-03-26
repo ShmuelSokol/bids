@@ -82,7 +82,7 @@ export default async function Dashboard() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">DIBS Dashboard</h1>
         <p className="text-muted mt-1">
-          ERG Supply (CAGE 0AG09) — Government Bidding Intelligence
+          Ever Ready First Aid (CAGE 0AG09) — Government Bidding Intelligence
         </p>
       </div>
 

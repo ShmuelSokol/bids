@@ -103,7 +103,7 @@ export default function LoginPage() {
             >
               Forgot password?
             </Link>
-            <span className="text-muted">CAGE 0AG09 / ERG Supply</span>
+            <span className="text-muted">CAGE 0AG09 / Ever Ready First Aid</span>
           </div>
         </form>
       </div>

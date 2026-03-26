@@ -22,10 +22,10 @@ export function BugReporter() {
     setMarkupMode(false);
     setScreenshot(null);
     setCapturing(true);
-    // HIDE modal for clean screenshot (ERG Supply pattern)
+    // HIDE modal for clean screenshot (Ever Ready First Aid pattern)
     setOpen(false);
 
-    // ERG Supply proven pattern: hide modal, capture body, show modal with result
+    // Ever Ready First Aid proven pattern: hide modal, capture body, show modal with result
     await new Promise((r) => setTimeout(r, 200));
 
     try {
@@ -45,7 +45,7 @@ export function BugReporter() {
         allowTaint: false,
         imageTimeout: 5000,
         onclone: (clonedDoc: Document) => {
-          // Hide cross-origin images (same as ERG Supply)
+          // Hide cross-origin images (same as Ever Ready First Aid)
           clonedDoc.querySelectorAll("img").forEach((img) => {
             if (!img.src || img.src.startsWith("data:") || img.src.startsWith(window.location.origin)) return;
             img.style.visibility = "hidden";

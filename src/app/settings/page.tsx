@@ -20,7 +20,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-muted mb-1">Company Name</label>
-              <input type="text" defaultValue="ERG Supply" className="w-full rounded-lg border border-card-border px-3 py-2 text-sm" />
+              <input type="text" defaultValue="Ever Ready First Aid" className="w-full rounded-lg border border-card-border px-3 py-2 text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium text-muted mb-1">SAM.gov Registration</label>

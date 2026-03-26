@@ -39,11 +39,11 @@ const suppliers = [
 
 const bidHistory = [
   { date: "2026-02-26", winner: "Midland Scientific", cage: "MDS01", price: 21.10, ours: 23.35, qty: 1, won: false, dest: "San Diego, CA" },
-  { date: "2026-01-10", winner: "ERG Supply", cage: "0AG09", price: 23.35, ours: 23.35, qty: 2, won: true, dest: "Norfolk, VA" },
-  { date: "2025-11-20", winner: "ERG Supply", cage: "0AG09", price: 23.44, ours: 23.44, qty: 1, won: true, dest: "New Cumberland, PA" },
-  { date: "2025-09-15", winner: "ERG Supply", cage: "0AG09", price: 21.95, ours: 21.95, qty: 2, won: true, dest: "Fort Liberty, NC" },
-  { date: "2025-06-01", winner: "ERG Supply", cage: "0AG09", price: 20.50, ours: 20.50, qty: 3, won: true, dest: "Norfolk, VA" },
-  { date: "2025-03-12", winner: "ERG Supply", cage: "0AG09", price: 19.99, ours: 19.99, qty: 1, won: true, dest: "Fort Drum, NY" },
+  { date: "2026-01-10", winner: "Ever Ready First Aid", cage: "0AG09", price: 23.35, ours: 23.35, qty: 2, won: true, dest: "Norfolk, VA" },
+  { date: "2025-11-20", winner: "Ever Ready First Aid", cage: "0AG09", price: 23.44, ours: 23.44, qty: 1, won: true, dest: "New Cumberland, PA" },
+  { date: "2025-09-15", winner: "Ever Ready First Aid", cage: "0AG09", price: 21.95, ours: 21.95, qty: 2, won: true, dest: "Fort Liberty, NC" },
+  { date: "2025-06-01", winner: "Ever Ready First Aid", cage: "0AG09", price: 20.50, ours: 20.50, qty: 3, won: true, dest: "Norfolk, VA" },
+  { date: "2025-03-12", winner: "Ever Ready First Aid", cage: "0AG09", price: 19.99, ours: 19.99, qty: 1, won: true, dest: "Fort Drum, NY" },
 ];
 
 const competitorActivity = [

@@ -68,7 +68,7 @@ If there are any issues or additional documentation needed, please let me know a
 Thank you for your assistance.
 
 Best regards,
-ERG Supply
+Ever Ready First Aid
 CAGE Code: 0AG09
 `;
 
@@ -133,7 +133,7 @@ Proof of delivery documentation is available for all shipments upon request.
 Thank you for your assistance.
 
 Best regards,
-ERG Supply
+Ever Ready First Aid
 CAGE Code: 0AG09
 `;
 
