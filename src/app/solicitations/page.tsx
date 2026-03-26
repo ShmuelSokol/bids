@@ -54,7 +54,30 @@ async function getData() {
     if (data.length < 1000) break;
     bidPage++;
   }
+  // Also load today's live bids
+  const { data: liveBids } = await supabase
+    .from("abe_bids_live")
+    .select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number, bid_status, item_desc")
+    .order("bid_time", { ascending: false });
+
+  // Merge live bids into abe_bids format
+  for (const lb of liveBids || []) {
+    allAbeBids.push({
+      nsn: lb.nsn,
+      bid_price: lb.bid_price,
+      lead_time_days: lb.lead_days,
+      bid_qty: lb.bid_qty,
+      bid_date: lb.bid_time,
+      fob: lb.fob,
+    });
+  }
   const abeBids = allAbeBids;
+
+  // Build live bid lookup by solicitation number for already_bid detection
+  const liveBidsBySol = new Set<string>();
+  for (const lb of liveBids || []) {
+    if (lb.solicitation_number) liveBidsBySol.add(lb.solicitation_number.trim());
+  }
 
   const decisionMap: Record<string, any> = {};
   for (const d of decisions || []) {
@@ -75,12 +98,15 @@ async function getData() {
     // For unsourced items: estimate value from last award price × qty
     const lastAward = lastAwardByNsn.get(s.nsn);
     const estValue = s.potential_value || (s.suggested_price ? s.suggested_price * (s.quantity || 1) : null) || (lastAward ? lastAward * (s.quantity || 1) : null);
+    // Check if Abe bid on this today (live bids)
+    const bidToday = liveBidsBySol.has(s.solicitation_number?.trim());
     return {
       ...s,
       bid_status: decision?.status || null,
       final_price: decision?.final_price || null,
       bid_comment: decision?.comment || null,
       decided_by: decision?.decided_by || null,
+      already_bid: s.already_bid || bidToday,
       est_value: estValue,
       last_award_price: lastAward || null,
     };
