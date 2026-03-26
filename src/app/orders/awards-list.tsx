@@ -64,6 +64,10 @@ export function AwardsList({
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [showOnlyNew, setShowOnlyNew] = useState(true);
+  const [switchingLine, setSwitchingLine] = useState<{ id: number; nsn: string; currentSupplier: string } | null>(null);
+  const [vendorPrices, setVendorPrices] = useState<any[]>([]);
+  const [loadingVendors, setLoadingVendors] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   const filtered = useMemo(() => {
     let items = awards;
@@ -99,6 +103,39 @@ export function AwardsList({
   function selectDateRange() {
     // Select all visible (filtered) items
     setSelected(new Set(filtered.map((a) => a.id)));
+  }
+
+  async function handleShowSuppliers(lineId: number, nsn: string, currentSupplier: string) {
+    setSwitchingLine({ id: lineId, nsn, currentSupplier });
+    setLoadingVendors(true);
+    try {
+      const res = await fetch(`/api/orders/vendor-prices?nsn=${encodeURIComponent(nsn)}`);
+      const data = await res.json();
+      setVendorPrices(data.vendors || []);
+    } catch {
+      setVendorPrices([]);
+    } finally {
+      setLoadingVendors(false);
+    }
+  }
+
+  async function handleSwitchSupplier(newSupplier: string) {
+    if (!switchingLine) return;
+    setSwitching(true);
+    try {
+      await fetch("/api/orders/switch-supplier", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ line_id: switchingLine.id, new_supplier: newSupplier }),
+      });
+      setMessage(`Moved to ${newSupplier}. Refreshing...`);
+      setSwitchingLine(null);
+      setTimeout(() => window.location.reload(), 1000);
+    } catch {
+      setMessage("Switch failed");
+    } finally {
+      setSwitching(false);
+    }
   }
 
   async function handleGeneratePOs() {
@@ -471,6 +508,7 @@ export function AwardsList({
                         <th className="px-4 py-2 text-left font-medium">
                           Contract
                         </th>
+                        <th className="px-4 py-2 text-left font-medium w-20"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -489,7 +527,7 @@ export function AwardsList({
                             {line.quantity}
                           </td>
                           <td className="px-4 py-1.5 text-right font-mono">
-                            ${line.unit_cost?.toFixed(2) || "—"}
+                            {line.unit_cost ? `$${line.unit_cost.toFixed(2)}` : "—"}
                           </td>
                           <td className="px-4 py-1.5 text-right font-mono">
                             ${line.sell_price?.toFixed(2)}
@@ -512,6 +550,14 @@ export function AwardsList({
                           <td className="px-4 py-1.5 font-mono text-[10px]">
                             {line.contract_number?.slice(0, 20)}
                           </td>
+                          <td className="px-4 py-1.5">
+                            <button
+                              onClick={() => handleShowSuppliers(line.id, line.nsn, po.supplier)}
+                              className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-medium"
+                            >
+                              Switch
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -520,6 +566,70 @@ export function AwardsList({
               </div>
             ))
           )}
+        </div>
+      )}
+      {/* Supplier Switch Modal */}
+      {switchingLine && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setSwitchingLine(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-[500px] max-w-[95vw] max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-card-border">
+              <h3 className="text-lg font-bold">Switch Supplier</h3>
+              <p className="text-xs text-muted mt-1">
+                NSN: {switchingLine.nsn} · Current: {switchingLine.currentSupplier}
+              </p>
+            </div>
+            <div className="p-6">
+              {loadingVendors ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted" />
+                  <span className="ml-2 text-sm text-muted">Loading vendors...</span>
+                </div>
+              ) : vendorPrices.length === 0 ? (
+                <p className="text-sm text-muted text-center py-8">No alternative vendors found for this NSN</p>
+              ) : (
+                <div className="space-y-2">
+                  {vendorPrices.map((v: any, i: number) => (
+                    <div
+                      key={i}
+                      className={`flex items-center justify-between p-3 rounded-lg border ${
+                        v.vendor === switchingLine.currentSupplier
+                          ? "border-green-300 bg-green-50"
+                          : "border-card-border hover:bg-gray-50"
+                      }`}
+                    >
+                      <div>
+                        <div className="font-mono text-sm font-medium">{v.vendor}</div>
+                        <div className="text-xs text-muted mt-0.5">
+                          {v.sources.map((s: any) => (
+                            <span key={s.source} className="mr-3">
+                              {s.source === "recent_po" ? "Last PO" : "Agreement"}:
+                              <span className="font-mono font-medium ml-1">${s.price.toFixed(2)}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {v.vendor === switchingLine.currentSupplier ? (
+                        <span className="text-xs text-green-700 font-medium px-2 py-1 rounded bg-green-100">Current</span>
+                      ) : (
+                        <button
+                          onClick={() => handleSwitchSupplier(v.vendor)}
+                          disabled={switching}
+                          className="text-xs px-3 py-1.5 rounded bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50"
+                        >
+                          {switching ? "Moving..." : "Switch Here"}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-3 border-t border-card-border">
+              <button onClick={() => setSwitchingLine(null)} className="text-sm text-muted hover:text-foreground">
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>
