@@ -598,11 +598,18 @@ export function AwardsList({
                       }`}
                     >
                       <div>
-                        <div className="font-mono text-sm font-medium">{v.vendor}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-medium">{v.vendor}</span>
+                          {v.lastPoDate && (
+                            <span className="text-[10px] text-muted bg-gray-100 px-1 rounded">
+                              Last PO: {new Date(v.lastPoDate).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-muted mt-0.5">
                           {v.sources.map((s: any) => (
                             <span key={s.source} className="mr-3">
-                              {s.source === "recent_po" ? "Last PO" : "Agreement"}:
+                              {s.source === "recent_po" ? "PO Price" : "Agreement"}:
                               <span className="font-mono font-medium ml-1">${s.price.toFixed(2)}</span>
                             </span>
                           ))}
