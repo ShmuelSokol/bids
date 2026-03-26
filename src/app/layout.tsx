@@ -68,8 +68,12 @@ export default async function RootLayout({
     >
       <body className="h-full flex flex-col md:flex-row">
         {showChrome && <Sidebar user={currentUser} />}
-        <div className="flex-1 flex flex-col overflow-auto">
-          {showChrome && <NotificationBar />}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {showChrome && (
+            <div className="flex items-center justify-end px-4 py-1.5 border-b border-gray-100 bg-white shrink-0">
+              <NotificationBar />
+            </div>
+          )}
           <main className="flex-1 overflow-auto">{children}</main>
         </div>
         {showChrome && <BugReporter />}

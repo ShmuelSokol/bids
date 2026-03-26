@@ -10,7 +10,7 @@ const REPO = "bids";
 export async function GET() {
   try {
     const res = await fetch(
-      `https://api.github.com/repos/${OWNER}/${REPO}/issues?state=open&per_page=10&sort=created&direction=desc`,
+      `https://api.github.com/repos/${OWNER}/${REPO}/issues?state=all&per_page=20&sort=created&direction=desc`,
       {
         headers: { Accept: "application/vnd.github.v3+json" },
         next: { revalidate: 120 }, // cache 2 minutes
