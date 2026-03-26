@@ -2,7 +2,7 @@
 
 # DIBS — Government Bidding System
 
-Intelligence layer on top of LamLinks for ERG Supply (CAGE 0AG09). ~$8-9M/year government business, ~500 orders/week.
+Intelligence layer on top of LamLinks for Ever Ready First Aid (CAGE 0AG09). ~$8-9M/year government business, ~500 orders/week.
 
 ## CRITICAL DEPLOYMENT RULES
 - **NEVER add msnodesqlv8, mssql, playwright, or dotenv to package.json** (deps OR devDeps). They crash Railway builds (native compilation fails on Linux). Install locally with `npm install --no-save` only.

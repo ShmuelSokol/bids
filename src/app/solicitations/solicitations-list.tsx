@@ -27,6 +27,7 @@ interface Solicitation {
   return_by_date: string;
   fsc: string;
   set_aside: string;
+  procurement_type: string | null;
   is_sourceable: boolean;
   source: string | null;
   source_item: string | null;
@@ -599,6 +600,9 @@ export function SolicitationsList({
                               <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium" title={`Last bid: $${s.last_bid_price?.toFixed(2)} on ${s.last_bid_date ? new Date(s.last_bid_date).toLocaleDateString() : '?'}`}>
                                 Bid in LL ${s.last_bid_price ? `@$${s.last_bid_price.toFixed(2)}` : ''}
                               </span>
+                            )}
+                            {s.procurement_type && s.procurement_type !== "RFQ" && (
+                              <span className="text-[9px] px-1 rounded bg-indigo-100 text-indigo-700 font-medium">{s.procurement_type}</span>
                             )}
                             {s.set_aside && s.set_aside !== "None" && (
                               <span className="text-[9px] px-1 rounded bg-amber-50 text-amber-700">{s.set_aside}</span>
