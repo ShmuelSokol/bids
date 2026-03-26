@@ -54,24 +54,31 @@ export function BugReporter() {
 
     let captured = false;
 
-    // Method 1: html2canvas
+    // Method 1: html2canvas — capture the full page
     try {
       const html2canvas = (await import("html2canvas")).default;
-      const target = document.querySelector("main") || document.body;
+      // On mobile (< 768px), capture body. On desktop, capture main content.
+      const isMobile = window.innerWidth < 768;
+      const target = isMobile ? document.body : (document.querySelector("main") || document.body);
       const canvas = await html2canvas(target as HTMLElement, {
-        scale: Math.min(window.devicePixelRatio, 2),
+        scale: 1, // fixed scale for consistent output
         logging: false,
         windowWidth: document.documentElement.clientWidth,
         windowHeight: window.innerHeight,
-        width: document.documentElement.clientWidth,
-        height: window.innerHeight,
+        width: target.scrollWidth || document.documentElement.clientWidth,
+        height: Math.min(target.scrollHeight || window.innerHeight, window.innerHeight),
         y: window.scrollY,
         x: 0,
         useCORS: true,
         allowTaint: true,
-        imageTimeout: 3000,
+        imageTimeout: 5000,
         removeContainer: true,
-        ignoreElements: (el: Element) => el.closest("[data-bug-reporter]") !== null,
+        backgroundColor: "#ffffff",
+        ignoreElements: (el: Element) => {
+          // Skip bug reporter + sidebar on mobile captures
+          if (el.closest("[data-bug-reporter]")) return true;
+          return false;
+        },
       });
       if (canvas.width > 10 && canvas.height > 10) {
         setScreenshot(canvas.toDataURL("image/jpeg", 0.85));

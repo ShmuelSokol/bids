@@ -7,6 +7,7 @@ async function getData() {
   const { data: awards } = await supabase
     .from("awards")
     .select("*")
+    .eq("cage", "0AG09")
     .order("award_date", { ascending: false })
     .limit(2000);
 
