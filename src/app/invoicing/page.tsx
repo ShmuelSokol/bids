@@ -6,12 +6,22 @@ async function getData() {
 
   // Awards that have been shipped but not yet invoiced
   // These are awards with po_generated=true (PO created)
-  const { data: awards } = await supabase
-    .from("awards")
-    .select("*")
-    .eq("cage", "0AG09")
-    .order("award_date", { ascending: false })
-    .limit(5000);
+  // Paginate awards past 1K default
+  const allAwards: any[] = [];
+  let awPage = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("awards")
+      .select("*")
+      .eq("cage", "0AG09")
+      .order("award_date", { ascending: false })
+      .range(awPage * 1000, (awPage + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allAwards.push(...data);
+    if (data.length < 1000) break;
+    awPage++;
+  }
+  const awards = allAwards;
 
   // PO lines with cost/sell data
   const { data: poLines } = await supabase

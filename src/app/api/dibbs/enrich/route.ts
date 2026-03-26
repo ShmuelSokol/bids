@@ -40,16 +40,22 @@ export async function POST() {
     costPage++;
   }
 
-  // Load award history for pricing (last award price per NSN)
-  const { data: awards } = await supabase
-    .from("awards")
-    .select("fsc, niin, unit_price")
-    .order("award_date", { ascending: false })
-    .limit(5000);
+  // Load award history for pricing (last award price per NSN) — paginate
   const pricingMap = new Map<string, number>();
-  for (const a of awards || []) {
-    const nsn = `${a.fsc}-${a.niin}`;
-    if (!pricingMap.has(nsn)) pricingMap.set(nsn, a.unit_price);
+  let awardPage = 0;
+  while (true) {
+    const { data: awards } = await supabase
+      .from("awards")
+      .select("fsc, niin, unit_price")
+      .order("award_date", { ascending: false })
+      .range(awardPage * 1000, (awardPage + 1) * 1000 - 1);
+    if (!awards || awards.length === 0) break;
+    for (const a of awards) {
+      const nsn = `${a.fsc}-${a.niin}`;
+      if (!pricingMap.has(nsn)) pricingMap.set(nsn, a.unit_price);
+    }
+    if (awards.length < 1000) break;
+    awardPage++;
   }
 
   // Load Master DB NSNs via API (optional — may timeout)
@@ -94,15 +100,21 @@ export async function POST() {
     .in("bucket", ["hot", "warm"]);
   (heatmap || []).forEach((h) => activeLLFscs.add(h.fsc_code));
 
-  // Load item weights from awards for shipping estimate
-  const { data: weightData } = await supabase
-    .from("awards")
-    .select("fsc, niin, fob")
-    .limit(5000);
+  // Load FOB data from awards — paginate
   const fobByNsn = new Map<string, string>();
-  for (const w of weightData || []) {
-    const nsn = `${w.fsc}-${w.niin}`;
-    if (w.fob && !fobByNsn.has(nsn)) fobByNsn.set(nsn, w.fob);
+  let fobPage = 0;
+  while (true) {
+    const { data: fobData } = await supabase
+      .from("awards")
+      .select("fsc, niin, fob")
+      .range(fobPage * 1000, (fobPage + 1) * 1000 - 1);
+    if (!fobData || fobData.length === 0) break;
+    for (const w of fobData) {
+      const nsn = `${w.fsc}-${w.niin}`;
+      if (w.fob && !fobByNsn.has(nsn)) fobByNsn.set(nsn, w.fob);
+    }
+    if (fobData.length < 1000) break;
+    fobPage++;
   }
 
   // Load Abe's bids by exact solicitation number
