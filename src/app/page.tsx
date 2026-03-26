@@ -99,6 +99,15 @@ async function getData() {
     .select("*", { count: "exact", head: true })
     .eq("bucket", "hot");
 
+  // Abe's live bids today
+  const { data: liveBids } = await supabase
+    .from("abe_bids_live")
+    .select("*")
+    .order("bid_time", { ascending: false });
+
+  const todayBids = liveBids || [];
+  const todayBidValue = todayBids.reduce((s, b) => s + (b.bid_price || 0) * (b.bid_qty || 1), 0);
+
   return {
     total: totalCount || 0,
     sourceable: sourceable.length,
@@ -108,6 +117,8 @@ async function getData() {
     topByValue,
     totalPotentialValue,
     hotFscs: heatmapCount || 0,
+    todayBids,
+    todayBidValue,
   };
 }
 
@@ -252,6 +263,59 @@ export default async function Dashboard() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Abe's Bids Today */}
+      {data.todayBids.length > 0 && (
+        <div className="rounded-xl border-2 border-blue-200 bg-blue-50/30 shadow-sm mb-6">
+          <div className="px-6 py-4 border-b border-blue-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-blue-600" />
+              <h2 className="text-lg font-semibold">Abe&apos;s Bids Today</h2>
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{data.todayBids.length} bids</span>
+              <span className="text-xs text-blue-600">${data.todayBidValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} total value</span>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-blue-200 text-left text-muted">
+                  <th className="px-4 py-2 font-medium">Time</th>
+                  <th className="px-4 py-2 font-medium">NSN</th>
+                  <th className="px-4 py-2 font-medium">Item</th>
+                  <th className="px-4 py-2 font-medium text-right">Price</th>
+                  <th className="px-4 py-2 font-medium text-right">Qty</th>
+                  <th className="px-4 py-2 font-medium text-right">Value</th>
+                  <th className="px-4 py-2 font-medium">Lead</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.todayBids.slice(0, 20).map((b: any, i: number) => (
+                  <tr key={i} className="border-b border-blue-100 last:border-0 hover:bg-blue-50">
+                    <td className="px-4 py-1.5 text-xs text-muted">{b.bid_time ? new Date(b.bid_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}</td>
+                    <td className="px-4 py-1.5 font-mono text-xs text-accent">{b.nsn || "—"}</td>
+                    <td className="px-4 py-1.5 text-xs truncate max-w-[200px]">{b.item_desc || "—"}</td>
+                    <td className="px-4 py-1.5 text-right font-mono text-xs">${(b.bid_price || 0).toFixed(2)}</td>
+                    <td className="px-4 py-1.5 text-right text-xs">{b.bid_qty || 0}</td>
+                    <td className="px-4 py-1.5 text-right font-mono text-xs font-medium text-blue-700">${((b.bid_price || 0) * (b.bid_qty || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                    <td className="px-4 py-1.5 text-xs text-muted">{b.lead_days}d</td>
+                    <td className="px-4 py-1.5">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${b.bid_status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {b.bid_status || "pending"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {data.todayBids.length > 20 && (
+            <div className="px-4 py-2 border-t border-blue-200 text-xs text-blue-600">
+              Showing 20 of {data.todayBids.length} bids
+            </div>
+          )}
         </div>
       )}
 
