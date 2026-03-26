@@ -861,7 +861,7 @@ export function SolicitationsList({
                             {s.procurement_type && s.procurement_type !== "RFQ" && (
                               <span className="text-[9px] px-1 rounded bg-indigo-100 text-indigo-700 font-medium">{s.procurement_type}</span>
                             )}
-                            {s.set_aside && s.set_aside !== "None" && (
+                            {s.set_aside && !["None", "none", "no", "No", "N/A", ""].includes(s.set_aside?.trim()) && (
                               <span className="text-[9px] px-1 rounded bg-amber-50 text-amber-700">{s.set_aside}</span>
                             )}
                             {s.data_source === "lamlinks" && (
