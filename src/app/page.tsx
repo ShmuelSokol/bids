@@ -12,20 +12,25 @@ import {
 async function getData() {
   const supabase = createServiceClient();
 
-  // Load all solicitations (paginate past 1K limit) for accurate counts
-  const allSolicitations: any[] = [];
-  let solPage = 0;
-  while (true) {
-    const { data } = await supabase
-      .from("dibbs_solicitations")
-      .select("nsn, solicitation_number, is_sourceable, already_bid, return_by_date, suggested_price, quantity, nomenclature, fsc, est_value")
-      .range(solPage * 1000, (solPage + 1) * 1000 - 1);
-    if (!data || data.length === 0) break;
-    allSolicitations.push(...data);
-    if (data.length < 1000) break;
-    solPage++;
-  }
-  const solicitations = allSolicitations;
+  // Load only sourceable + open items for dashboard (not all 14K)
+  // This is much faster than loading everything
+  const { data: sourceableItems } = await supabase
+    .from("dibbs_solicitations")
+    .select("*")
+    .eq("is_sourceable", true)
+    .limit(5000);
+
+  // Get total counts efficiently
+  const { count: totalCount } = await supabase
+    .from("dibbs_solicitations")
+    .select("*", { count: "exact", head: true });
+
+  const { count: noSourceCount } = await supabase
+    .from("dibbs_solicitations")
+    .select("*", { count: "exact", head: true })
+    .eq("is_sourceable", false);
+
+  const solicitations = sourceableItems || [];
 
   const { data: decisions } = await supabase
     .from("bid_decisions")
@@ -64,7 +69,7 @@ async function getData() {
     (s) =>
       decisionMap.get(`${s.solicitation_number}_${s.nsn}`) === "submitted"
   );
-  const noSource = all.filter((s) => !s.is_sourceable);
+  const noSource = noSourceCount || 0;
 
   const totalPotentialValue = sourceable.reduce(
     (sum, s) => sum + (s.suggested_price || 0) * (s.quantity || 1),
@@ -86,11 +91,11 @@ async function getData() {
     .eq("bucket", "hot");
 
   return {
-    total: all.length,
+    total: totalCount || 0,
     sourceable: sourceable.length,
     quoted: quoted.length,
     submitted: submitted.length,
-    noSource: noSource.length,
+    noSource: noSource,
     topByValue,
     totalPotentialValue,
     hotFscs: heatmapCount || 0,
