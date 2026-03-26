@@ -19,16 +19,28 @@ async function paginateAll(supabase: any, table: string, select: string, options
 async function getData() {
   const supabase = createServiceClient();
 
-  // All queries in parallel — no cache (unstable_cache breaks on Railway)
-  const [solicitations, decisions, liveBids, lastSync] = await Promise.all([
+  // Load sourceable + recent items (not all 14K — Railway times out)
+  // Sourceable items (~1.3K) + items with bid decisions + live bid matches
+  const [sourceableItems, recentItems, decisions, liveBids, lastSync] = await Promise.all([
     paginateAll(supabase, "dibbs_solicitations",
       "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count",
       { order: "scraped_at" }
-    ),
+    ).then((all: any[]) => all.filter((s: any) => s.is_sourceable)),
+    // Recent unsourceable items (last 30 days for search)
+    supabase.from("dibbs_solicitations")
+      .select("id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count")
+      .eq("is_sourceable", false)
+      .gte("scraped_at", new Date(Date.now() - 30 * 86400000).toISOString())
+      .order("scraped_at", { ascending: false })
+      .limit(1000)
+      .then((r: any) => r.data || []),
     supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
     supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
   ]);
+
+  // Merge sourceable + recent unsourceable
+  const solicitations = [...sourceableItems, ...recentItems];
 
   const liveBidsBySol = new Set(liveBids.map((lb: any) => lb.solicitation_number?.trim()).filter(Boolean));
   const decisionMap: Record<string, any> = {};
