@@ -182,28 +182,39 @@ export function SolicitationsList({
 
   // Check if a sync is already running (survives page refresh)
   useEffect(() => {
+    let pollId: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
     async function checkSyncStatus() {
       try {
         const res = await fetch("/api/dibbs/sync-status");
         const data = await res.json();
-        if (data.running) {
+        if (data.running && !cancelled) {
           setScraping(true);
           setMessage(`Sync in progress (started ${new Date(data.started_at).toLocaleTimeString()})... Waiting for completion.`);
-          // Poll until done
-          const poll = setInterval(async () => {
-            const r = await fetch("/api/dibbs/sync-status");
-            const d = await r.json();
-            if (!d.running) {
-              clearInterval(poll);
-              setScraping(false);
-              setMessage("Sync complete! Refreshing...");
-              setTimeout(() => window.location.reload(), 1500);
-            }
+          pollId = setInterval(async () => {
+            try {
+              const r = await fetch("/api/dibbs/sync-status");
+              const d = await r.json();
+              if (!d.running) {
+                if (pollId) clearInterval(pollId);
+                if (!cancelled) {
+                  setScraping(false);
+                  setMessage("Sync complete! Refreshing...");
+                  setTimeout(() => window.location.reload(), 1500);
+                }
+              }
+            } catch {}
           }, 5000);
         }
       } catch {}
     }
     checkSyncStatus();
+
+    return () => {
+      cancelled = true;
+      if (pollId) clearInterval(pollId);
+    };
   }, []);
 
   async function handleScrapeNow() {

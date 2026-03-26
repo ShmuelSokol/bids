@@ -20,7 +20,7 @@ export function BugReporter() {
   const undoStackRef = useRef<ImageData[]>([]);
   const baseImageRef = useRef<HTMLImageElement | null>(null);
 
-  // Load screenshot into canvas when it changes
+  // Load screenshot into canvas when screenshot changes (NOT on open toggle)
   useEffect(() => {
     if (!screenshot || !canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -29,7 +29,6 @@ export function BugReporter() {
 
     const img = new Image();
     img.onload = () => {
-      // Scale canvas to fit within modal but keep aspect ratio
       const maxW = 800;
       const scale = img.width > maxW ? maxW / img.width : 1;
       canvas.width = img.width * scale;
@@ -39,7 +38,7 @@ export function BugReporter() {
       undoStackRef.current = [ctx.getImageData(0, 0, canvas.width, canvas.height)];
     };
     img.src = screenshot;
-  }, [screenshot, open]);
+  }, [screenshot]);
 
   const startCapture = useCallback(async () => {
     setSuccess(null);
@@ -137,8 +136,16 @@ export function BugReporter() {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    let clientX: number, clientY: number;
+    if ("touches" in e) {
+      // touches is empty on touchEnd — use changedTouches
+      const touch = e.touches[0] || e.changedTouches[0];
+      clientX = touch?.clientX ?? 0;
+      clientY = touch?.clientY ?? 0;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
     return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
   }, []);
 
@@ -175,6 +182,7 @@ export function BugReporter() {
       ctx.lineJoin = "round";
       ctx.moveTo(p.x, p.y);
     }
+    // For shapes: the current top of undoStack is the anchor we restore during drag
   }, [tool, color, getPos]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
