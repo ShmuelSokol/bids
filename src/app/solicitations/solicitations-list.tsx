@@ -231,11 +231,25 @@ export function SolicitationsList({
       // Mark sync as started (persists across refresh)
       await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "start" }), headers: { "Content-Type": "application/json" } });
 
-      const scrapeRes = await fetch("/api/dibbs/scrape-now", { method: "POST" });
-      const scrapeData = await scrapeRes.json();
-      const scraped = scrapeData.count || 0;
+      // Scrape in batches — API does 30 FSCs at a time, auto-continues
+      let totalScraped = 0;
+      let batchNum = 0;
+      let remaining = 999;
 
-      setMessage(`Step 2/3: Found ${scraped} solicitations. Matching NSNs + pricing...`);
+      while (remaining > 0 && batchNum < 10) {
+        batchNum++;
+        setMessage(`Step 1/3: Scraping DIBBS expansion FSCs (batch ${batchNum})...`);
+        const scrapeRes = await fetch("/api/dibbs/scrape-now", { method: "POST" });
+        const scrapeData = await scrapeRes.json();
+        totalScraped += scrapeData.count || 0;
+        remaining = scrapeData.fscs_remaining || 0;
+
+        if (remaining > 0) {
+          setMessage(`Step 1/3: Found ${totalScraped} so far, ${remaining} FSCs remaining...`);
+        }
+      }
+
+      setMessage(`Step 2/3: Found ${totalScraped} from ${batchNum} batches. Matching NSNs + pricing...`);
       setEnriching(true);
       const enrichRes = await fetch("/api/dibbs/enrich", { method: "POST" });
       const enrichData = await enrichRes.json();
@@ -244,7 +258,7 @@ export function SolicitationsList({
       // Mark sync as done
       await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "done" }), headers: { "Content-Type": "application/json" } });
 
-      const parts = [`${scraped} scraped`];
+      const parts = [`${totalScraped} scraped from ${batchNum} batches`];
       if (enrichData.sourceable) parts.push(`${enrichData.sourceable} sourceable`);
       if (enrichData.with_cost_data) parts.push(`${enrichData.with_cost_data} with costs`);
       if (enrichData.already_bid) parts.push(`${enrichData.already_bid} already bid`);

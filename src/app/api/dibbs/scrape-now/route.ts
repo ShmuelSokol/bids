@@ -10,10 +10,7 @@ import { createServiceClient } from "@/lib/supabase-server";
  */
 
 const DIBBS_BASE = "https://www.dibbs.bsm.dla.mil";
-const TOP_FSCS = [
-  "6515", "6505", "6510", "6530", "6550", "6640", "6520",
-  "6630", "6532", "6540", "6545", "4240",
-];
+// FSCs loaded dynamically from fsc_expansion table, minus LamLinks-covered ones
 
 interface RawSolicitation {
   nsn: string;
@@ -62,10 +59,22 @@ export async function POST() {
   const allSolicitations: RawSolicitation[] = [];
   const errors: string[] = [];
 
-  // Check which FSCs are already covered by LamLinks import
+  // Load all expansion FSCs from Supabase
   const supabaseCheck = createServiceClient();
+  let allExpansionFscs: string[] = [];
   let llFscs: string[] = [];
+
   try {
+    // Get all FSCs from expansion table
+    const { data: expRows } = await supabaseCheck
+      .from("fsc_expansion")
+      .select("fsc_code")
+      .limit(500);
+    allExpansionFscs = (expRows || []).map((r: any) => r.fsc_code).filter(Boolean);
+  } catch {}
+
+  try {
+    // Get LamLinks-covered FSCs
     const { data: lastImport } = await supabaseCheck
       .from("sync_log")
       .select("details")
@@ -79,10 +88,38 @@ export async function POST() {
   } catch {}
 
   // Only scrape FSCs NOT already covered by LamLinks
-  const fscsToScrape = TOP_FSCS.filter(fsc => !llFscs.includes(fsc));
-  const skippedFscs = TOP_FSCS.filter(fsc => llFscs.includes(fsc));
+  const llSet = new Set(llFscs);
+  const fscsToScrape = allExpansionFscs.filter(fsc => !llSet.has(fsc));
+  const skippedFscs = allExpansionFscs.filter(fsc => llSet.has(fsc));
 
-  // First, accept consent by fetching the warning page
+  // Limit per call to avoid Railway timeout (30s).
+  // Scrape 30 FSCs per call — UI can call multiple times, or cron handles all.
+  const BATCH_SIZE = 30;
+
+  // Track which FSCs were already scraped today so we don't re-scrape
+  let alreadyScrapedToday: string[] = [];
+  try {
+    const todayStart = new Date(new Date().toDateString()).toISOString();
+    const { data: todayLog } = await supabaseCheck
+      .from("sync_log")
+      .select("details")
+      .eq("action", "scrape")
+      .gte("created_at", todayStart)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    for (const log of todayLog || []) {
+      if (log.details?.fscs_scraped_list) {
+        alreadyScrapedToday.push(...log.details.fscs_scraped_list);
+      }
+    }
+  } catch {}
+
+  const alreadySet = new Set(alreadyScrapedToday);
+  const remainingFscs = fscsToScrape.filter(fsc => !alreadySet.has(fsc));
+  const batchFscs = remainingFscs.slice(0, BATCH_SIZE);
+  const moreRemaining = remainingFscs.length - batchFscs.length;
+
+  // Accept consent
   try {
     await fetch(`${DIBBS_BASE}/dodwarning.aspx?goto=/`, {
       method: "POST",
@@ -92,20 +129,24 @@ export async function POST() {
     });
   } catch {}
 
-  // Scrape each FSC using "today" scope
-  for (const fsc of fscsToScrape) {
-    try {
-      const url = `${DIBBS_BASE}/Rfq/RfqRecs.aspx?category=FSC&value=${fsc}&scope=today`;
-      const resp = await fetch(url, { redirect: "follow" });
-      if (!resp.ok) {
-        errors.push(`FSC ${fsc}: HTTP ${resp.status}`);
-        continue;
+  // Scrape FSCs in parallel batches of 5 for speed
+  for (let i = 0; i < batchFscs.length; i += 5) {
+    const chunk = batchFscs.slice(i, i + 5);
+    const results = await Promise.allSettled(
+      chunk.map(async (fsc) => {
+        const url = `${DIBBS_BASE}/Rfq/RfqRecs.aspx?category=FSC&value=${fsc}&scope=today`;
+        const resp = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(10000) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const html = await resp.text();
+        return { fsc, items: parseTable(html, fsc) };
+      })
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        allSolicitations.push(...r.value.items);
+      } else {
+        errors.push(r.reason?.message || "unknown error");
       }
-      const html = await resp.text();
-      const results = parseTable(html, fsc);
-      allSolicitations.push(...results);
-    } catch (err: any) {
-      errors.push(`FSC ${fsc}: ${err.message}`);
     }
   }
 
@@ -144,9 +185,11 @@ export async function POST() {
   const result = {
     success: true,
     count: allSolicitations.length,
-    fscs_scraped: fscsToScrape.length,
+    fscs_scraped: batchFscs.length,
+    fscs_scraped_list: batchFscs,
+    fscs_total_expansion: fscsToScrape.length,
     fscs_from_lamlinks: skippedFscs.length,
-    lamlinks_fscs: skippedFscs,
+    fscs_remaining: moreRemaining,
     errors,
     elapsed_seconds: parseFloat(elapsed),
     enrich: enrichResult,
