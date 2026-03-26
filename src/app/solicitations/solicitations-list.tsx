@@ -231,6 +231,7 @@ export function SolicitationsList({
         )
       );
       setCounts((c) => ({ ...c, sourceable: c.sourceable - 1, quoted: c.quoted + 1 }));
+      advanceDetail(sol.id);
       setEditingId(null);
       setEditPrice("");
       setEditDays("45");
@@ -259,6 +260,7 @@ export function SolicitationsList({
         prev.map((s) => (s.id === sol.id ? { ...s, bid_status: "skipped" } : s))
       );
       setCounts((c) => ({ ...c, sourceable: c.sourceable - 1, skipped: c.skipped + 1 }));
+      advanceDetail(sol.id);
       setEditingId(null);
       setEditComment("");
     } catch {} finally { setSaving(false); }
@@ -406,6 +408,16 @@ export function SolicitationsList({
   const filteredTotalValue = useMemo(() => {
     return filtered.reduce((sum, s) => sum + ((s as any)._potentialValue || s.est_value || 0), 0);
   }, [filtered]);
+
+  // Advance detail panel to next item in filtered list
+  function advanceDetail(currentId: number) {
+    const idx = filtered.findIndex((s) => s.id === currentId);
+    if (idx >= 0 && idx < filtered.length - 1) {
+      setDetailId(filtered[idx + 1].id);
+    } else {
+      setDetailId(null);
+    }
+  }
 
   const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
     <button
