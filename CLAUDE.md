@@ -4,17 +4,25 @@
 
 Intelligence layer on top of LamLinks for ERG Supply (CAGE 0AG09). ~$8-9M/year government business, ~500 orders/week.
 
+## CRITICAL DEPLOYMENT RULES
+- **NEVER add msnodesqlv8, mssql, playwright, or dotenv to package.json** (deps OR devDeps). They crash Railway builds (native compilation fails on Linux). Install locally with `npm install --no-save` only.
+- **Railway auto-deploys from GitHub** — do NOT use `railway up`. Just `git push`.
+- **Check deploy after every push**: `railway logs 2>&1 | tail -5` — look for "Ready in" (success) or errors.
+- **Always run `npm run build` locally before pushing** to catch errors.
+
 ## Deployment
 - **GitHub:** ShmuelSokol/bids (master branch)
-- **Railway:** auto-deploys from GitHub pushes — do NOT use `railway up`
+- **Railway:** auto-deploys from GitHub pushes
 - **Supabase:** project `jzgvdfzboknpcrhymjob` (dibs-gov)
 - **Live URL:** https://dibs-gov-production.up.railway.app
+- **Supabase mgmt token:** in memory (for running SQL via API)
 
 ## Spelling
 - Correct: **LamLinks** (one word, no B, capital L twice). Never "Lamb Links" or "Lam Links".
 
 ## npm
 - Always run npm/node/npx from `C:\tmp\dibs-init\dibs`, never from UNC network paths.
+- Native packages (mssql, msnodesqlv8, playwright, dotenv) install with `npm install --no-save`.
 
 ## Team
 - **Abe Joseph** (ajoseph@everreadygroup.com) — does all military bidding, ~50 bids/day in LamLinks + DIBBS
@@ -22,73 +30,70 @@ Intelligence layer on top of LamLinks for ERG Supply (CAGE 0AG09). ~$8-9M/year g
 - **M Perl** (mperl@everreadygroup.com)
 - **Shmuel Sokol** (ssokol@everreadygroup.com) — project lead
 
+## Core Workflow (Abe's Daily Flow)
+
+### Solicitations: Sourceable → Quoted → Submitted
+1. **Sync Data** button scrapes DIBBS + auto-enriches (NSN matching, pricing, cost, already-bid check)
+2. **Sourceable** = NSN matched in AX (first, authoritative) or Master DB, with suggested price
+3. Default view filters out: expired (past due date), already bid in LamLinks, not sourceable
+4. **Already bid detection**: exact solicitation number match against LamLinks k10_tab.sol_no_k10
+5. Abe reviews, overrides price if needed + comment → **Quoted**
+6. Select all quoted → batch **Submit**
+
+### Pricing Logic (empirical from 2,591 bid-to-cost matches)
+- Cost known: apply markup by bracket (<$25=1.64x, $25-100=1.36x, $100-500=1.21x, $500+=1.16x)
+- Cost unknown: last award + bracket-adjusted increment (1-3%)
+- Cost waterfall: Recent PO (2mo) → Recent PO (3mo) → Master DB → Price agreement (cheapest vendor) → Older PO
+- Margin subtracts estimated shipping for FOB Dest items
+- Winning formula: median 1.29x cost, 23% margin, 55 day lead time
+
+### Awards → PO Generation
+1. Filter awards by date range
+2. Select all → "Generate POs" groups by supplier (CAGE code)
+3. POs show line items with cost, sell price, margin
+4. **Supplier switch**: click "Switch" on any line → modal shows all vendors with prices + last PO date → one-click move
+
 ## Connected Data Sources
 
-### LamLinks SQL Server
-- Server: NYEVRVSQL001 / Database: llk_db1 / Windows Auth
-- Driver: msnodesqlv8 (`Driver={SQL Server};Server=NYEVRVSQL001;Database=llk_db1;Trusted_Connection=yes;`)
-- Reusable helper: `scripts/llk-query.ts` (inline SQL or --file, optional --save)
-- 217 tables, ~32M rows, 268 FKs, 261 views
-- Key tables: k34_tab (492K bids), k35_tab (pricing), k81_tab (257K awards), k08_tab (365K items), k10_tab (solicitations), k11_tab (sol lines)
-- Key views: clin_basic_1_view (awards), quote_metrics_1_view (bid+award+cost), our_quote_line_1_view (492K bids)
-- Column naming: `{abbreviation}_{table_code}` (e.g. fsc_k08, up_k35)
+### LamLinks SQL Server (local only — Windows Auth)
+- Server: NYEVRVSQL001 / Database: llk_db1
+- Helper: `scripts/llk-query.ts` — requires mssql/msnodesqlv8 (local install only)
+- Key tables: k34/k35 (bids), k81 (awards), k08 (items), k10/k11 (solicitations)
+- Solicitation numbers in k10_tab.sol_no_k10 match DIBBS format exactly
 
 ### D365 / AX
 - Environment: `https://szy-prod.operations.dynamics.com`
-- Auth: OAuth2 client credentials (AX_TENANT_ID, AX_CLIENT_ID, AX_CLIENT_SECRET)
-- Government customer account: **DD219** — filter all sales/invoice queries to this account
-- Key entities: ProductBarcodesV3 (55K barcodes: 25K NSN + 31K UPC), AllProducts (118K), VendorProductDescriptionsV2 (152K vendor part associations), PurchaseOrderLinesV2 (61K), PurchasePriceAgreements (134K)
-- App registration from Yosef's customer-portal-react project
+- Auth: OAuth2 client credentials
+- Government customer account: **DD219**
+- Key entities: ProductBarcodesV3 (25K NSN + 31K UPC), VendorProductDescriptionsV2 (152K), PurchaseOrderLinesV2 (61K), PurchasePriceAgreements (134K)
 
 ### Master DB API
 - URL: `https://masterdb.everreadygroup.com`
 - Auth: X-Api-Key header
-- Endpoints: GET /api/dibs/items (search by sku/upc/nsn), POST /api/dibs/nsn (write NSN + mfr_part_number), GET /api/dibs/items/export (bulk NDJSON stream, supports ?has_mfr=1, ?has_nsn=1, ?has_ndc=1)
-- ~405K items, 192K with mfr_part_number, ~1,900 now have NSNs
+- Bulk export: GET /api/dibs/items/export (supports ?has_mfr=1, ?has_nsn=1)
+- Write NSN: POST /api/dibs/nsn
+- ~405K items, 192K with mfr_part_number, ~657 verified NSNs
 
-### DIBBS (Defense Internet Bid Board System)
-- URL: dibbs.bsm.dla.mil — no login needed for browsing (just consent banner)
-- Login credentials in .env for quote submission only
-- Scrape approach: accept consent (#butAgree), search by FSC via `/Rfq/RfqRecs.aspx?category=FSC&value={fsc}&scope={today|open}`
-- Pagination: ASP.NET __doPostBack (`Page$2`, `Page$3`, etc.)
-- Daily cron: GitHub Actions at 6am + 12pm ET (Mon-Fri)
+### DIBBS
+- No login needed for browsing — just consent banner (#butAgree)
+- Search: `/Rfq/RfqRecs.aspx?category=FSC&value={fsc}&scope={today|open|recent}`
+- Pagination: ASP.NET __doPostBack, max 500 results per FSC (10 pages × 50)
+- Daily cron: GitHub Actions at 6am + 12pm ET (needs secrets in repo settings)
 
-### USASpending.gov
-- Free API, no auth. POST to `/api/v2/search/spending_by_award/`
-- Bulk download available but slow
-- 10K DLA awards loaded in Supabase
-
-## Supabase Tables (dibs-gov)
-- fsc_heatmap (332 rows) — hot/warm/cold FSC bid activity
-- fsc_expansion (464 rows) — solicitations received vs bids placed by FSC
-- awards (5,000 rows) — recent LamLinks awards
-- usaspending_awards (10,000 rows) — DLA awards from USASpending
-- dibbs_solicitations — scraped DIBBS solicitations
-- bid_decisions — Abe's bid approve/skip with price override + comments
-- profiles — auth users with roles (admin/manager/viewer)
-
-## Data Already Extracted (in data/)
-- `data/llk-discovery/` — bid-history.json (492K, 210MB), item-master.json (273K), awards-recent.json (5K), fsc-heatmap.json, fsc-expansion.json, quote-metrics.json
-- `data/d365/` — barcodes.json (55K), products.json (118K), po-lines.json (61K), vendor-parts.json (152K), purchase-price-agreements.json (134K)
-- `data/usaspending/` — dla-awards-6mo.json, dla-psc-summary.json, dla-awards-by-psc.json
-- `data/dibbs/` — open-solicitations.json (553)
-- `data/masterdb-mfr-192k.ndjson` — full Master DB export (192K items with mfr_part_number)
-- `data/nsn-matching/` — confirmed/rejected NSN matches
-
-## Key Findings
-- Abe bids on 23.4% of solicitations received (59K sols / 6mo, 14K bids)
-- 114 hot FSCs, 76 warm, 142 cold. Core business = medical (65xx)
-- 115 FSCs have solicitations flowing in that Abe doesn't bid on
-- D365 has 25K NSN barcodes — the NSN↔item mapping was in AX all along
-- Only 73 D365 items have BOTH UPC and NSN — commercial and military are separate populations
-- Vendor cost data in PurchaseOrderLinesV2 and PurchasePriceAgreements
-- Median bid price: $52.48, range $0.02–$205,799
-
-## Auth
-- Supabase Auth with session cookies (sb-access-token, sb-refresh-token)
-- Middleware redirects unauthenticated users to /login
-- First login forces password reset (must_reset_password flag)
-- Bug reporter creates GitHub Issues on ShmuelSokol/bids with screenshots
+## Supabase Tables
+- **dibbs_solicitations** (~1,646) — scraped solicitations with sourcing, pricing, already-bid, FOB, channel
+- **bid_decisions** — Abe's approve/skip/submit decisions with comments
+- **awards** (5,000) — LamLinks awards for bid history
+- **abe_bids** (10,000) — Abe's recent bids with solicitation numbers for exact matching
+- **nsn_catalog** (24K) — AX NSN→item mappings
+- **nsn_costs** (24K) — best cost per NSN (waterfall applied)
+- **nsn_vendor_prices** (34K) — per-vendor pricing for supplier switch (5,930 NSNs with 2+ vendors)
+- **purchase_orders** + **po_lines** — generated POs from awards
+- **fsc_heatmap** (332) — hot/warm/cold FSC categories
+- **fsc_expansion** (464) — solicitation vs bid rates by FSC
+- **usaspending_awards** (10K) — DLA awards from USASpending
+- **sync_log** — tracks every scrape/enrich with details
+- **profiles** — auth users with roles
 
 ## Key env vars (in .env, NOT committed)
 - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
@@ -96,3 +101,8 @@ Intelligence layer on top of LamLinks for ERG Supply (CAGE 0AG09). ~$8-9M/year g
 - AX_TENANT_ID, AX_CLIENT_ID, AX_CLIENT_SECRET, AX_D365_URL
 - DIBBS_USERNAME, DIBBS_PASSWORD
 - GITHUB_TOKEN (for bug reporter)
+
+## GitHub Actions Secrets Needed
+- NEXT_PUBLIC_SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY
+(Add at https://github.com/ShmuelSokol/bids/settings/secrets/actions)
