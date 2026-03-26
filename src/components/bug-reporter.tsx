@@ -22,45 +22,81 @@ export function BugReporter() {
     setMarkupMode(false);
     setScreenshot(null);
     setCapturing(true);
-    // HIDE modal for clean screenshot (Ever Ready First Aid pattern)
     setOpen(false);
 
-    // Ever Ready First Aid proven pattern: hide modal, capture body, show modal with result
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 300));
 
+    let captured = false;
+
+    // Method 1: getDisplayMedia (real screenshot — works in Chrome/Edge)
     try {
-      const html2canvas = (await import("html2canvas")).default;
-      const scrollY = window.scrollY;
-      const viewH = window.innerHeight;
-      const viewW = document.documentElement.clientWidth;
-
-      const canvas = await html2canvas(document.body, {
-        scale: 1,
-        logging: false,
-        windowWidth: viewW,
-        windowHeight: viewH,
-        height: viewH,
-        y: scrollY,
-        useCORS: false,
-        allowTaint: false,
-        imageTimeout: 5000,
-        onclone: (clonedDoc: Document) => {
-          // Hide cross-origin images (same as Ever Ready First Aid)
-          clonedDoc.querySelectorAll("img").forEach((img) => {
-            if (!img.src || img.src.startsWith("data:") || img.src.startsWith(window.location.origin)) return;
-            img.style.visibility = "hidden";
-          });
-          // Freeze animations
-          clonedDoc.querySelectorAll("[class*=animate]").forEach((el) => {
-            (el as HTMLElement).style.animationPlayState = "paused";
-          });
-        },
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: { displaySurface: "browser" },
+        preferCurrentTab: true,
       });
+      const track = stream.getVideoTracks()[0];
+      // @ts-expect-error ImageCapture is available in Chrome
+      const imageCapture = new ImageCapture(track);
+      const bitmap = await imageCapture.grabFrame();
+      stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
 
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
       setScreenshot(canvas.toDataURL("image/jpeg", 0.85));
-    } catch (err) {
-      console.error("Screenshot failed:", err);
-      setScreenshot(null);
+      captured = true;
+    } catch {
+      // User denied or API unavailable
+    }
+
+    // Method 2: html2canvas fallback
+    if (!captured) {
+      try {
+        const html2canvas = (await import("html2canvas")).default;
+        const canvas = await html2canvas(document.body, {
+          scale: 1, logging: false,
+          windowWidth: document.documentElement.clientWidth,
+          windowHeight: window.innerHeight,
+          height: window.innerHeight, y: window.scrollY,
+          useCORS: false, allowTaint: false, imageTimeout: 5000,
+          onclone: (doc: Document) => {
+            doc.querySelectorAll("img").forEach((img) => {
+              if (img.src && !img.src.startsWith("data:") && !img.src.startsWith(window.location.origin))
+                img.style.visibility = "hidden";
+            });
+          },
+        });
+        setScreenshot(canvas.toDataURL("image/jpeg", 0.85));
+        captured = true;
+      } catch {}
+    }
+
+    // Method 3: just take page info if all else fails
+    if (!captured) {
+      const c = document.createElement("canvas");
+      c.width = Math.min(window.innerWidth, 1200);
+      c.height = 300;
+      const ctx = c.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "#f1f5f9";
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.fillStyle = "#334155";
+        ctx.font = "bold 16px system-ui";
+        ctx.fillText("Screenshot unavailable — please describe the issue below", 20, 40);
+        ctx.font = "13px system-ui";
+        ctx.fillStyle = "#64748b";
+        ctx.fillText("Page: " + window.location.pathname, 20, 70);
+        ctx.fillText("Time: " + new Date().toLocaleString(), 20, 95);
+        ctx.fillText("Screen: " + window.innerWidth + "×" + window.innerHeight, 20, 120);
+        // Draw a rough representation of the page
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.strokeRect(20, 140, 200, c.height - 160); // sidebar
+        ctx.strokeRect(230, 140, c.width - 250, c.height - 160); // content
+        ctx.fillText("Sidebar", 30, 160);
+        ctx.fillText("Main Content Area", 240, 160);
+        setScreenshot(c.toDataURL("image/png"));
+      }
     }
 
     setCapturing(false);
