@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase-server";
+import { unstable_cache } from "next/cache";
 import { SolicitationsList } from "./solicitations-list";
 
 async function paginateAll(supabase: any, table: string, select: string, options?: { order?: string; eq?: [string, any] }) {
@@ -17,30 +18,34 @@ async function paginateAll(supabase: any, table: string, select: string, options
   return all;
 }
 
+// Cache solicitations for 60 seconds — serves instantly on repeat loads
+const getCachedSolicitations = unstable_cache(
+  async () => {
+    const supabase = createServiceClient();
+    return paginateAll(supabase, "dibbs_solicitations",
+      "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count",
+      { order: "scraped_at" }
+    );
+  },
+  ["solicitations-all"],
+  { revalidate: 60 }
+);
+
 async function getData() {
   const supabase = createServiceClient();
 
-  // Run queries in parallel — but DON'T load awards/bids upfront (lazy loaded)
+  // Solicitations cached 60s, rest fresh every time
   const [solicitations, decisions, liveBids, lastSync] = await Promise.all([
-    // Solicitations — all 14K (minimal columns for speed)
-    paginateAll(supabase, "dibbs_solicitations",
-      "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count",
-      { order: "scraped_at" }
-    ),
-    // Decisions
+    getCachedSolicitations(),
     supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
-    // Live bids — today only (small)
     supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
-    // Last sync
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
   ]);
 
-  // Build lookups from live bids
   const liveBidsBySol = new Set(liveBids.map((lb: any) => lb.solicitation_number?.trim()).filter(Boolean));
   const decisionMap: Record<string, any> = {};
   for (const d of decisions) decisionMap[`${d.solicitation_number}_${d.nsn}`] = d;
 
-  // Enrich (without awards — those are lazy loaded now)
   const enriched = solicitations.map((s: any) => {
     const decision = decisionMap[`${s.solicitation_number}_${s.nsn}`];
     const bidToday = liveBidsBySol.has(s.solicitation_number?.trim());

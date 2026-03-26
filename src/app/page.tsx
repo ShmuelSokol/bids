@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase-server";
+import { unstable_cache } from "next/cache";
 import Link from "next/link";
 import {
   Zap,
@@ -9,42 +10,46 @@ import {
   Clock,
 } from "lucide-react";
 
+// Cache sourceable items for 60s
+const getCachedSourceable = unstable_cache(
+  async () => {
+    const supabase = createServiceClient();
+    const items: any[] = [];
+    let p = 0;
+    while (true) {
+      const { data } = await supabase
+        .from("dibbs_solicitations")
+        .select("*")
+        .eq("is_sourceable", true)
+        .range(p * 1000, (p + 1) * 1000 - 1);
+      if (!data || data.length === 0) break;
+      items.push(...data);
+      if (data.length < 1000) break;
+      p++;
+    }
+    return items;
+  },
+  ["dashboard-sourceable"],
+  { revalidate: 60 }
+);
+
 async function getData() {
   const supabase = createServiceClient();
 
-  // Load ALL sourceable items (paginate past Supabase 1K default)
-  const allSourceable: any[] = [];
-  let page = 0;
-  while (true) {
-    const { data } = await supabase
-      .from("dibbs_solicitations")
-      .select("*")
-      .eq("is_sourceable", true)
-      .range(page * 1000, (page + 1) * 1000 - 1);
-    if (!data || data.length === 0) break;
-    allSourceable.push(...data);
-    if (data.length < 1000) break;
-    page++;
-  }
+  // Cached sourceable + fresh counts/decisions/live bids in parallel
+  const [solicitations, totalCountRes, noSourceRes, decisions, liveBids] = await Promise.all([
+    getCachedSourceable(),
+    supabase.from("dibbs_solicitations").select("*", { count: "exact", head: true }),
+    supabase.from("dibbs_solicitations").select("*", { count: "exact", head: true }).eq("is_sourceable", false),
+    supabase.from("bid_decisions").select("solicitation_number, nsn, status").then((r: any) => r.data || []),
+    supabase.from("abe_bids_live").select("*").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
+  ]);
 
-  // Get total counts efficiently
-  const { count: totalCount } = await supabase
-    .from("dibbs_solicitations")
-    .select("*", { count: "exact", head: true });
-
-  const { count: noSourceCount } = await supabase
-    .from("dibbs_solicitations")
-    .select("*", { count: "exact", head: true })
-    .eq("is_sourceable", false);
-
-  const solicitations = allSourceable;
-
-  const { data: decisions } = await supabase
-    .from("bid_decisions")
-    .select("solicitation_number, nsn, status");
+  const totalCount = totalCountRes.count || 0;
+  const noSourceCount = noSourceRes.count || 0;
 
   const decisionMap = new Map<string, string>();
-  for (const d of decisions || []) {
+  for (const d of decisions) {
     decisionMap.set(`${d.solicitation_number}_${d.nsn}`, d.status);
   }
 
@@ -99,14 +104,8 @@ async function getData() {
     .select("*", { count: "exact", head: true })
     .eq("bucket", "hot");
 
-  // Abe's live bids today
-  const { data: liveBids } = await supabase
-    .from("abe_bids_live")
-    .select("*")
-    .order("bid_time", { ascending: false });
-
-  const todayBids = liveBids || [];
-  const todayBidValue = todayBids.reduce((s, b) => s + (b.bid_price || 0) * (b.bid_qty || 1), 0);
+  const todayBids = liveBids;
+  const todayBidValue = todayBids.reduce((s: number, b: any) => s + (b.bid_price || 0) * (b.bid_qty || 1), 0);
 
   return {
     total: totalCount || 0,

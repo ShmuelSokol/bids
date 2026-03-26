@@ -14,5 +14,7 @@ export async function GET(req: NextRequest) {
     supabase.from("abe_bids").select("nsn, bid_price, lead_time_days, bid_qty, bid_date, fob").eq("nsn", nsn).order("bid_date", { ascending: false }).limit(50),
   ]);
 
-  return NextResponse.json({ awards: awardsRes.data || [], bids: bidsRes.data || [] });
+  const response = NextResponse.json({ awards: awardsRes.data || [], bids: bidsRes.data || [] });
+  response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+  return response;
 }
