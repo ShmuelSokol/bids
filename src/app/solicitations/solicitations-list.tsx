@@ -1193,79 +1193,59 @@ export function SolicitationsList({
                               </div>
                             </div>
 
-                            {/* Combined Award + Bid History (Bug #3: show winner name + our losing bid) */}
-                            <div>
-                              <div className="text-xs font-bold text-blue-700 mb-1">Award & Bid History ({history.length} awards, {abeBids.length} bids)</div>
-                              {history.length > 0 || abeBids.length > 0 ? (
-                                <div className="max-h-52 overflow-auto">
+                            {/* Award History + Our Bids — two clean tables side by side */}
+                            {loadingHistory === s.nsn ? (
+                              <div className="text-center py-4 text-muted text-xs">Loading history...</div>
+                            ) : (
+                            <div className="grid md:grid-cols-2 gap-3">
+                              {/* Our Awards (won contracts) */}
+                              <div>
+                                <div className="text-xs font-bold text-green-700 mb-1">Our Awards ({(() => {
+                                  const seen = new Set<string>();
+                                  return history.filter(h => { const k = `${h.contract_number}_${h.award_date}`; if (seen.has(k)) return false; seen.add(k); return true; }).length;
+                                })()})</div>
+                                <div className="max-h-40 overflow-auto">
                                   <table className="w-full text-xs">
-                                    <thead><tr className="text-muted">
-                                      <th className="text-left py-0.5">Date</th>
-                                      <th className="text-right py-0.5">Award Price</th>
-                                      <th className="text-right py-0.5">Qty</th>
-                                      <th className="text-left py-0.5">Winner</th>
-                                      <th className="text-right py-0.5">Our Bid</th>
-                                      <th className="text-left py-0.5">Result</th>
-                                    </tr></thead>
+                                    <thead><tr className="text-muted"><th className="text-left py-0.5">Date</th><th className="text-right py-0.5">Price</th><th className="text-right py-0.5">Qty</th><th className="text-left py-0.5">Contract</th></tr></thead>
                                     <tbody>
-                                      {history.map((h, i) => {
-                                        // Find our closest bid to this award date
-                                        const awardDate = h.award_date ? new Date(h.award_date) : null;
-                                        const ourBid = awardDate ? abeBids.find(b => {
-                                          if (!b.bid_date) return false;
-                                          const bidDate = new Date(b.bid_date);
-                                          const diff = Math.abs(awardDate.getTime() - bidDate.getTime()) / 86400000;
-                                          return diff < 90; // within 90 days
-                                        }) : null;
-                                        const isUs = h.cage?.trim() === "0AG09";
-                                        return (
-                                          <tr key={`award-${i}`} className={`border-t border-card-border/30 ${isUs ? "bg-green-50" : ""}`}>
+                                      {(() => {
+                                        const seen = new Set<string>();
+                                        return history.filter(h => { const k = `${h.contract_number}_${h.award_date}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 15).map((h, i) => (
+                                          <tr key={`aw-${i}`} className="border-t border-card-border/30">
                                             <td className="py-0.5 text-muted">{h.award_date ? new Date(h.award_date).toLocaleDateString() : "—"}</td>
-                                            <td className="py-0.5 text-right font-mono text-blue-700">${h.unit_price?.toFixed(2)}</td>
+                                            <td className="py-0.5 text-right font-mono text-green-700">${h.unit_price?.toFixed(2)}</td>
                                             <td className="py-0.5 text-right">{h.quantity}</td>
-                                            <td className="py-0.5">
-                                              <span className={`font-mono ${isUs ? "text-green-700 font-bold" : ""}`}>{h.cage?.trim() || "—"}</span>
-                                              {isUs && <span className="ml-1 text-[9px] text-green-600">US</span>}
-                                              {h.description && <div className="text-[9px] text-muted truncate max-w-[120px]">{h.description}</div>}
-                                            </td>
-                                            <td className="py-0.5 text-right font-mono">
-                                              {ourBid ? (
-                                                <span className={ourBid.bid_price <= h.unit_price ? "text-green-600" : "text-red-500"}>
-                                                  ${ourBid.bid_price?.toFixed(2)}
-                                                </span>
-                                              ) : <span className="text-muted">—</span>}
-                                            </td>
-                                            <td className="py-0.5">
-                                              {isUs ? (
-                                                <span className="text-[9px] px-1 rounded bg-green-100 text-green-700 font-medium">WON</span>
-                                              ) : ourBid ? (
-                                                <span className="text-[9px] px-1 rounded bg-red-50 text-red-600">Lost</span>
-                                              ) : (
-                                                <span className="text-[9px] text-muted">No bid</span>
-                                              )}
-                                            </td>
+                                            <td className="py-0.5 font-mono text-[9px] text-muted truncate max-w-[100px]">{h.contract_number?.trim() || "—"}</td>
                                           </tr>
-                                        );
-                                      })}
-                                      {/* Show bids with no matching award */}
-                                      {abeBids.filter(b => !history.some(h => {
-                                        if (!h.award_date || !b.bid_date) return false;
-                                        return Math.abs(new Date(h.award_date).getTime() - new Date(b.bid_date).getTime()) / 86400000 < 90;
-                                      })).slice(0, 5).map((b, i) => (
-                                        <tr key={`bid-only-${i}`} className="border-t border-card-border/30 bg-yellow-50/30">
+                                        ));
+                                      })()}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                {history.length === 0 && <p className="text-xs text-muted">No awards on record</p>}
+                              </div>
+                              {/* Our Bids */}
+                              <div>
+                                <div className="text-xs font-bold text-blue-700 mb-1">Our Bids ({abeBids.length})</div>
+                                <div className="max-h-40 overflow-auto">
+                                  <table className="w-full text-xs">
+                                    <thead><tr className="text-muted"><th className="text-left py-0.5">Date</th><th className="text-right py-0.5">Price</th><th className="text-right py-0.5">Qty</th><th className="text-right py-0.5">Lead</th></tr></thead>
+                                    <tbody>
+                                      {abeBids.slice(0, 15).map((b, i) => (
+                                        <tr key={`bid-${i}`} className="border-t border-card-border/30">
                                           <td className="py-0.5 text-muted">{b.bid_date ? new Date(b.bid_date).toLocaleDateString() : "—"}</td>
-                                          <td className="py-0.5 text-right text-muted">—</td>
+                                          <td className="py-0.5 text-right font-mono text-blue-700">${b.bid_price?.toFixed(2)}</td>
                                           <td className="py-0.5 text-right">{b.bid_qty}</td>
-                                          <td className="py-0.5 text-muted text-[9px]">Pending</td>
-                                          <td className="py-0.5 text-right font-mono text-green-700">${b.bid_price?.toFixed(2)}</td>
-                                          <td className="py-0.5"><span className="text-[9px] px-1 rounded bg-yellow-100 text-yellow-700">Bid {b.lead_time_days}d</span></td>
+                                          <td className="py-0.5 text-right text-muted">{b.lead_time_days}d</td>
                                         </tr>
                                       ))}
                                     </tbody>
                                   </table>
                                 </div>
-                              ) : <p className="text-xs text-muted">No bid or award history for this NSN</p>}
+                                {abeBids.length === 0 && <p className="text-xs text-muted">No bids on record</p>}
+                              </div>
                             </div>
+                            )}
                           </div>
                         </td>
                       </tr>
