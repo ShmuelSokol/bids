@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   RefreshCw,
   DollarSign,
@@ -179,10 +179,39 @@ export function SolicitationsList({
     }
   }
 
+  // Check if a sync is already running (survives page refresh)
+  useEffect(() => {
+    async function checkSyncStatus() {
+      try {
+        const res = await fetch("/api/dibbs/sync-status");
+        const data = await res.json();
+        if (data.running) {
+          setScraping(true);
+          setMessage(`Sync in progress (started ${new Date(data.started_at).toLocaleTimeString()})... Waiting for completion.`);
+          // Poll until done
+          const poll = setInterval(async () => {
+            const r = await fetch("/api/dibbs/sync-status");
+            const d = await r.json();
+            if (!d.running) {
+              clearInterval(poll);
+              setScraping(false);
+              setMessage("Sync complete! Refreshing...");
+              setTimeout(() => window.location.reload(), 1500);
+            }
+          }, 5000);
+        }
+      } catch {}
+    }
+    checkSyncStatus();
+  }, []);
+
   async function handleScrapeNow() {
     setScraping(true);
     setMessage("Step 1/3: Scraping DIBBS for new solicitations...");
     try {
+      // Mark sync as started (persists across refresh)
+      await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "start" }), headers: { "Content-Type": "application/json" } });
+
       const scrapeRes = await fetch("/api/dibbs/scrape-now", { method: "POST" });
       const scrapeData = await scrapeRes.json();
       const scraped = scrapeData.count || 0;
@@ -193,6 +222,9 @@ export function SolicitationsList({
       const enrichData = await enrichRes.json();
       setEnriching(false);
 
+      // Mark sync as done
+      await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "done" }), headers: { "Content-Type": "application/json" } });
+
       const parts = [`${scraped} scraped`];
       if (enrichData.sourceable) parts.push(`${enrichData.sourceable} sourceable`);
       if (enrichData.with_cost_data) parts.push(`${enrichData.with_cost_data} with costs`);
@@ -201,6 +233,8 @@ export function SolicitationsList({
       setMessage(`Step 3/3: Sync complete! ${parts.join(" · ")}. Refreshing...`);
       setTimeout(() => window.location.reload(), 2000);
     } catch {
+      // Mark sync as done on failure too
+      await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "done" }), headers: { "Content-Type": "application/json" } }).catch(() => {});
       setMessage("Sync failed — check connection");
     } finally {
       setScraping(false);

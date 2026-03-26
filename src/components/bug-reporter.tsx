@@ -24,76 +24,102 @@ export function BugReporter() {
     setCapturing(true);
     setOpen(false);
 
-    await new Promise((r) => setTimeout(r, 300));
+    // Wait for modal to close so it's not in the screenshot
+    await new Promise((r) => setTimeout(r, 400));
 
     let captured = false;
 
-    // Method 1: getDisplayMedia (real screenshot — works in Chrome/Edge)
+    // Method 1: html2canvas — captures the visible page content
     try {
-      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
-        video: { displaySurface: "browser" },
-        preferCurrentTab: true,
+      const html2canvas = (await import("html2canvas")).default;
+      // Target the main content area, fall back to body
+      const target = document.querySelector("main") || document.body;
+      const canvas = await html2canvas(target as HTMLElement, {
+        scale: Math.min(window.devicePixelRatio, 2),
+        logging: false,
+        windowWidth: document.documentElement.clientWidth,
+        windowHeight: window.innerHeight,
+        width: document.documentElement.clientWidth,
+        height: window.innerHeight,
+        y: window.scrollY,
+        x: 0,
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 3000,
+        removeContainer: true,
+        ignoreElements: (el: Element) => {
+          // Skip the bug reporter button itself
+          return el.closest("[data-bug-reporter]") !== null;
+        },
       });
-      const track = stream.getVideoTracks()[0];
-      const imageCapture = new (window as any).ImageCapture(track);
-      const bitmap = await imageCapture.grabFrame();
-      stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
-
-      const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
-      setScreenshot(canvas.toDataURL("image/jpeg", 0.85));
-      captured = true;
-    } catch {
-      // User denied or API unavailable
-    }
-
-    // Method 2: html2canvas fallback
-    if (!captured) {
-      try {
-        const html2canvas = (await import("html2canvas")).default;
-        const canvas = await html2canvas(document.body, {
-          scale: 1, logging: false,
-          windowWidth: document.documentElement.clientWidth,
-          windowHeight: window.innerHeight,
-          height: window.innerHeight, y: window.scrollY,
-          useCORS: false, allowTaint: false, imageTimeout: 5000,
-          onclone: (doc: Document) => {
-            doc.querySelectorAll("img").forEach((img) => {
-              if (img.src && !img.src.startsWith("data:") && !img.src.startsWith(window.location.origin))
-                img.style.visibility = "hidden";
-            });
-          },
-        });
+      if (canvas.width > 10 && canvas.height > 10) {
         setScreenshot(canvas.toDataURL("image/jpeg", 0.85));
         captured = true;
+      }
+    } catch {}
+
+    // Method 2: DOM snapshot — render a styled summary of visible page state
+    if (!captured) {
+      try {
+        const c = document.createElement("canvas");
+        const w = Math.min(window.innerWidth, 1400);
+        const h = Math.min(window.innerHeight, 900);
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d");
+        if (ctx) {
+          // Grab computed background
+          const bg = getComputedStyle(document.body).backgroundColor || "#fff";
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, w, h);
+
+          // Walk visible text nodes and render them
+          ctx.fillStyle = "#1a1a2e";
+          ctx.font = "13px system-ui, sans-serif";
+          let y = 20;
+          const textEls = document.querySelectorAll("h1,h2,h3,h4,p,td,th,span,a,button,label,div");
+          for (const el of textEls) {
+            if (y > h - 20) break;
+            const rect = el.getBoundingClientRect();
+            if (rect.top < 0 || rect.top > window.innerHeight || rect.width === 0) continue;
+            const text = (el as HTMLElement).innerText?.trim();
+            if (!text || text.length > 200 || text.includes("\n")) continue;
+            // Approximate position
+            const fontSize = parseFloat(getComputedStyle(el).fontSize) || 13;
+            ctx.font = `${Math.min(fontSize, 18)}px system-ui`;
+            ctx.fillStyle = getComputedStyle(el).color || "#333";
+            ctx.fillText(text.slice(0, 120), Math.max(rect.left, 4), rect.top - window.scrollY + fontSize);
+            y = rect.top - window.scrollY + fontSize + 4;
+          }
+
+          // Watermark
+          ctx.fillStyle = "#94a3b8";
+          ctx.font = "11px system-ui";
+          ctx.fillText(`${window.location.pathname} — ${new Date().toLocaleString()} — ${w}×${h}`, 8, h - 8);
+
+          setScreenshot(c.toDataURL("image/jpeg", 0.85));
+          captured = true;
+        }
       } catch {}
     }
 
-    // Method 3: just take page info if all else fails
+    // Method 3: minimal info card
     if (!captured) {
       const c = document.createElement("canvas");
-      c.width = Math.min(window.innerWidth, 1200);
-      c.height = 300;
+      c.width = 600;
+      c.height = 200;
       const ctx = c.getContext("2d");
       if (ctx) {
         ctx.fillStyle = "#f1f5f9";
-        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.fillRect(0, 0, 600, 200);
         ctx.fillStyle = "#334155";
-        ctx.font = "bold 16px system-ui";
-        ctx.fillText("Screenshot unavailable — please describe the issue below", 20, 40);
-        ctx.font = "13px system-ui";
+        ctx.font = "bold 14px system-ui";
+        ctx.fillText("Screenshot unavailable — please describe below", 20, 30);
+        ctx.font = "12px system-ui";
         ctx.fillStyle = "#64748b";
-        ctx.fillText("Page: " + window.location.pathname, 20, 70);
-        ctx.fillText("Time: " + new Date().toLocaleString(), 20, 95);
-        ctx.fillText("Screen: " + window.innerWidth + "×" + window.innerHeight, 20, 120);
-        // Draw a rough representation of the page
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.strokeRect(20, 140, 200, c.height - 160); // sidebar
-        ctx.strokeRect(230, 140, c.width - 250, c.height - 160); // content
-        ctx.fillText("Sidebar", 30, 160);
-        ctx.fillText("Main Content Area", 240, 160);
+        ctx.fillText("Page: " + window.location.pathname, 20, 60);
+        ctx.fillText("Time: " + new Date().toLocaleString(), 20, 80);
+        ctx.fillText("Screen: " + window.innerWidth + "x" + window.innerHeight, 20, 100);
         setScreenshot(c.toDataURL("image/png"));
       }
     }
@@ -263,6 +289,7 @@ export function BugReporter() {
       <button
         onClick={startCapture}
         title="Report a Bug"
+        data-bug-reporter="true"
         className="fixed bottom-5 right-5 z-[99998] w-12 h-12 hover:scale-125 transition-transform flex items-center justify-center cursor-pointer"
         style={{ background: "none", border: "none" }}
       >
