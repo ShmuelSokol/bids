@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   RefreshCw,
-  TrendingUp,
   DollarSign,
   MessageSquare,
   Check,
@@ -12,7 +11,11 @@ import {
   Send,
   Zap,
   Package,
+  ArrowUpDown,
+  ChevronLeft,
+  History,
 } from "lucide-react";
+import Link from "next/link";
 
 interface Solicitation {
   id: number;
@@ -38,6 +41,17 @@ interface Solicitation {
   decided_by: string | null;
 }
 
+interface AwardHistory {
+  fsc: string;
+  niin: string;
+  unit_price: number;
+  quantity: number;
+  description: string;
+  award_date: string;
+  contract_number: string;
+  cage: string;
+}
+
 interface Counts {
   total: number;
   sourceable: number;
@@ -46,16 +60,26 @@ interface Counts {
   skipped: number;
 }
 
+type SortField = "value" | "margin" | "due" | "price" | "quantity";
+
 export function SolicitationsList({
   initialData,
   counts: initialCounts,
+  awardHistory,
+  initialFilter,
+  initialSort,
 }: {
   initialData: Solicitation[];
   counts: Counts;
+  awardHistory: AwardHistory[];
+  initialFilter?: string;
+  initialSort?: string;
 }) {
   const [solicitations, setSolicitations] = useState(initialData);
   const [counts, setCounts] = useState(initialCounts);
-  const [filter, setFilter] = useState<string>("sourceable");
+  const [filter, setFilter] = useState<string>(initialFilter || "sourceable");
+  const [sortField, setSortField] = useState<SortField>((initialSort as SortField) || "value");
+  const [sortAsc, setSortAsc] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -66,6 +90,18 @@ export function SolicitationsList({
   const [editComment, setEditComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedQuoted, setSelectedQuoted] = useState<Set<number>>(new Set());
+  const [expandedNsn, setExpandedNsn] = useState<string | null>(null);
+
+  // Build award history lookup
+  const historyByNsn = useMemo(() => {
+    const map = new Map<string, AwardHistory[]>();
+    for (const a of awardHistory) {
+      const nsn = `${a.fsc}-${a.niin}`;
+      if (!map.has(nsn)) map.set(nsn, []);
+      map.get(nsn)!.push(a);
+    }
+    return map;
+  }, [awardHistory]);
 
   async function handleScrapeNow() {
     setScraping(true);
@@ -74,7 +110,6 @@ export function SolicitationsList({
       const res = await fetch("/api/dibbs/scrape-now", { method: "POST" });
       const data = await res.json();
       setMessage(`Scraped ${data.count} solicitations. Enriching...`);
-      // Auto-enrich after scrape
       await handleEnrich();
       window.location.reload();
     } catch {
@@ -90,7 +125,7 @@ export function SolicitationsList({
       const res = await fetch("/api/dibbs/enrich", { method: "POST" });
       const data = await res.json();
       setMessage(
-        `Enriched: ${data.sourceable} sourceable (${data.ax_matches} from AX, ${data.masterdb_matches} from Master DB)`
+        `Found ${data.sourceable} sourceable (${data.with_cost_data || 0} with cost data)`
       );
       window.location.reload();
     } catch {
@@ -118,7 +153,6 @@ export function SolicitationsList({
           comment: editComment || null,
           status: "quoted",
           source: sol.source,
-          source_item: sol.source_item,
         }),
       });
       setSolicitations((prev) =>
@@ -133,9 +167,7 @@ export function SolicitationsList({
       setEditPrice("");
       setEditDays("45");
       setEditComment("");
-    } catch {} finally {
-      setSaving(false);
-    }
+    } catch {} finally { setSaving(false); }
   }
 
   async function handleSkip(sol: Solicitation) {
@@ -156,16 +188,12 @@ export function SolicitationsList({
         }),
       });
       setSolicitations((prev) =>
-        prev.map((s) =>
-          s.id === sol.id ? { ...s, bid_status: "skipped" } : s
-        )
+        prev.map((s) => (s.id === sol.id ? { ...s, bid_status: "skipped" } : s))
       );
       setCounts((c) => ({ ...c, sourceable: c.sourceable - 1, skipped: c.skipped + 1 }));
       setEditingId(null);
       setEditComment("");
-    } catch {} finally {
-      setSaving(false);
-    }
+    } catch {} finally { setSaving(false); }
   }
 
   async function handleSubmitAll() {
@@ -182,11 +210,8 @@ export function SolicitationsList({
           body: JSON.stringify({
             solicitation_number: sol.solicitation_number,
             nsn: sol.nsn,
-            nomenclature: sol.nomenclature,
-            quantity: sol.quantity,
-            suggested_price: sol.suggested_price,
-            final_price: sol.final_price,
             status: "submitted",
+            final_price: sol.final_price,
           }),
         });
       }
@@ -204,325 +229,320 @@ export function SolicitationsList({
       }));
       setSelectedQuoted(new Set());
       setMessage(`${toSubmit.length} bids submitted!`);
-    } catch {
-      setMessage("Submit failed");
-    } finally {
-      setSubmitting(false);
-    }
+    } catch {} finally { setSubmitting(false); }
   }
 
-  function toggleSelectAll() {
-    const quotedIds = filtered.filter((s) => s.bid_status === "quoted").map((s) => s.id);
-    if (selectedQuoted.size === quotedIds.length) {
-      setSelectedQuoted(new Set());
-    } else {
-      setSelectedQuoted(new Set(quotedIds));
-    }
+  function handleSort(field: SortField) {
+    if (sortField === field) setSortAsc(!sortAsc);
+    else { setSortField(field); setSortAsc(false); }
   }
 
-  const filtered = solicitations.filter((s) => {
-    if (filter === "sourceable") return s.is_sourceable && !s.bid_status;
-    if (filter === "quoted") return s.bid_status === "quoted";
-    if (filter === "submitted") return s.bid_status === "submitted";
-    if (filter === "skipped") return s.bid_status === "skipped";
-    if (filter === "all_unsourced") return !s.is_sourceable;
-    return true;
-  });
+  const filtered = useMemo(() => {
+    let items = solicitations.filter((s) => {
+      if (filter === "sourceable") return s.is_sourceable && !s.bid_status;
+      if (filter === "quoted") return s.bid_status === "quoted";
+      if (filter === "submitted") return s.bid_status === "submitted";
+      if (filter === "skipped") return s.bid_status === "skipped";
+      if (filter === "all_unsourced") return !s.is_sourceable;
+      return true;
+    });
+
+    // Add potential_value for sorting
+    items = items.map((s) => ({
+      ...s,
+      _potentialValue: (s.suggested_price || s.final_price || 0) * (s.quantity || 1),
+    }));
+
+    // Sort
+    const dir = sortAsc ? 1 : -1;
+    items.sort((a, b) => {
+      const av = a as any, bv = b as any;
+      switch (sortField) {
+        case "value": return (av._potentialValue - bv._potentialValue) * dir;
+        case "margin": return ((a.margin_pct || 0) - (b.margin_pct || 0)) * dir;
+        case "due": return ((a.return_by_date || "").localeCompare(b.return_by_date || "")) * dir;
+        case "price": return ((a.suggested_price || 0) - (b.suggested_price || 0)) * dir;
+        case "quantity": return ((a.quantity || 0) - (b.quantity || 0)) * dir;
+        default: return 0;
+      }
+    });
+
+    return items;
+  }, [solicitations, filter, sortField, sortAsc]);
+
+  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
+    <button
+      onClick={() => handleSort(field)}
+      className={`flex items-center gap-1 font-medium ${sortField === field ? "text-accent" : "text-muted"}`}
+    >
+      {children}
+      <ArrowUpDown className="h-3 w-3" />
+    </button>
+  );
 
   return (
     <>
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 mb-4 text-sm text-muted">
+        <Link href="/" className="hover:text-accent flex items-center gap-1">
+          <ChevronLeft className="h-4 w-4" /> Dashboard
+        </Link>
+        <span>/</span>
+        <span className="text-foreground font-medium">Solicitations</span>
+      </div>
+
       {/* Pipeline Stats */}
-      <div className="grid grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
         {[
           { key: "sourceable", label: "Sourceable", count: counts.sourceable, color: "border-green-300 bg-green-50", icon: Zap },
           { key: "quoted", label: "Quoted", count: counts.quoted, color: "border-blue-300 bg-blue-50", icon: DollarSign },
           { key: "submitted", label: "Submitted", count: counts.submitted, color: "border-purple-300 bg-purple-50", icon: Send },
           { key: "skipped", label: "Skipped", count: counts.skipped, color: "border-gray-300 bg-gray-50", icon: X },
+          { key: "all_unsourced", label: "No Source", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped, color: "border-amber-200 bg-amber-50", icon: Package },
           { key: "all", label: "All", count: counts.total, color: "border-card-border bg-card-bg", icon: Package },
         ].map((step) => (
           <button
             key={step.key}
             onClick={() => setFilter(step.key)}
-            className={`rounded-lg border-2 p-3 text-center transition-all ${step.color} ${filter === step.key ? "ring-2 ring-accent" : ""}`}
+            className={`rounded-lg border-2 p-2 text-center transition-all ${step.color} ${filter === step.key ? "ring-2 ring-accent" : ""}`}
           >
-            <step.icon className="h-4 w-4 mx-auto mb-1 opacity-60" />
-            <div className="text-2xl font-bold">{step.count}</div>
-            <div className="text-xs font-medium">{step.label}</div>
+            <div className="text-xl font-bold">{step.count}</div>
+            <div className="text-[10px] font-medium">{step.label}</div>
           </button>
         ))}
       </div>
 
       {/* Action Bar */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex gap-2">
           {filter === "quoted" && filtered.length > 0 && (
             <>
               <button
-                onClick={toggleSelectAll}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium border border-card-border bg-card-bg hover:bg-gray-50"
+                onClick={() => {
+                  const ids = filtered.filter((s) => s.bid_status === "quoted").map((s) => s.id);
+                  setSelectedQuoted(selectedQuoted.size === ids.length ? new Set() : new Set(ids));
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-card-border bg-card-bg"
               >
-                {selectedQuoted.size === filtered.filter((s) => s.bid_status === "quoted").length
-                  ? "Deselect All"
-                  : "Select All"}
+                {selectedQuoted.size > 0 ? "Deselect All" : "Select All"}
               </button>
               {selectedQuoted.size > 0 && (
                 <button
                   onClick={handleSubmitAll}
                   disabled={submitting}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white disabled:opacity-50"
                 >
-                  {submitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
+                  {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
                   Submit {selectedQuoted.size} Bids
                 </button>
               )}
             </>
           )}
         </div>
-
         <div className="flex gap-2">
-          <button
-            onClick={handleEnrich}
-            disabled={enriching}
-            className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-          >
-            {enriching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-            Match NSNs
+          <button onClick={handleEnrich} disabled={enriching}
+            className="flex items-center gap-1 rounded-lg border border-card-border bg-card-bg px-3 py-1.5 text-xs font-medium disabled:opacity-50">
+            {enriching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />} Match NSNs
           </button>
-          <button
-            onClick={handleScrapeNow}
-            disabled={scraping}
-            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-          >
-            {scraping ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          <button onClick={handleScrapeNow} disabled={scraping}
+            className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+            {scraping ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
             {scraping ? "Scraping..." : "Scrape Now"}
           </button>
         </div>
       </div>
 
       {message && (
-        <div className="mb-4 rounded-lg bg-blue-50 text-blue-700 px-4 py-2 text-sm">
-          {message}
-        </div>
+        <div className="mb-3 rounded-lg bg-blue-50 text-blue-700 px-3 py-2 text-xs">{message}</div>
       )}
 
-      {/* Solicitation List */}
-      <div className="space-y-2">
-        {filtered.map((s) => {
-          const isEditing = editingId === s.id;
+      {/* Solicitation Table */}
+      <div className="rounded-xl border border-card-border bg-card-bg shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-card-border text-left text-muted bg-gray-50/50">
+                {filter === "quoted" && <th className="px-3 py-2 w-8"></th>}
+                <th className="px-3 py-2 font-medium">NSN / Item</th>
+                <th className="px-3 py-2 font-medium">Sol #</th>
+                <th className="px-3 py-2 text-right"><SortHeader field="quantity">Qty</SortHeader></th>
+                <th className="px-3 py-2 text-right font-medium">Cost</th>
+                <th className="px-3 py-2 text-right"><SortHeader field="price">Suggested</SortHeader></th>
+                <th className="px-3 py-2 text-right"><SortHeader field="margin">Margin</SortHeader></th>
+                <th className="px-3 py-2 text-right"><SortHeader field="value">Pot. Value</SortHeader></th>
+                <th className="px-3 py-2"><SortHeader field="due">Due</SortHeader></th>
+                <th className="px-3 py-2 font-medium">Source</th>
+                <th className="px-3 py-2 font-medium w-24"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s) => {
+                const potValue = (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
+                const isEditing = editingId === s.id;
+                const history = historyByNsn.get(s.nsn) || [];
 
-          return (
-            <div
-              key={s.id}
-              className={`rounded-xl border bg-card-bg shadow-sm overflow-hidden ${
-                s.bid_status === "submitted"
-                  ? "border-purple-300 bg-purple-50/20"
-                  : s.bid_status === "quoted"
-                    ? "border-blue-300 bg-blue-50/20"
-                    : s.bid_status === "skipped"
-                      ? "border-gray-300 opacity-50"
-                      : s.is_sourceable
-                        ? "border-green-300"
-                        : "border-card-border"
-              }`}
-            >
-              <div className="px-6 py-3">
-                <div className="flex items-start justify-between gap-4">
-                  {/* Checkbox for quoted items */}
-                  {s.bid_status === "quoted" && filter === "quoted" && (
-                    <input
-                      type="checkbox"
-                      checked={selectedQuoted.has(s.id)}
-                      onChange={(e) => {
-                        const next = new Set(selectedQuoted);
-                        if (e.target.checked) next.add(s.id);
-                        else next.delete(s.id);
-                        setSelectedQuoted(next);
-                      }}
-                      className="mt-1 rounded"
-                    />
-                  )}
-
-                  {/* Left: Item Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                      {s.is_sourceable && !s.bid_status && (
-                        <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700">
-                          <Zap className="h-3 w-3" /> Sourceable
-                        </span>
+                return (
+                  <>
+                    <tr
+                      key={s.id}
+                      className={`border-b border-card-border hover:bg-gray-50/50 ${
+                        s.bid_status === "submitted" ? "bg-purple-50/30" :
+                        s.bid_status === "quoted" ? "bg-blue-50/30" :
+                        s.bid_status === "skipped" ? "opacity-40" : ""
+                      }`}
+                    >
+                      {filter === "quoted" && (
+                        <td className="px-3 py-2">
+                          <input type="checkbox" checked={selectedQuoted.has(s.id)}
+                            onChange={(e) => {
+                              const next = new Set(selectedQuoted);
+                              if (e.target.checked) next.add(s.id); else next.delete(s.id);
+                              setSelectedQuoted(next);
+                            }} className="rounded" />
+                        </td>
                       )}
-                      {s.bid_status === "quoted" && (
-                        <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700">QUOTED</span>
-                      )}
-                      {s.bid_status === "submitted" && (
-                        <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700">SUBMITTED</span>
-                      )}
-                      {s.bid_status === "skipped" && (
-                        <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">SKIPPED</span>
-                      )}
-                      {s.source && (
-                        <span className="text-xs text-muted">
-                          via {s.source === "ax" ? "AX" : "Master DB"}
-                        </span>
-                      )}
-                    </div>
-
-                    <h3 className="text-sm font-semibold truncate">
-                      {s.nomenclature || "Unknown Item"}
-                    </h3>
-                    <div className="flex items-center gap-3 mt-0.5 text-xs text-muted flex-wrap">
-                      <span className="font-mono text-accent">{s.nsn}</span>
-                      <span className="font-mono">{s.solicitation_number}</span>
-                      <span>Qty: {s.quantity}</span>
-                      <span>Due: {s.return_by_date}</span>
-                    </div>
-
-                    {s.bid_comment && (
-                      <div className="mt-1 text-xs bg-yellow-50 text-yellow-800 px-2 py-1 rounded inline-flex items-center gap-1">
-                        <MessageSquare className="h-3 w-3" />
-                        {s.bid_comment}
-                        {s.decided_by && <span className="text-yellow-600 ml-1">— {s.decided_by}</span>}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Right: Pricing + Actions */}
-                  <div className="text-right min-w-[260px]">
-                    {s.bid_status === "quoted" && (
-                      <div className="text-lg font-bold font-mono text-blue-600">
-                        ${s.final_price?.toFixed(2)}
-                      </div>
-                    )}
-                    {s.bid_status === "submitted" && (
-                      <div className="text-lg font-bold font-mono text-purple-600">
-                        ${s.final_price?.toFixed(2)}
-                        <span className="text-xs font-normal text-muted ml-1">submitted</span>
-                      </div>
-                    )}
-
-                    {s.is_sourceable && !s.bid_status && (
-                      <>
-                        {s.suggested_price && (
-                          <div className="mb-2">
-                            {s.our_cost ? (
-                              <div className="text-right mb-1">
-                                <div className="flex items-center gap-3 justify-end text-xs text-muted">
-                                  <span>Cost: <span className="font-mono font-medium text-foreground">${s.our_cost.toFixed(2)}</span></span>
-                                  {s.margin_pct !== null && (
-                                    <span className={`font-medium ${s.margin_pct >= 20 ? "text-green-600" : s.margin_pct >= 10 ? "text-yellow-600" : "text-red-600"}`}>
-                                      {s.margin_pct}% margin
-                                    </span>
-                                  )}
-                                </div>
-                                {s.cost_source && (
-                                  <div className="text-[10px] text-muted/70 mt-0.5">{s.cost_source}</div>
-                                )}
-                              </div>
-                            ) : s.price_source ? (
-                              <div className="text-xs text-muted mb-1">{s.price_source}</div>
-                            ) : (
-                              <div className="text-xs text-muted mb-1">No cost data</div>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1">
+                          {history.length > 0 && (
+                            <button onClick={() => setExpandedNsn(expandedNsn === s.nsn ? null : s.nsn)}
+                              className="text-muted hover:text-accent" title={`${history.length} prior awards`}>
+                              <History className="h-3 w-3" />
+                            </button>
+                          )}
+                          <div>
+                            <span className="font-mono text-xs text-accent">{s.nsn}</span>
+                            {s.bid_status && (
+                              <span className={`ml-1 text-[10px] px-1 rounded ${
+                                s.bid_status === "quoted" ? "bg-blue-100 text-blue-700" :
+                                s.bid_status === "submitted" ? "bg-purple-100 text-purple-700" :
+                                "bg-gray-100 text-gray-600"
+                              }`}>{s.bid_status.toUpperCase()}</span>
                             )}
-                            <div className="text-lg font-bold font-mono text-green-600">
-                              ${s.suggested_price.toFixed(2)}
-                            </div>
-                            {s.price_source && s.our_cost && (
-                              <div className="text-[10px] text-muted/70">{s.price_source}</div>
-                            )}
+                            <div className="text-xs truncate max-w-[180px]">{s.nomenclature || "—"}</div>
                           </div>
-                        )}
-
-                        {isEditing ? (
-                          <div className="space-y-2">
-                            <div className="flex gap-2 justify-end">
-                              <div>
-                                <div className="text-xs text-muted mb-0.5">Price</div>
-                                <input
-                                  type="number"
-                                  value={editPrice}
-                                  onChange={(e) => setEditPrice(e.target.value)}
-                                  placeholder={s.suggested_price?.toFixed(2) || "0.00"}
-                                  step="0.01"
-                                  className="w-24 rounded border border-card-border px-2 py-1.5 text-sm font-mono text-right"
-                                  autoFocus
-                                />
-                              </div>
-                              <div>
-                                <div className="text-xs text-muted mb-0.5">Days</div>
-                                <input
-                                  type="number"
-                                  value={editDays}
-                                  onChange={(e) => setEditDays(e.target.value)}
-                                  className="w-16 rounded border border-card-border px-2 py-1.5 text-sm font-mono text-right"
-                                />
-                              </div>
-                            </div>
-                            <input
-                              type="text"
-                              value={editComment}
-                              onChange={(e) => setEditComment(e.target.value)}
-                              placeholder="Reason for change (optional)"
-                              className="w-full rounded border border-card-border px-2 py-1.5 text-xs"
-                            />
-                            <div className="flex gap-2 justify-end">
-                              <button
-                                onClick={() => handleApprove(s)}
-                                disabled={saving}
-                                className="flex items-center gap-1 rounded bg-green-600 px-3 py-1.5 text-xs text-white font-medium hover:bg-green-700 disabled:opacity-50"
-                              >
-                                <Check className="h-3 w-3" /> Approve
-                              </button>
-                              <button
-                                onClick={() => handleSkip(s)}
-                                disabled={saving}
-                                className="flex items-center gap-1 rounded bg-gray-400 px-3 py-1.5 text-xs text-white font-medium hover:bg-gray-500 disabled:opacity-50"
-                              >
-                                <X className="h-3 w-3" /> Skip
-                              </button>
-                              <button
-                                onClick={() => { setEditingId(null); setEditComment(""); setEditPrice(""); }}
-                                className="text-xs text-muted hover:text-foreground px-2"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}
-                            className="flex items-center gap-1 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 ml-auto"
-                          >
-                            <DollarSign className="h-3 w-3" /> Review & Bid
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 font-mono text-[10px] text-muted">{s.solicitation_number}</td>
+                      <td className="px-3 py-2 text-right">{s.quantity}</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs text-muted">
+                        {s.our_cost ? `$${s.our_cost.toFixed(2)}` : "—"}
+                        {s.cost_source && <div className="text-[9px] text-muted/60 truncate max-w-[80px]">{s.cost_source}</div>}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-medium text-green-600">
+                        {s.bid_status === "quoted" || s.bid_status === "submitted"
+                          ? `$${(s.final_price || 0).toFixed(2)}`
+                          : s.suggested_price ? `$${s.suggested_price.toFixed(2)}` : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {s.margin_pct !== null ? (
+                          <span className={`text-xs font-medium ${s.margin_pct >= 20 ? "text-green-600" : s.margin_pct >= 10 ? "text-yellow-600" : "text-red-600"}`}>
+                            {s.margin_pct}%
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-xs font-bold">
+                        {potValue > 0 ? `$${potValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">{s.return_by_date}</td>
+                      <td className="px-3 py-2 text-[10px] text-muted">
+                        {s.source === "ax" ? "AX" : s.source === "masterdb" ? "MDB" : "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {s.is_sourceable && !s.bid_status && !isEditing && (
+                          <button onClick={() => { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}
+                            className="text-[10px] px-2 py-1 rounded bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium">
+                            Bid
                           </button>
                         )}
-                      </>
+                        {s.bid_comment && (
+                          <div className="text-[9px] text-yellow-700 mt-0.5 flex items-center gap-0.5">
+                            <MessageSquare className="h-2 w-2" />{s.bid_comment}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Inline edit row */}
+                    {isEditing && (
+                      <tr key={`edit-${s.id}`} className="border-b border-card-border bg-green-50/30">
+                        <td colSpan={filter === "quoted" ? 11 : 10} className="px-3 py-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted">Price:</span>
+                              <input type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)}
+                                placeholder={s.suggested_price?.toFixed(2) || ""} step="0.01" autoFocus
+                                className="w-24 rounded border border-card-border px-2 py-1 text-xs font-mono text-right" />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted">Days:</span>
+                              <input type="number" value={editDays} onChange={(e) => setEditDays(e.target.value)}
+                                className="w-14 rounded border border-card-border px-2 py-1 text-xs font-mono text-right" />
+                            </div>
+                            <input type="text" value={editComment} onChange={(e) => setEditComment(e.target.value)}
+                              placeholder="Reason (optional)" className="flex-1 min-w-[150px] rounded border border-card-border px-2 py-1 text-xs" />
+                            <button onClick={() => handleApprove(s)} disabled={saving}
+                              className="flex items-center gap-1 rounded bg-green-600 px-2 py-1 text-xs text-white font-medium disabled:opacity-50">
+                              <Check className="h-3 w-3" /> Approve
+                            </button>
+                            <button onClick={() => handleSkip(s)} disabled={saving}
+                              className="flex items-center gap-1 rounded bg-gray-400 px-2 py-1 text-xs text-white font-medium disabled:opacity-50">
+                              <X className="h-3 w-3" /> Skip
+                            </button>
+                            <button onClick={() => { setEditingId(null); setEditComment(""); setEditPrice(""); }}
+                              className="text-xs text-muted hover:text-foreground">Cancel</button>
+                          </div>
+                        </td>
+                      </tr>
                     )}
 
-                    {!s.is_sourceable && !s.bid_status && (
-                      <span className="text-xs text-muted">Not sourceable</span>
+                    {/* Bid history expansion */}
+                    {expandedNsn === s.nsn && history.length > 0 && (
+                      <tr key={`hist-${s.id}`} className="border-b border-card-border bg-blue-50/20">
+                        <td colSpan={filter === "quoted" ? 11 : 10} className="px-3 py-2">
+                          <div className="text-xs font-medium text-muted mb-1">
+                            Award History — {history.length} prior awards for {s.nsn}
+                          </div>
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-muted">
+                                <th className="text-left py-1">Date</th>
+                                <th className="text-left py-1">Contract</th>
+                                <th className="text-right py-1">Price</th>
+                                <th className="text-right py-1">Qty</th>
+                                <th className="text-left py-1">Winner CAGE</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {history.slice(0, 10).map((h, i) => (
+                                <tr key={i} className="border-t border-card-border/50">
+                                  <td className="py-1 text-muted">{h.award_date ? new Date(h.award_date).toLocaleDateString() : "—"}</td>
+                                  <td className="py-1 font-mono">{h.contract_number?.trim().slice(0, 20)}</td>
+                                  <td className="py-1 text-right font-mono">${h.unit_price?.toFixed(2)}</td>
+                                  <td className="py-1 text-right">{h.quantity}</td>
+                                  <td className="py-1 font-mono">{h.cage?.trim() || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+                  </>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
 
         {filtered.length === 0 && (
           <div className="text-center py-12 text-muted">
             <p className="text-lg font-medium">
               {filter === "sourceable" ? "No sourceable solicitations" :
                filter === "quoted" ? "No quoted bids yet" :
-               filter === "submitted" ? "No submitted bids yet" :
-               "No solicitations found"}
+               "No solicitations"}
             </p>
             <p className="text-sm mt-1">
-              {filter === "sourceable"
-                ? 'Click "Scrape Now" to pull solicitations, then "Match NSNs" to find sourceable items'
-                : 'Review sourceable items and approve bids to see them here'}
+              {filter === "sourceable" ? 'Click "Scrape Now" then "Match NSNs"' : "Review sourceable items first"}
             </p>
           </div>
         )}

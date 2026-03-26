@@ -14,13 +14,18 @@ async function getData() {
     .from("bid_decisions")
     .select("*");
 
-  // Build decision lookup
+  // Award history for bid history display
+  const { data: awards } = await supabase
+    .from("awards")
+    .select("fsc, niin, unit_price, quantity, description, award_date, contract_number, cage")
+    .order("award_date", { ascending: false })
+    .limit(5000);
+
   const decisionMap: Record<string, any> = {};
   for (const d of decisions || []) {
     decisionMap[`${d.solicitation_number}_${d.nsn}`] = d;
   }
 
-  // Merge decisions into solicitations
   const enriched = (solicitations || []).map((s) => {
     const decision = decisionMap[`${s.solicitation_number}_${s.nsn}`];
     return {
@@ -40,22 +45,33 @@ async function getData() {
     skipped: enriched.filter((s) => s.bid_status === "skipped").length,
   };
 
-  return { solicitations: enriched, counts };
+  return { solicitations: enriched, counts, awards: awards || [] };
 }
 
-export default async function SolicitationsPage() {
-  const { solicitations, counts } = await getData();
+export default async function SolicitationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ filter?: string; sort?: string }>;
+}) {
+  const { solicitations, counts, awards } = await getData();
+  const params = await searchParams;
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
+    <div className="p-4 md:p-8">
+      <div className="mb-4">
         <h1 className="text-2xl font-bold">Solicitations</h1>
-        <p className="text-muted mt-1">
+        <p className="text-muted mt-1 text-sm">
           {counts.total} loaded — {counts.sourceable} sourceable,{" "}
           {counts.quoted} quoted, {counts.submitted} submitted
         </p>
       </div>
-      <SolicitationsList initialData={solicitations} counts={counts} />
+      <SolicitationsList
+        initialData={solicitations}
+        counts={counts}
+        awardHistory={awards}
+        initialFilter={params.filter}
+        initialSort={params.sort}
+      />
     </div>
   );
 }
