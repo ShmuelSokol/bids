@@ -17,7 +17,6 @@
     "scrape:batch": "npx tsx scripts/scrape-dibbs.ts --batch"
   },
   "dependencies": {
-    "@prisma/client": "^6.5.0",
     "@supabase/supabase-js": "^2.100.0",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.474.0",

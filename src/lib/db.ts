@@ -1,9 +1,16 @@
-import { PrismaClient } from "@prisma/client";
-
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
-
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+// Prisma client stub — legacy API routes reference this but we use Supabase now.
+// Will be removed once all routes are migrated.
+export const prisma: any = new Proxy(
+  {},
+  {
+    get: () =>
+      new Proxy(
+        {},
+        {
+          get: () => async () => {
+            throw new Error("Prisma is not configured — use Supabase instead");
+          },
+        }
+      ),
+  }
+);
