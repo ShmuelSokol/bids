@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/sidebar";
 import { BugReporter } from "@/components/bug-reporter";
 import { ActivityTracker } from "@/components/activity-tracker";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { NotificationBar } from "@/components/notification-bar";
 import { getCurrentUser } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -67,7 +68,10 @@ export default async function RootLayout({
     >
       <body className="h-full flex flex-col md:flex-row">
         {showChrome && <Sidebar user={currentUser} />}
-        <main className="flex-1 overflow-auto">{children}</main>
+        <div className="flex-1 flex flex-col overflow-auto">
+          {showChrome && <NotificationBar />}
+          <main className="flex-1 overflow-auto">{children}</main>
+        </div>
         {showChrome && <BugReporter />}
         {showChrome && <ActivityTracker />}
         {showChrome && <AutoRefresh intervalMs={60000} />}
