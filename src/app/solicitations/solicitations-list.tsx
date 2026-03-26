@@ -46,6 +46,9 @@ interface Solicitation {
   last_bid_date: string | null;
   est_value: number | null;
   last_award_price: number | null;
+  data_source: string | null;
+  competitor_cage: string | null;
+  award_count: number | null;
   bid_status: string | null;
   final_price: number | null;
   bid_comment: string | null;
@@ -718,6 +721,12 @@ export function SolicitationsList({
                             {s.set_aside && s.set_aside !== "None" && (
                               <span className="text-[9px] px-1 rounded bg-amber-50 text-amber-700">{s.set_aside}</span>
                             )}
+                            {s.data_source === "lamlinks" && (
+                              <span className="text-[9px] px-1 rounded bg-cyan-50 text-cyan-700 font-medium">LL</span>
+                            )}
+                            {(s.award_count ?? 0) > 0 && (
+                              <span className="text-[9px] px-1 rounded bg-orange-50 text-orange-700" title={s.competitor_cage || ""}>{s.award_count} competitors</span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -993,10 +1002,14 @@ export function SolicitationsList({
                               <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
                                 <div className="text-[10px] text-blue-700 font-medium mb-1">Source Info</div>
                                 <div className="space-y-1 text-xs">
+                                  <div>Data: <span className={`px-1 rounded font-medium ${s.data_source === "lamlinks" ? "bg-cyan-100 text-cyan-700" : "bg-gray-100 text-gray-600"}`}>{s.data_source === "lamlinks" ? "LamLinks Import" : "DIBBS Scrape"}</span></div>
                                   {s.source && <div>Matched: <span className={`px-1 rounded font-medium ${s.source === "ax" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{s.source === "ax" ? "via AX" : "via Master"}</span></div>}
                                   {s.cost_source && <div className="text-muted">Cost: {s.cost_source}</div>}
                                   {s.channel === "dibbs_only" && <div><span className="px-1 rounded bg-orange-100 text-orange-700 font-medium">DIBBS only — not in LamLinks</span></div>}
                                   {s.already_bid && <div className="text-purple-700 font-medium">Already bid in LamLinks @${s.last_bid_price?.toFixed(2)}</div>}
+                                  {(s.award_count ?? 0) > 0 && (
+                                    <div>Competitors: <span className="font-mono font-medium text-orange-700">{s.competitor_cage?.split(",").join(", ") || s.award_count}</span></div>
+                                  )}
                                 </div>
                               </div>
                             </div>

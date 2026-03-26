@@ -62,6 +62,26 @@ export async function POST() {
   const allSolicitations: RawSolicitation[] = [];
   const errors: string[] = [];
 
+  // Check which FSCs are already covered by LamLinks import
+  const supabaseCheck = createServiceClient();
+  let llFscs: string[] = [];
+  try {
+    const { data: lastImport } = await supabaseCheck
+      .from("sync_log")
+      .select("details")
+      .eq("action", "lamlinks_import")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+    if (lastImport?.details?.active_fscs) {
+      llFscs = lastImport.details.active_fscs;
+    }
+  } catch {}
+
+  // Only scrape FSCs NOT already covered by LamLinks
+  const fscsToScrape = TOP_FSCS.filter(fsc => !llFscs.includes(fsc));
+  const skippedFscs = TOP_FSCS.filter(fsc => llFscs.includes(fsc));
+
   // First, accept consent by fetching the warning page
   try {
     await fetch(`${DIBBS_BASE}/dodwarning.aspx?goto=/`, {
@@ -73,7 +93,7 @@ export async function POST() {
   } catch {}
 
   // Scrape each FSC using "today" scope
-  for (const fsc of TOP_FSCS) {
+  for (const fsc of fscsToScrape) {
     try {
       const url = `${DIBBS_BASE}/Rfq/RfqRecs.aspx?category=FSC&value=${fsc}&scope=today`;
       const resp = await fetch(url, { redirect: "follow" });
@@ -96,6 +116,7 @@ export async function POST() {
       const batch = allSolicitations.slice(i, i + 100).map((s) => ({
         ...s,
         scraped_at: new Date().toISOString(),
+        data_source: "dibbs_scrape",
         approved_parts: null,
         detail_url: null,
       }));
@@ -123,7 +144,9 @@ export async function POST() {
   const result = {
     success: true,
     count: allSolicitations.length,
-    fscs_scraped: TOP_FSCS.length,
+    fscs_scraped: fscsToScrape.length,
+    fscs_from_lamlinks: skippedFscs.length,
+    lamlinks_fscs: skippedFscs,
     errors,
     elapsed_seconds: parseFloat(elapsed),
     enrich: enrichResult,
