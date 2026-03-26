@@ -83,7 +83,7 @@ type SortField = "value" | "margin" | "due" | "price" | "quantity";
 
 export function SolicitationsList({
   initialData,
-  counts: initialCounts,
+  counts: _initialCounts,
   awardHistory,
   abeBidHistory,
   initialFilter,
@@ -99,7 +99,6 @@ export function SolicitationsList({
   initialSort?: string;
 }) {
   const [solicitations, setSolicitations] = useState(initialData);
-  const [counts, setCounts] = useState(initialCounts);
   const [filter, setFilter] = useState<string>(initialFilter || "sourceable");
   const [sortField, setSortField] = useState<SortField>((initialSort as SortField) || "value");
   const [sortAsc, setSortAsc] = useState(false);
@@ -141,6 +140,28 @@ export function SolicitationsList({
     }
     return map;
   }, [abeBidHistory]);
+
+  // Compute counts client-side — applies same isOpen + already_bid logic as filters
+  const counts = useMemo(() => {
+    const parseOpen = (s: Solicitation) => {
+      if (!s.return_by_date) return true;
+      const parts = s.return_by_date.split("-");
+      if (parts.length === 3 && parts[2].length === 4) {
+        const d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+        return d >= new Date(new Date().toDateString());
+      }
+      return new Date(s.return_by_date) >= new Date(new Date().toDateString());
+    };
+    let sourceable = 0, quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0;
+    for (const s of solicitations) {
+      if (s.bid_status === "quoted") { quoted++; continue; }
+      if (s.bid_status === "submitted") { submitted++; continue; }
+      if (s.bid_status === "skipped") { skipped++; continue; }
+      if (s.already_bid) { alreadyBid++; continue; }
+      if (s.is_sourceable && !s.bid_status && parseOpen(s)) sourceable++;
+    }
+    return { total: solicitations.length, sourceable, quoted, submitted, skipped, alreadyBid };
+  }, [solicitations]);
 
   async function handleFindSuppliers(sol: Solicitation) {
     if (supplierSearchId === sol.id) { setSupplierSearchId(null); return; }
@@ -230,7 +251,6 @@ export function SolicitationsList({
             : s
         )
       );
-      setCounts((c) => ({ ...c, sourceable: c.sourceable - 1, quoted: c.quoted + 1 }));
       advanceDetail(sol.id);
       setEditingId(null);
       setEditPrice("");
@@ -259,7 +279,6 @@ export function SolicitationsList({
       setSolicitations((prev) =>
         prev.map((s) => (s.id === sol.id ? { ...s, bid_status: "skipped" } : s))
       );
-      setCounts((c) => ({ ...c, sourceable: c.sourceable - 1, skipped: c.skipped + 1 }));
       advanceDetail(sol.id);
       setEditingId(null);
       setEditComment("");
@@ -292,11 +311,6 @@ export function SolicitationsList({
             : s
         )
       );
-      setCounts((c) => ({
-        ...c,
-        quoted: c.quoted - selectedQuoted.size,
-        submitted: c.submitted + selectedQuoted.size,
-      }));
       setSelectedQuoted(new Set());
       setMessage(`${toSubmit.length} bids submitted!`);
     } catch {} finally { setSubmitting(false); }
@@ -447,8 +461,8 @@ export function SolicitationsList({
           { key: "quoted", label: "Quoted", count: counts.quoted, color: "border-blue-300 bg-blue-50", icon: DollarSign },
           { key: "submitted", label: "Submitted", count: counts.submitted, color: "border-purple-300 bg-purple-50", icon: Send },
           { key: "skipped", label: "Skipped", count: counts.skipped, color: "border-gray-300 bg-gray-50", icon: X },
-          { key: "all_unsourced", label: "No Source", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped, color: "border-amber-200 bg-amber-50", icon: Package },
-          { key: "already_bid", label: "Bid in LL", count: solicitations.filter(s => s.already_bid).length, color: "border-purple-200 bg-purple-50", icon: Check },
+          { key: "all_unsourced", label: "No Source", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped - counts.alreadyBid, color: "border-amber-200 bg-amber-50", icon: Package },
+          { key: "already_bid", label: "Bid in LL", count: counts.alreadyBid, color: "border-purple-200 bg-purple-50", icon: Check },
           { key: "all", label: "All", count: counts.total, color: "border-card-border bg-card-bg", icon: Package },
         ].map((step) => (
           <button
