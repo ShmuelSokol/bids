@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { trackAction } from "@/components/activity-tracker";
+import { calculateBidScore, type BidScore } from "@/lib/bid-score";
 
 interface Solicitation {
   id: number;
@@ -83,7 +84,7 @@ interface Counts {
   skipped: number;
 }
 
-type SortField = "value" | "margin" | "due" | "price" | "quantity";
+type SortField = "value" | "margin" | "due" | "price" | "quantity" | "score";
 
 export function SolicitationsList({
   initialData,
@@ -104,7 +105,7 @@ export function SolicitationsList({
 }) {
   const [solicitations, setSolicitations] = useState(initialData);
   const [filter, setFilter] = useState<string>(initialFilter || "sourceable");
-  const [sortField, setSortField] = useState<SortField>((initialSort as SortField) || "value");
+  const [sortField, setSortField] = useState<SortField>((initialSort as SortField) || "score");
   const [sortAsc, setSortAsc] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -465,17 +466,50 @@ export function SolicitationsList({
       );
     }
 
-    // Add potential_value for sorting
-    items = items.map((s) => ({
-      ...s,
-      _potentialValue: s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1),
-    }));
+    // Add potential_value + bid score
+    const parseDaysUntilDue = (d: string | null) => {
+      if (!d) return null;
+      const parts = d.split("-");
+      let dt: Date;
+      if (parts.length === 3 && parts[2].length === 4) dt = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+      else dt = new Date(d);
+      return Math.ceil((dt.getTime() - Date.now()) / 86400000);
+    };
+
+    // Count bids per FSC for win probability proxy
+    const fscBidCounts = new Map<string, number>();
+    for (const s of solicitations) {
+      if (s.already_bid) fscBidCounts.set(s.fsc, (fscBidCounts.get(s.fsc) || 0) + 1);
+    }
+
+    items = items.map((s) => {
+      const potVal = s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
+      const bidScore = calculateBidScore({
+        suggestedPrice: s.suggested_price,
+        ourCost: s.our_cost,
+        marginPct: s.margin_pct,
+        quantity: s.quantity || 1,
+        estValue: potVal,
+        isSourceable: s.is_sourceable,
+        source: s.source,
+        costSource: s.cost_source,
+        priceSource: s.price_source,
+        fscWinRate: null, // would need heatmap data
+        fscBidVolume: fscBidCounts.get(s.fsc) || 0,
+        alreadyBid: s.already_bid,
+        awardCount: s.award_count || 0,
+        daysUntilDue: parseDaysUntilDue(s.return_by_date),
+        fob: s.fob,
+      });
+      return { ...s, _potentialValue: potVal, _bidScore: bidScore };
+    });
 
     // Sort
     const dir = sortAsc ? 1 : -1;
     items.sort((a, b) => {
       const av = a as any, bv = b as any;
       switch (sortField) {
+        case "score": return ((av._bidScore?.score || 0) - (bv._bidScore?.score || 0)) * dir;
         case "value": return (av._potentialValue - bv._potentialValue) * dir;
         case "margin": return ((a.margin_pct || 0) - (b.margin_pct || 0)) * dir;
         case "due": return ((a.return_by_date || "").localeCompare(b.return_by_date || "")) * dir;
@@ -687,6 +721,7 @@ export function SolicitationsList({
                 <th className="px-3 py-2 text-right"><SortHeader field="price">Suggested</SortHeader></th>
                 <th className="px-3 py-2 text-right"><SortHeader field="margin">Margin</SortHeader></th>
                 <th className="px-3 py-2 text-right"><SortHeader field="value">Pot. Value</SortHeader></th>
+                <th className="px-3 py-2 text-center"><SortHeader field="score">Score</SortHeader></th>
                 <th className="px-3 py-2 font-medium">FOB</th>
                 <th className="px-3 py-2"><SortHeader field="due">Due</SortHeader></th>
                 <th className="px-3 py-2 font-medium">Channel</th>
@@ -791,6 +826,21 @@ export function SolicitationsList({
                             )}
                           </>
                         ) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {(() => {
+                          const bs = (s as any)._bidScore as BidScore | undefined;
+                          if (!bs) return "—";
+                          const color = bs.score >= 65 ? "bg-green-100 text-green-800" : bs.score >= 40 ? "bg-yellow-100 text-yellow-800" : "bg-red-50 text-red-700";
+                          return (
+                            <div title={bs.reasons.join(" · ")}>
+                              <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${color}`}>{bs.score}</span>
+                              <div className={`text-[9px] font-medium mt-0.5 ${bs.recommendation === "BID" ? "text-green-700" : bs.recommendation === "CONSIDER" ? "text-yellow-700" : "text-red-600"}`}>
+                                {bs.recommendation}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-2 text-center">
                         {s.fob ? (
@@ -968,7 +1018,28 @@ export function SolicitationsList({
                                   <span>Due: {s.return_by_date}</span>
                                   {s.fob && <span>FOB: {s.fob === "D" ? "Dest" : "Origin"}</span>}
                                   {s.procurement_type && s.procurement_type !== "RFQ" && <span className="px-1 rounded bg-indigo-100 text-indigo-700">{s.procurement_type}</span>}
+                                  {(() => {
+                                    const bs = (s as any)._bidScore as BidScore | undefined;
+                                    if (!bs) return null;
+                                    const color = bs.recommendation === "BID" ? "bg-green-600" : bs.recommendation === "CONSIDER" ? "bg-yellow-500" : "bg-red-500";
+                                    return (
+                                      <span className={`px-2 py-0.5 rounded text-white text-[10px] font-bold ${color}`} title={bs.reasons.join(" · ")}>
+                                        {bs.recommendation} ({bs.score}/100)
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
+                                {(() => {
+                                  const bs = (s as any)._bidScore as BidScore | undefined;
+                                  if (!bs || !bs.reasons.length) return null;
+                                  return (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {bs.reasons.map((r, i) => (
+                                        <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{r}</span>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               <div className="flex gap-2">
                                 <button onClick={(e) => { e.stopPropagation(); handleFindSuppliers(s); }}
