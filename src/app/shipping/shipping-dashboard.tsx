@@ -76,13 +76,13 @@ export function ShippingDashboard({
     return counts;
   }, [shipments]);
 
-  const totalValue = shipments.reduce((s, sh) => s + (sh.sell_value || 0), 0);
-  const todayShipments = shipments.filter((s) => {
+  const totalValue = filtered.reduce((s, sh) => s + (sh.sell_value || 0), 0);
+  const todayShipments = filtered.filter((s) => {
     const d = new Date(s.ship_date);
     const today = new Date();
     return d.toDateString() === today.toDateString();
   });
-  const fobDestCount = shipments.filter((s) => s.fob === "D").length;
+  const fobDestCount = filtered.filter((s) => s.fob === "D").length;
 
   // Group by contract for consolidation
   const consolidation = useMemo(() => {

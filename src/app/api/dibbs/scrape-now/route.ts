@@ -134,11 +134,17 @@ export async function POST() {
     const chunk = batchFscs.slice(i, i + 5);
     const results = await Promise.allSettled(
       chunk.map(async (fsc) => {
-        const url = `${DIBBS_BASE}/Rfq/RfqRecs.aspx?category=FSC&value=${fsc}&scope=today`;
-        const resp = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(10000) });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const html = await resp.text();
-        return { fsc, items: parseTable(html, fsc) };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        try {
+          const url = `${DIBBS_BASE}/Rfq/RfqRecs.aspx?category=FSC&value=${fsc}&scope=today`;
+          const resp = await fetch(url, { redirect: "follow", signal: controller.signal });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const html = await resp.text();
+          return { fsc, items: parseTable(html, fsc) };
+        } finally {
+          clearTimeout(timeout);
+        }
       })
     );
     for (const r of results) {

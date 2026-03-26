@@ -56,10 +56,14 @@ interface SubmittedBid {
 
 // Invoice number generation (matching src/lib/invoicing.ts logic)
 function stripToGovFormat(contractNum: string, lineIdx: number, totalLines: number): string {
-  // Generate a short invoice number from contract
-  const num = contractNum.replace(/[^0-9]/g, "").slice(-5).padStart(5, "0");
-  const suffix = totalLines > 1 && lineIdx > 0 ? String.fromCharCode(65 + lineIdx - 1) : "";
-  return num + (suffix ? suffix : "00").slice(0, 7 - num.length);
+  let stripped = contractNum.replace(/[^0-9]/g, "");
+  if (stripped.length > 7) stripped = stripped.slice(-7);
+  while (stripped.length < 7) stripped = "0" + stripped;
+  if (totalLines > 1 && lineIdx > 0) {
+    const suffix = String.fromCharCode(65 + lineIdx - 1);
+    stripped = stripped.slice(0, 6) + suffix;
+  }
+  return stripped;
 }
 
 const wafStatusColors: Record<string, string> = {
@@ -175,13 +179,21 @@ export function InvoicingDashboard({
               unitPrice: a.unit_price || 0,
             }],
           })),
-          download: true,
         }),
       });
 
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        alert("EDI generation failed: " + (err.error || res.statusText));
+        return;
+      }
+
+      // API returns JSON with ediContent when download is not set
       const data = await res.json();
-      if (data.edi) {
-        setEdiResult(data.edi);
+      if (data.ediContent) {
+        setEdiResult(data.ediContent);
+      } else if (data.error) {
+        alert("EDI error: " + data.error);
       }
     } catch {
       alert("EDI generation failed");
