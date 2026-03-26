@@ -56,33 +56,38 @@ async function handleSupplierDiscovery(payload: any, supabase: any): Promise<any
   const cleanName = (nomenclature || "").replace(/[^a-zA-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
   const results: any[] = [];
 
-  // Search 1: "{item} wholesale supplier"
+  // Search using DuckDuckGo (doesn't block cloud IPs like Google)
   const searches = [
     { query: `${cleanName} wholesale supplier`, source: "wholesale" },
     { query: `NSN ${nsn} supplier distributor`, source: "nsn_search" },
-    { query: `"${cleanName}" buy bulk`, source: "bulk_buy" },
+    { query: `${cleanName} bulk buy medical supply`, source: "bulk_buy" },
   ];
 
   for (const search of searches) {
     try {
       const resp = await fetch(
-        `https://www.google.com/search?q=${encodeURIComponent(search.query)}&num=8`,
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(search.query)}`,
         {
           headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           },
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(10000),
         }
       );
       const html = await resp.text();
 
-      // Extract URLs and titles from search results
-      const linkPattern = /<a[^>]+href="\/url\?q=([^&"]+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
-      let match;
-      while ((match = linkPattern.exec(html)) !== null) {
-        const url = decodeURIComponent(match[1]);
-        const title = match[2].replace(/<[^>]+>/g, "").trim();
-        if (!url.startsWith("http") || url.includes("google.com") || url.includes("youtube.com")) continue;
+      // Extract URLs and titles from DuckDuckGo results
+      const linkPattern = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+      // Also try generic link pattern
+      const linkPattern2 = /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+      const patterns = [linkPattern, linkPattern2];
+
+      for (const pattern of patterns) {
+        let match;
+        while ((match = pattern.exec(html)) !== null) {
+          const url = decodeURIComponent(match[1]);
+          const title = match[2].replace(/<[^>]+>/g, "").trim();
+          if (!url.startsWith("http") || url.includes("duckduckgo.com") || url.includes("youtube.com")) continue;
 
         try {
           const domain = new URL(url).hostname.replace("www.", "");
@@ -101,6 +106,7 @@ async function handleSupplierDiscovery(payload: any, supabase: any): Promise<any
             confidence: title.toLowerCase().includes("wholesale") || title.toLowerCase().includes("supplier") || title.toLowerCase().includes("distributor") ? "medium" : "low",
           });
         } catch {}
+        }
       }
 
       await delay(DELAY_MS);
