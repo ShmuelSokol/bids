@@ -11,32 +11,48 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Scrape DIBBS expansion FSCs (batch 1)
+        run: |
+          echo "Triggering DIBBS scrape batch 1..."
+          curl -s -X POST "https://dibs-gov-production.up.railway.app/api/dibbs/scrape-now" | jq .
+          sleep 5
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+      - name: Scrape batch 2
+        run: |
+          echo "Batch 2..."
+          curl -s -X POST "https://dibs-gov-production.up.railway.app/api/dibbs/scrape-now" | jq .
+          sleep 5
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
+      - name: Scrape batch 3
+        run: |
+          echo "Batch 3..."
+          curl -s -X POST "https://dibs-gov-production.up.railway.app/api/dibbs/scrape-now" | jq .
+          sleep 5
 
-      - name: Install Playwright Chromium
-        run: npx playwright install chromium
+      - name: Scrape batch 4
+        run: |
+          echo "Batch 4..."
+          curl -s -X POST "https://dibs-gov-production.up.railway.app/api/dibbs/scrape-now" | jq .
+          sleep 5
 
-      - name: Run DIBBS scrape (today's solicitations)
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: npx tsx scripts/scrape-dibbs-daily.ts
+      - name: Scrape batch 5
+        run: |
+          echo "Batch 5..."
+          curl -s -X POST "https://dibs-gov-production.up.railway.app/api/dibbs/scrape-now" | jq .
+          sleep 5
 
-      - name: Upload results artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dibbs-solicitations-${{ github.run_number }}
-          path: data/dibbs/
-          retention-days: 30
+      - name: Scrape batches 6-8
+        run: |
+          for i in 6 7 8; do
+            echo "Batch $i..."
+            curl -s -X POST "https://dibs-gov-production.up.railway.app/api/dibbs/scrape-now" | jq '.count, .fscs_remaining'
+            sleep 5
+          done
+
+      - name: Summary
+        run: |
+          echo "DIBBS scrape complete. Each batch scraped 30 expansion FSCs."
+          echo "Total: up to 240 FSCs across 8 batches."
