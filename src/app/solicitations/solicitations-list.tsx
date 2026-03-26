@@ -538,6 +538,22 @@ export function SolicitationsList({
     return filtered.reduce((sum, s) => sum + ((s as any)._potentialValue || s.est_value || 0), 0);
   }, [filtered]);
 
+  // Auto-switch to "All" when search finds 0 results in current filter
+  useEffect(() => {
+    if (!searchQuery.trim() || filter === "all") return;
+    if (filtered.length === 0) {
+      // Check if there ARE results in "all"
+      const q = searchQuery.toLowerCase();
+      const allMatch = solicitations.some((s) =>
+        s.nsn?.toLowerCase().includes(q) ||
+        s.nomenclature?.toLowerCase().includes(q) ||
+        s.solicitation_number?.toLowerCase().includes(q) ||
+        s.fsc?.includes(q)
+      );
+      if (allMatch) setFilter("all");
+    }
+  }, [filtered.length, searchQuery, filter, solicitations]);
+
   // Advance detail panel to next item in filtered list
   function advanceDetail(currentId: number) {
     const idx = filtered.findIndex((s) => s.id === currentId);
