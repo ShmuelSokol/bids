@@ -119,6 +119,7 @@ export function SolicitationsList({
   const [supplierSearchId, setSupplierSearchId] = useState<number | null>(null);
   const [supplierResults, setSupplierResults] = useState<any>(null);
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   // Build award history lookup
   const historyByNsn = useMemo(() => {
@@ -596,7 +597,9 @@ export function SolicitationsList({
                   <>
                     <tr
                       key={s.id}
-                      className={`border-b border-card-border hover:bg-gray-50/50 ${
+                      onClick={() => setDetailId(detailId === s.id ? null : s.id)}
+                      className={`border-b border-card-border hover:bg-gray-50/50 cursor-pointer ${
+                        detailId === s.id ? "bg-accent/5 ring-1 ring-accent/20" :
                         s.bid_status === "submitted" ? "bg-purple-50/30" :
                         s.bid_status === "quoted" ? "bg-blue-50/30" :
                         s.bid_status === "skipped" ? "opacity-40" : ""
@@ -830,6 +833,143 @@ export function SolicitationsList({
                               ) : (
                                 <p className="text-xs text-muted">No awards on record</p>
                               )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Detail / Bid Panel */}
+                    {detailId === s.id && (
+                      <tr key={`detail-${s.id}`} className="border-b border-card-border bg-white">
+                        <td colSpan={filter === "quoted" ? 12 : 11} className="p-0">
+                          <div className="p-4 border-t-2 border-accent/30">
+                            {/* Header */}
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <h3 className="text-sm font-bold">{s.nomenclature}</h3>
+                                <div className="flex items-center gap-3 text-xs text-muted mt-0.5">
+                                  <span className="font-mono text-accent">{s.nsn}</span>
+                                  <span>{s.solicitation_number}</span>
+                                  <span>Qty: {s.quantity}</span>
+                                  <span>Due: {s.return_by_date}</span>
+                                  {s.fob && <span>FOB: {s.fob === "D" ? "Dest" : "Origin"}</span>}
+                                  {s.procurement_type && s.procurement_type !== "RFQ" && <span className="px-1 rounded bg-indigo-100 text-indigo-700">{s.procurement_type}</span>}
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={(e) => { e.stopPropagation(); handleFindSuppliers(s); }}
+                                  className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-medium">
+                                  Find Suppliers
+                                </button>
+                                {filtered.indexOf(s) < filtered.length - 1 && (
+                                  <button onClick={(e) => { e.stopPropagation(); setDetailId(filtered[filtered.indexOf(s) + 1].id); }}
+                                    className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium">
+                                    Next →
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Pricing + Bid Form */}
+                            <div className="grid md:grid-cols-3 gap-4 mb-3">
+                              <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                                <div className="text-[10px] text-green-700 font-medium mb-1">Suggested Bid</div>
+                                <div className="text-2xl font-bold font-mono text-green-700">{s.suggested_price ? `$${s.suggested_price.toFixed(2)}` : "—"}</div>
+                                {s.price_source && <div className="text-[10px] text-green-600 mt-1">{s.price_source}</div>}
+                                {s.our_cost && (
+                                  <div className="text-xs text-green-600 mt-1">
+                                    Cost: ${s.our_cost.toFixed(2)} · Margin: {s.margin_pct}%
+                                    {s.est_shipping && ` · Ship: ~$${s.est_shipping}`}
+                                  </div>
+                                )}
+                                <div className="text-xs font-medium text-green-700 mt-1">
+                                  Potential: ${potValue > 0 ? potValue.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}
+                                </div>
+                              </div>
+
+                              <div className="bg-gray-50 rounded-lg p-3 border border-card-border">
+                                <div className="text-[10px] text-muted font-medium mb-1">Your Bid</div>
+                                <div className="space-y-2">
+                                  <input type="number" value={editingId === s.id ? editPrice : (s.suggested_price?.toFixed(2) || "")}
+                                    onChange={(e) => { setEditingId(s.id); setEditPrice(e.target.value); }}
+                                    onFocus={() => { if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}}
+                                    step="0.01" placeholder="Price"
+                                    className="w-full rounded border border-card-border px-3 py-2 text-sm font-mono" />
+                                  <div className="flex gap-2">
+                                    <input type="number" value={editingId === s.id ? editDays : "45"}
+                                      onChange={(e) => { setEditingId(s.id); setEditDays(e.target.value); }}
+                                      className="w-20 rounded border border-card-border px-2 py-1.5 text-xs font-mono" placeholder="Days" />
+                                    <input type="text" value={editingId === s.id ? editComment : ""}
+                                      onChange={(e) => { setEditingId(s.id); setEditComment(e.target.value); }}
+                                      className="flex-1 rounded border border-card-border px-2 py-1.5 text-xs" placeholder="Reason for change (optional)" />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button onClick={(e) => { e.stopPropagation(); if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); } handleApprove(s); }}
+                                      disabled={saving} className="flex-1 flex items-center justify-center gap-1 rounded bg-green-600 px-3 py-2 text-xs text-white font-medium hover:bg-green-700 disabled:opacity-50">
+                                      <Check className="h-3 w-3" /> Approve & Next
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleSkip(s); }}
+                                      disabled={saving} className="flex items-center gap-1 rounded bg-gray-300 px-3 py-2 text-xs text-gray-700 font-medium hover:bg-gray-400 disabled:opacity-50">
+                                      <X className="h-3 w-3" /> Skip
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                                <div className="text-[10px] text-blue-700 font-medium mb-1">Source Info</div>
+                                <div className="space-y-1 text-xs">
+                                  {s.source && <div>Matched: <span className={`px-1 rounded font-medium ${s.source === "ax" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{s.source === "ax" ? "via AX" : "via Master"}</span></div>}
+                                  {s.cost_source && <div className="text-muted">Cost: {s.cost_source}</div>}
+                                  {s.channel === "dibbs_only" && <div><span className="px-1 rounded bg-orange-100 text-orange-700 font-medium">DIBBS only — not in LamLinks</span></div>}
+                                  {s.already_bid && <div className="text-purple-700 font-medium">Already bid in LamLinks @${s.last_bid_price?.toFixed(2)}</div>}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Bid History */}
+                            <div className="grid md:grid-cols-2 gap-4">
+                              <div>
+                                <div className="text-xs font-bold text-green-700 mb-1">Ever Ready Bid History ({abeBids.length})</div>
+                                {abeBids.length > 0 ? (
+                                  <div className="max-h-40 overflow-auto">
+                                    <table className="w-full text-xs">
+                                      <thead><tr className="text-muted"><th className="text-left py-0.5">Date</th><th className="text-right py-0.5">Price</th><th className="text-right py-0.5">Days</th><th className="text-right py-0.5">Qty</th></tr></thead>
+                                      <tbody>
+                                        {abeBids.map((b, i) => (
+                                          <tr key={i} className="border-t border-card-border/30">
+                                            <td className="py-0.5 text-muted">{b.bid_date ? new Date(b.bid_date).toLocaleDateString() : "—"}</td>
+                                            <td className="py-0.5 text-right font-mono text-green-700">${b.bid_price?.toFixed(2)}</td>
+                                            <td className="py-0.5 text-right">{b.lead_time_days}d</td>
+                                            <td className="py-0.5 text-right">{b.bid_qty}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : <p className="text-xs text-muted">No prior bids</p>}
+                              </div>
+                              <div>
+                                <div className="text-xs font-bold text-blue-700 mb-1">Award History ({history.length})</div>
+                                {history.length > 0 ? (
+                                  <div className="max-h-40 overflow-auto">
+                                    <table className="w-full text-xs">
+                                      <thead><tr className="text-muted"><th className="text-left py-0.5">Date</th><th className="text-right py-0.5">Price</th><th className="text-right py-0.5">Qty</th><th className="text-left py-0.5">Winner</th></tr></thead>
+                                      <tbody>
+                                        {history.map((h, i) => (
+                                          <tr key={i} className="border-t border-card-border/30">
+                                            <td className="py-0.5 text-muted">{h.award_date ? new Date(h.award_date).toLocaleDateString() : "—"}</td>
+                                            <td className="py-0.5 text-right font-mono text-blue-700">${h.unit_price?.toFixed(2)}</td>
+                                            <td className="py-0.5 text-right">{h.quantity}</td>
+                                            <td className="py-0.5 font-mono">{h.cage?.trim() || "—"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : <p className="text-xs text-muted">No awards</p>}
+                              </div>
                             </div>
                           </div>
                         </td>
