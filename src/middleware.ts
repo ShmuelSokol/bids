@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/auth", "/api/dibbs", "/api/track", "/api/bug-report", "/api/notifications", "/api/jobs", "/api/bugs/respond", "/api/awards"];
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/dibbs", "/api/track", "/api/bug-report", "/api/notifications", "/api/jobs", "/api/bugs/respond", "/api/awards", "/api/setup-github-secrets"];
 
 // Pass pathname to layout via header for must_reset_password check
 
