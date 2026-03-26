@@ -105,13 +105,35 @@ export async function POST() {
     }
   }
 
+  // Auto-enrich after scrape
+  let enrichResult = null;
+  try {
+    const enrichResp = await fetch(
+      new URL("/api/dibbs/enrich", process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : "http://localhost:3000"
+      ).toString(),
+      { method: "POST", headers: { Cookie: "" } }
+    );
+    if (enrichResp.ok) enrichResult = await enrichResp.json();
+  } catch {}
+
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-  return NextResponse.json({
+  const result = {
     success: true,
     count: allSolicitations.length,
     fscs_scraped: TOP_FSCS.length,
     errors,
     elapsed_seconds: parseFloat(elapsed),
+    enrich: enrichResult,
+  };
+
+  // Log sync
+  await supabase.from("sync_log").insert({
+    action: "scrape",
+    details: result,
   });
+
+  return NextResponse.json(result);
 }

@@ -225,13 +225,26 @@ export async function POST() {
     sourceableCount++;
   }
 
-  return NextResponse.json({
+  const alreadyBidCount = solicitations.filter(
+    (s) => bidsBySol.has(s.solicitation_number || "")
+  ).length;
+
+  const result = {
     success: true,
     total_checked: solicitations.length,
     sourceable: sourceableCount,
     with_cost_data: withCostCount,
+    already_bid: alreadyBidCount,
     ax_nsns_loaded: axNsnSet.size,
     masterdb_nsns_loaded: mdbNsnSet.size,
     costs_loaded: costMap.size,
+  };
+
+  // Log sync
+  await supabase.from("sync_log").insert({
+    action: "enrich",
+    details: result,
   });
+
+  return NextResponse.json(result);
 }

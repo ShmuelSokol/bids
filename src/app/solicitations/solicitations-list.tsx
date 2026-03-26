@@ -85,11 +85,13 @@ export function SolicitationsList({
   abeBidHistory,
   initialFilter,
   initialSort,
+  lastSync,
 }: {
   initialData: Solicitation[];
   counts: Counts;
   awardHistory: AwardHistory[];
   abeBidHistory: AbeBid[];
+  lastSync: { action: string; details: any; created_at: string } | null;
   initialFilter?: string;
   initialSort?: string;
 }) {
@@ -135,20 +137,28 @@ export function SolicitationsList({
 
   async function handleScrapeNow() {
     setScraping(true);
-    setMessage("Scraping DIBBS for new solicitations...");
+    setMessage("Syncing — scraping DIBBS for new solicitations...");
     try {
       const res = await fetch("/api/dibbs/scrape-now", { method: "POST" });
       const data = await res.json();
-      if (data.count > 0) {
-        setMessage(`Found ${data.count} solicitations across ${data.fscs_scraped} FSCs (${data.elapsed_seconds}s). Matching NSNs...`);
-        await handleEnrich();
-        setMessage(`Done! ${data.count} solicitations scraped and enriched. Refreshing...`);
-        setTimeout(() => window.location.reload(), 1000);
+      const enrichInfo = data.enrich;
+      if (data.count > 0 || enrichInfo) {
+        const parts = [];
+        if (data.count > 0) parts.push(`${data.count} solicitations scraped`);
+        if (enrichInfo?.sourceable) parts.push(`${enrichInfo.sourceable} sourceable`);
+        if (enrichInfo?.already_bid) parts.push(`${enrichInfo.already_bid} already bid in LL`);
+        if (enrichInfo?.with_cost_data) parts.push(`${enrichInfo.with_cost_data} with cost data`);
+        setMessage(`Sync complete: ${parts.join(" · ")}. Refreshing...`);
+        setTimeout(() => window.location.reload(), 1500);
       } else {
-        setMessage(`No new solicitations found (${data.fscs_scraped} FSCs checked, ${data.errors?.length || 0} errors)`);
+        // Scrape found nothing, run enrich anyway for existing items
+        setMessage("No new solicitations. Running analysis on existing...");
+        setEnriching(true);
+        await handleEnrich();
+        setTimeout(() => window.location.reload(), 1000);
       }
     } catch {
-      setMessage("Scrape failed — check connection");
+      setMessage("Sync failed — check connection");
     } finally {
       setScraping(false);
     }
@@ -427,15 +437,21 @@ export function SolicitationsList({
             </>
           )}
         </div>
-        <div className="flex gap-2">
-          <button onClick={handleEnrich} disabled={enriching}
-            className="flex items-center gap-1 rounded-lg border border-card-border bg-card-bg px-3 py-1.5 text-xs font-medium disabled:opacity-50">
-            {enriching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />} Match NSNs
-          </button>
-          <button onClick={handleScrapeNow} disabled={scraping}
-            className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-            {scraping ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-            {scraping ? "Scraping..." : "Scrape Now"}
+        <div className="flex items-center gap-3">
+          {lastSync && (
+            <div className="text-[10px] text-muted text-right">
+              <div>Last sync: {new Date(lastSync.created_at).toLocaleString()}</div>
+              <div>
+                {lastSync.details?.sourceable && `${lastSync.details.sourceable} sourceable`}
+                {lastSync.details?.already_bid && ` · ${lastSync.details.already_bid} already bid`}
+                {lastSync.details?.count && ` · ${lastSync.details.count} scraped`}
+              </div>
+            </div>
+          )}
+          <button onClick={handleScrapeNow} disabled={scraping || enriching}
+            className="flex items-center gap-1 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-white disabled:opacity-50">
+            {scraping || enriching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            {scraping ? "Scraping DIBBS..." : enriching ? "Analyzing..." : "Sync Data"}
           </button>
         </div>
       </div>

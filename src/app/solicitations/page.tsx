@@ -52,7 +52,21 @@ async function getData() {
     skipped: enriched.filter((s) => s.bid_status === "skipped").length,
   };
 
-  return { solicitations: enriched, counts, awards: awards || [], abeBids: abeBids || [] };
+  // Last sync time
+  const { data: lastSync } = await supabase
+    .from("sync_log")
+    .select("action, details, created_at")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  return {
+    solicitations: enriched,
+    counts,
+    awards: awards || [],
+    abeBids: abeBids || [],
+    lastSync: lastSync || null,
+  };
 }
 
 export default async function SolicitationsPage({
@@ -60,7 +74,7 @@ export default async function SolicitationsPage({
 }: {
   searchParams: Promise<{ filter?: string; sort?: string }>;
 }) {
-  const { solicitations, counts, awards, abeBids } = await getData();
+  const { solicitations, counts, awards, abeBids, lastSync } = await getData();
   const params = await searchParams;
 
   return (
@@ -79,6 +93,7 @@ export default async function SolicitationsPage({
         abeBidHistory={abeBids}
         initialFilter={params.filter}
         initialSort={params.sort}
+        lastSync={lastSync}
       />
     </div>
   );
