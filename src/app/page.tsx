@@ -12,13 +12,20 @@ import {
 async function getData() {
   const supabase = createServiceClient();
 
-  // Load only sourceable + open items for dashboard (not all 14K)
-  // This is much faster than loading everything
-  const { data: sourceableItems } = await supabase
-    .from("dibbs_solicitations")
-    .select("*")
-    .eq("is_sourceable", true)
-    .limit(5000);
+  // Load ALL sourceable items (paginate past Supabase 1K default)
+  const allSourceable: any[] = [];
+  let page = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("dibbs_solicitations")
+      .select("*")
+      .eq("is_sourceable", true)
+      .range(page * 1000, (page + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allSourceable.push(...data);
+    if (data.length < 1000) break;
+    page++;
+  }
 
   // Get total counts efficiently
   const { count: totalCount } = await supabase
@@ -30,7 +37,7 @@ async function getData() {
     .select("*", { count: "exact", head: true })
     .eq("is_sourceable", false);
 
-  const solicitations = sourceableItems || [];
+  const solicitations = allSourceable;
 
   const { data: decisions } = await supabase
     .from("bid_decisions")
@@ -43,15 +50,17 @@ async function getData() {
 
   const all = solicitations || [];
 
-  // Parse open status (same logic as solicitations page)
+  // Parse open status — use YYYY-MM-DD string comparison to avoid timezone issues
+  const todayStr = new Date().toISOString().split("T")[0]; // "2026-03-26" in UTC
   const isOpen = (s: any) => {
     if (!s.return_by_date) return true;
     const parts = s.return_by_date.split("-");
     if (parts.length === 3 && parts[2].length === 4) {
-      const d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
-      return d >= new Date(new Date().toDateString());
+      // MM-DD-YYYY → YYYY-MM-DD for string comparison
+      const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
+      return isoDate >= todayStr;
     }
-    return new Date(s.return_by_date) >= new Date(new Date().toDateString());
+    return s.return_by_date >= todayStr;
   };
 
   const sourceable = all.filter(
