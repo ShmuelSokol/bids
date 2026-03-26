@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
 import { BugReporter } from "@/components/bug-reporter";
 import { ActivityTracker } from "@/components/activity-tracker";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { getCurrentUser } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -69,6 +70,7 @@ export default async function RootLayout({
         <main className="flex-1 overflow-auto">{children}</main>
         {showChrome && <BugReporter />}
         {showChrome && <ActivityTracker />}
+        {showChrome && <AutoRefresh intervalMs={60000} />}
       </body>
     </html>
   );
