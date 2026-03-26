@@ -18,42 +18,45 @@ export function BugReporter() {
   const undoStackRef = useRef<ImageData[]>([]);
 
   const startCapture = useCallback(async () => {
-    setCapturing(true);
-    setOpen(false);
+    // Open modal immediately — screenshot is attempted in background
     setSuccess(null);
     setMarkupMode(false);
+    setScreenshot(null);
+    setOpen(true);
+    setCapturing(true);
 
     try {
-      const html2canvas = (await import("html2canvas")).default;
+      // Use Screen Capture API for a real screenshot
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: "browser" } as any,
+        preferCurrentTab: true,
+      } as any);
 
-      // Wait for rendering
-      await new Promise((r) => setTimeout(r, 500));
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
 
-      // Target the main content area, not the full body (avoids sidebar CSS issues)
-      const target = document.querySelector("main") || document.body;
+      // Wait a frame for video to render
+      await new Promise((r) => requestAnimationFrame(r));
 
-      const canvas = await html2canvas(target as HTMLElement, {
-        scale: 1,
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-        imageTimeout: 5000,
-        backgroundColor: "#f8fafc",
-        onclone: (clonedDoc: Document) => {
-          // Remove problematic elements
-          clonedDoc
-            .querySelectorAll("iframe, video, script")
-            .forEach((el) => el.remove());
-        },
-      });
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(video, 0, 0);
 
-      // allowTaint can cause toDataURL to throw — try it, fall back to png
-      let dataUrl: string;
+      // Stop all tracks
+      stream.getTracks().forEach((t) => t.stop());
+
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      setScreenshot(dataUrl);
+    } catch {
+      // Fallback to html2canvas if Screen Capture denied/unavailable
       try {
-        dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      } catch {
-        // Tainted canvas — retry without taint
-        const canvas2 = await html2canvas(target as HTMLElement, {
+        const html2canvas = (await import("html2canvas")).default;
+        await new Promise((r) => setTimeout(r, 300));
+        const target = document.querySelector("main") || document.body;
+        const canvas = await html2canvas(target as HTMLElement, {
           scale: 1,
           logging: false,
           useCORS: false,
@@ -61,18 +64,13 @@ export function BugReporter() {
           imageTimeout: 5000,
           backgroundColor: "#f8fafc",
           onclone: (clonedDoc: Document) => {
-            clonedDoc
-              .querySelectorAll("img, iframe, video, script")
-              .forEach((el) => el.remove());
+            clonedDoc.querySelectorAll("img, iframe, video, script").forEach((el) => el.remove());
           },
         });
-        dataUrl = canvas2.toDataURL("image/jpeg", 0.85);
+        setScreenshot(canvas.toDataURL("image/jpeg", 0.85));
+      } catch {
+        setScreenshot(null);
       }
-
-      setScreenshot(dataUrl);
-    } catch (err) {
-      console.error("Screenshot capture failed:", err);
-      setScreenshot(null);
     }
 
     setCapturing(false);
@@ -240,7 +238,8 @@ export function BugReporter() {
       <button
         onClick={startCapture}
         title="Report a Bug"
-        className="fixed bottom-5 right-5 z-[99998] w-14 h-14 bg-white rounded-full shadow-xl hover:scale-110 transition-transform flex items-center justify-center border border-gray-200 cursor-pointer"
+        className="fixed bottom-5 right-5 z-[99998] w-12 h-12 hover:scale-125 transition-transform flex items-center justify-center cursor-pointer"
+        style={{ background: "none", border: "none" }}
       >
         <svg
           viewBox="0 0 100 100"
