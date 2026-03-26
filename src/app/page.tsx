@@ -12,11 +12,20 @@ import {
 async function getData() {
   const supabase = createServiceClient();
 
-  const { data: solicitations } = await supabase
-    .from("dibbs_solicitations")
-    .select("*")
-    .order("scraped_at", { ascending: false })
-    .limit(500);
+  // Load all solicitations (paginate past 1K limit) for accurate counts
+  const allSolicitations: any[] = [];
+  let solPage = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("dibbs_solicitations")
+      .select("nsn, solicitation_number, is_sourceable, already_bid, return_by_date, suggested_price, quantity, nomenclature, fsc, est_value")
+      .range(solPage * 1000, (solPage + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allSolicitations.push(...data);
+    if (data.length < 1000) break;
+    solPage++;
+  }
+  const solicitations = allSolicitations;
 
   const { data: decisions } = await supabase
     .from("bid_decisions")
@@ -28,9 +37,23 @@ async function getData() {
   }
 
   const all = solicitations || [];
+
+  // Parse open status (same logic as solicitations page)
+  const isOpen = (s: any) => {
+    if (!s.return_by_date) return true;
+    const parts = s.return_by_date.split("-");
+    if (parts.length === 3 && parts[2].length === 4) {
+      const d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+      return d >= new Date(new Date().toDateString());
+    }
+    return new Date(s.return_by_date) >= new Date(new Date().toDateString());
+  };
+
   const sourceable = all.filter(
     (s) =>
       s.is_sourceable &&
+      !s.already_bid &&
+      isOpen(s) &&
       !decisionMap.has(`${s.solicitation_number}_${s.nsn}`)
   );
   const quoted = all.filter(

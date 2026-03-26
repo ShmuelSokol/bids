@@ -308,6 +308,8 @@ export function BugReporter() {
       const data = await res.json();
       if (data.success) {
         setSuccess({ number: data.issue_number, url: data.issue_url });
+        // Trigger notification bar to refresh immediately
+        window.dispatchEvent(new CustomEvent("bug-submitted"));
         setTimeout(() => { setOpen(false); setSuccess(null); setScreenshot(null); }, 3000);
       }
     } catch (err) {

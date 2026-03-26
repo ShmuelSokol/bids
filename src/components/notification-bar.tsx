@@ -11,6 +11,7 @@ interface Notification {
   state: string;
   created_at: string;
   page: string | null;
+  reporter: string;
   hasResponse: boolean;
   responsePreview: string;
   url: string;
@@ -44,7 +45,15 @@ export function NotificationBar() {
 
     // Poll every 2 minutes
     const interval = setInterval(fetchIssues, 120000);
-    return () => clearInterval(interval);
+
+    // Refresh immediately when a bug is submitted
+    function onBugSubmitted() { fetchIssues(); }
+    window.addEventListener("bug-submitted", onBugSubmitted);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("bug-submitted", onBugSubmitted);
+    };
   }, []);
 
   // Load dismissed from sessionStorage
@@ -123,6 +132,7 @@ export function NotificationBar() {
                       }`}>{issue.priority}</span>
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-500">
+                      <span className="font-medium text-gray-600">{issue.reporter}</span>
                       <span>{timeAgo(issue.created_at)}</span>
                       {issue.page && <span>on {issue.page}</span>}
                       {issue.hasScreenshot && <span>has screenshot</span>}
