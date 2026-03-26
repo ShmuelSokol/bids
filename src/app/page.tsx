@@ -62,10 +62,14 @@ async function getData() {
     return s.return_by_date >= todayStr;
   };
 
+  // Also exclude items Abe bid on today (live bids)
+  const liveBidSols = new Set(liveBids.map((b: any) => b.solicitation_number?.trim()).filter(Boolean));
+
   const sourceable = all.filter(
     (s) =>
       s.is_sourceable &&
       !s.already_bid &&
+      !liveBidSols.has(s.solicitation_number?.trim()) &&
       isOpen(s) &&
       !decisionMap.has(`${s.solicitation_number}_${s.nsn}`)
   );
