@@ -113,6 +113,9 @@ export function SolicitationsList({
   const [expandedNsn, setExpandedNsn] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
+  const [supplierSearchId, setSupplierSearchId] = useState<number | null>(null);
+  const [supplierResults, setSupplierResults] = useState<any>(null);
+  const [loadingSuppliers, setLoadingSuppliers] = useState(false);
 
   // Build award history lookup
   const historyByNsn = useMemo(() => {
@@ -134,6 +137,22 @@ export function SolicitationsList({
     }
     return map;
   }, [abeBidHistory]);
+
+  async function handleFindSuppliers(sol: Solicitation) {
+    if (supplierSearchId === sol.id) { setSupplierSearchId(null); return; }
+    setSupplierSearchId(sol.id);
+    setLoadingSuppliers(true);
+    setSupplierResults(null);
+    try {
+      const res = await fetch(`/api/solicitations/find-suppliers?nsn=${encodeURIComponent(sol.nsn)}&description=${encodeURIComponent(sol.nomenclature || "")}`);
+      const data = await res.json();
+      setSupplierResults(data);
+    } catch {
+      setSupplierResults(null);
+    } finally {
+      setLoadingSuppliers(false);
+    }
+  }
 
   async function handleScrapeNow() {
     setScraping(true);
@@ -641,17 +660,25 @@ export function SolicitationsList({
                         </div>
                       </td>
                       <td className="px-3 py-2">
-                        {s.is_sourceable && !s.bid_status && !isEditing && (
-                          <button onClick={() => { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}
-                            className="text-[10px] px-2 py-1 rounded bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium">
-                            Bid
-                          </button>
-                        )}
-                        {s.bid_comment && (
-                          <div className="text-[9px] text-yellow-700 mt-0.5 flex items-center gap-0.5">
-                            <MessageSquare className="h-2 w-2" />{s.bid_comment}
-                          </div>
-                        )}
+                        <div className="flex flex-col gap-1">
+                          {s.is_sourceable && !s.bid_status && !isEditing && (
+                            <button onClick={() => { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}
+                              className="text-[10px] px-2 py-1 rounded bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium">
+                              Bid
+                            </button>
+                          )}
+                          {!isEditing && (
+                            <button onClick={() => handleFindSuppliers(s)}
+                              className={`text-[10px] px-2 py-1 rounded border font-medium ${supplierSearchId === s.id ? "bg-blue-100 text-blue-700 border-blue-300" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-blue-50 hover:text-blue-700"}`}>
+                              {supplierSearchId === s.id ? "Close" : "Find Suppliers"}
+                            </button>
+                          )}
+                          {s.bid_comment && (
+                            <div className="text-[9px] text-yellow-700 flex items-center gap-0.5">
+                              <MessageSquare className="h-2 w-2" />{s.bid_comment}
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
 
@@ -757,6 +784,100 @@ export function SolicitationsList({
                               )}
                             </div>
                           </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Supplier Search Results */}
+                    {supplierSearchId === s.id && (
+                      <tr key={`sup-${s.id}`} className="border-b border-card-border bg-indigo-50/20">
+                        <td colSpan={filter === "quoted" ? 12 : 11} className="px-3 py-3">
+                          {loadingSuppliers ? (
+                            <div className="flex items-center gap-2 py-4 justify-center">
+                              <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                              <span className="text-sm text-indigo-700">Searching for suppliers across 10 sources...</span>
+                            </div>
+                          ) : supplierResults ? (
+                            <div className="space-y-3">
+                              <div className="text-xs font-bold text-indigo-800">
+                                Supplier Search Results — {s.nsn} &quot;{s.nomenclature}&quot;
+                              </div>
+
+                              {/* Known Vendors (from our D365 data) */}
+                              {supplierResults.vendorPrices?.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-medium text-green-700 mb-1">Known Vendors (from AX)</div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {supplierResults.vendorPrices.map((v: any, i: number) => (
+                                      <div key={i} className="text-xs bg-green-50 border border-green-200 rounded px-2 py-1">
+                                        <span className="font-mono font-medium">{v.vendor}</span>
+                                        <span className="text-green-700 ml-1">${v.price.toFixed(2)}</span>
+                                        <span className="text-[9px] text-muted ml-1">({v.price_source === "recent_po" ? "PO" : "Agreement"})</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Past Award Winners */}
+                              {supplierResults.pastWinners?.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-medium text-blue-700 mb-1">Past Award Winners</div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {supplierResults.pastWinners.map((w: any, i: number) => (
+                                      <div key={i} className="text-xs bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                                        <span className="font-mono font-medium">CAGE {w.cage}</span>
+                                        <span className="ml-1">${w.lastPrice.toFixed(2)}</span>
+                                        <span className="text-[9px] text-muted ml-1">({w.wins}x won)</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Master DB Matches */}
+                              {supplierResults.masterDbMatches?.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-medium text-purple-700 mb-1">In Our Catalog (Master DB)</div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {supplierResults.masterDbMatches.map((m: any, i: number) => (
+                                      <div key={i} className="text-xs bg-purple-50 border border-purple-200 rounded px-2 py-1">
+                                        <span className="font-medium">{m.supplier}</span>
+                                        <span className="font-mono ml-1">{m.sku}</span>
+                                        {m.cost && <span className="text-purple-700 ml-1">${m.cost.toFixed(2)}</span>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* External Search Links */}
+                              <div>
+                                <div className="text-[10px] font-medium text-gray-700 mb-1">Search External Suppliers</div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {supplierResults.searches?.map((s2: any, i: number) => (
+                                    <a
+                                      key={i}
+                                      href={s2.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] px-2 py-1 rounded bg-white border border-gray-200 text-gray-700 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 font-medium transition-colors"
+                                    >
+                                      {s2.name} ↗
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {supplierResults.vendorPrices?.length === 0 && supplierResults.pastWinners?.length === 0 && supplierResults.masterDbMatches?.length === 0 && (
+                                <div className="text-xs text-muted py-2">
+                                  No known suppliers in our system. Try the external search links above to find new sources.
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted">Search failed — try again</p>
+                          )}
                         </td>
                       </tr>
                     )}
