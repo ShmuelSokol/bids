@@ -73,6 +73,19 @@ export async function POST() {
     }
   } catch {}
 
+  // Load NDC→NSN mappings for pharma items
+  const ndcToNsn = new Map<string, string>();
+  let ndcPage = 0;
+  while (true) {
+    const { data: ndcs } = await supabase
+      .from("ndc_nsn_map")
+      .select("ndc, nsn")
+      .range(ndcPage * 1000, (ndcPage + 1) * 1000 - 1);
+    if (!ndcs || ndcs.length === 0) break;
+    ndcs.forEach((n) => ndcToNsn.set(n.ndc, n.nsn));
+    ndcPage++;
+  }
+
   // Load active LamLinks FSCs (hot + warm)
   const activeLLFscs = new Set<string>();
   const { data: heatmap } = await supabase

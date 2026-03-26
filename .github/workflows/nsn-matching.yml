@@ -1,0 +1,33 @@
+name: Auto NSN Matching
+
+on:
+  schedule:
+    # Run every 4 hours to catch new mfr_part_numbers from Master DB
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  match:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run NSN enrichment on Railway
+        env:
+          SITE_URL: https://dibs-gov-production.up.railway.app
+        run: |
+          # Trigger the enrich API which matches NSNs from all sources
+          echo "Triggering NSN enrichment..."
+          RESULT=$(curl -s -X POST "$SITE_URL/api/dibbs/enrich" -H "Content-Type: application/json")
+          echo "Result: $RESULT"
+
+          # Also trigger a fresh scrape + enrich
+          echo "Triggering sync..."
+          SYNC=$(curl -s -X POST "$SITE_URL/api/dibbs/scrape-now" -H "Content-Type: application/json")
+          echo "Sync: $SYNC"

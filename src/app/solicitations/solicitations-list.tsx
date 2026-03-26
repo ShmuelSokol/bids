@@ -156,30 +156,30 @@ export function SolicitationsList({
 
   async function handleScrapeNow() {
     setScraping(true);
-    setMessage("Syncing — scraping DIBBS for new solicitations...");
+    setMessage("Step 1/3: Scraping DIBBS for new solicitations...");
     try {
-      const res = await fetch("/api/dibbs/scrape-now", { method: "POST" });
-      const data = await res.json();
-      const enrichInfo = data.enrich;
-      if (data.count > 0 || enrichInfo) {
-        const parts = [];
-        if (data.count > 0) parts.push(`${data.count} solicitations scraped`);
-        if (enrichInfo?.sourceable) parts.push(`${enrichInfo.sourceable} sourceable`);
-        if (enrichInfo?.already_bid) parts.push(`${enrichInfo.already_bid} already bid in LL`);
-        if (enrichInfo?.with_cost_data) parts.push(`${enrichInfo.with_cost_data} with cost data`);
-        setMessage(`Sync complete: ${parts.join(" · ")}. Refreshing...`);
-        setTimeout(() => window.location.reload(), 1500);
-      } else {
-        // Scrape found nothing, run enrich anyway for existing items
-        setMessage("No new solicitations. Running analysis on existing...");
-        setEnriching(true);
-        await handleEnrich();
-        setTimeout(() => window.location.reload(), 1000);
-      }
+      const scrapeRes = await fetch("/api/dibbs/scrape-now", { method: "POST" });
+      const scrapeData = await scrapeRes.json();
+      const scraped = scrapeData.count || 0;
+
+      setMessage(`Step 2/3: Found ${scraped} solicitations. Matching NSNs + pricing...`);
+      setEnriching(true);
+      const enrichRes = await fetch("/api/dibbs/enrich", { method: "POST" });
+      const enrichData = await enrichRes.json();
+      setEnriching(false);
+
+      const parts = [`${scraped} scraped`];
+      if (enrichData.sourceable) parts.push(`${enrichData.sourceable} sourceable`);
+      if (enrichData.with_cost_data) parts.push(`${enrichData.with_cost_data} with costs`);
+      if (enrichData.already_bid) parts.push(`${enrichData.already_bid} already bid`);
+
+      setMessage(`Step 3/3: Sync complete! ${parts.join(" · ")}. Refreshing...`);
+      setTimeout(() => window.location.reload(), 2000);
     } catch {
       setMessage("Sync failed — check connection");
     } finally {
       setScraping(false);
+      setEnriching(false);
     }
   }
 
