@@ -120,6 +120,9 @@ export function SolicitationsList({
   const [expandedNsn, setExpandedNsn] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
+  const [fscFilter, setFscFilter] = useState<string>("all");
+  const [scoreFilter, setScoreFilter] = useState<string>("all");
+  const [fobFilter, setFobFilter] = useState<string>("all");
   const [supplierSearchId, setSupplierSearchId] = useState<number | null>(null);
   const [supplierResults, setSupplierResults] = useState<any>(null);
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
@@ -466,6 +469,10 @@ export function SolicitationsList({
       );
     }
 
+    // Column filters (non-score)
+    if (fscFilter !== "all") items = items.filter((s) => s.fsc === fscFilter);
+    if (fobFilter !== "all") items = items.filter((s) => fobFilter === "D" ? s.fob === "D" : fobFilter === "O" ? s.fob === "O" : !s.fob);
+
     // Add potential_value + bid score
     const parseDaysUntilDue = (d: string | null) => {
       if (!d) return null;
@@ -504,6 +511,11 @@ export function SolicitationsList({
       return { ...s, _potentialValue: potVal, _bidScore: bidScore };
     });
 
+    // Score filter (after scores computed)
+    if (scoreFilter === "bid") items = items.filter((s: any) => s._bidScore?.score >= 65);
+    else if (scoreFilter === "consider") items = items.filter((s: any) => { const sc = s._bidScore?.score; return sc >= 40 && sc < 65; });
+    else if (scoreFilter === "skip") items = items.filter((s: any) => s._bidScore?.score < 40);
+
     // Sort
     const dir = sortAsc ? 1 : -1;
     items.sort((a, b) => {
@@ -520,7 +532,7 @@ export function SolicitationsList({
     });
 
     return items;
-  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter]);
+  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter, fscFilter, scoreFilter, fobFilter]);
 
   const filteredTotalValue = useMemo(() => {
     return filtered.reduce((sum, s) => sum + ((s as any)._potentialValue || s.est_value || 0), 0);
@@ -686,8 +698,33 @@ export function SolicitationsList({
             </button>
           ))}
         </div>
-        {(searchQuery || dateFilter !== "all") && (
+        {/* Column Filters */}
+        <select value={fscFilter} onChange={(e) => setFscFilter(e.target.value)}
+          className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
+          <option value="all">All FSCs</option>
+          {[...new Set(solicitations.map(s => s.fsc).filter(Boolean))].sort().map(fsc => (
+            <option key={fsc} value={fsc}>{fsc}</option>
+          ))}
+        </select>
+        <select value={scoreFilter} onChange={(e) => setScoreFilter(e.target.value)}
+          className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
+          <option value="all">All Scores</option>
+          <option value="bid">BID (65+)</option>
+          <option value="consider">CONSIDER (40-64)</option>
+          <option value="skip">SKIP (&lt;40)</option>
+        </select>
+        <select value={fobFilter} onChange={(e) => setFobFilter(e.target.value)}
+          className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
+          <option value="all">All FOB</option>
+          <option value="D">FOB Dest</option>
+          <option value="O">FOB Origin</option>
+        </select>
+        {(searchQuery || dateFilter !== "all" || fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all") && (
           <span className="text-xs text-muted">{filtered.length} results</span>
+        )}
+        {(fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all") && (
+          <button onClick={() => { setFscFilter("all"); setScoreFilter("all"); setFobFilter("all"); }}
+            className="text-[10px] text-red-500 hover:text-red-700 font-medium">Clear filters</button>
         )}
       </div>
 
