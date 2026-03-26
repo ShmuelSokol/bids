@@ -400,7 +400,11 @@ export function SolicitationsList({
     });
 
     return items;
-  }, [solicitations, filter, sortField, sortAsc]);
+  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter]);
+
+  const filteredTotalValue = useMemo(() => {
+    return filtered.reduce((sum, s) => sum + ((s as any)._potentialValue || s.est_value || 0), 0);
+  }, [filtered]);
 
   const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
     <button
@@ -529,6 +533,22 @@ export function SolicitationsList({
           <span className="text-xs text-muted">{filtered.length} results</span>
         )}
       </div>
+
+      {/* Total Value Bar */}
+      {filteredTotalValue > 0 && (
+        <div className="mb-3 flex items-center justify-between rounded-lg bg-green-50 border border-green-200 px-4 py-2">
+          <span className="text-xs text-green-700 font-medium">
+            {filtered.length} items in view
+          </span>
+          <span className="text-sm font-bold font-mono text-green-700">
+            Total Potential: ${filteredTotalValue >= 1e6
+              ? (filteredTotalValue / 1e6).toFixed(2) + "M"
+              : filteredTotalValue >= 1e3
+                ? (filteredTotalValue / 1e3).toFixed(1) + "K"
+                : filteredTotalValue.toFixed(2)}
+          </span>
+        </div>
+      )}
 
       {/* Solicitation Table */}
       <div className="rounded-xl border border-card-border bg-card-bg shadow-sm overflow-hidden">
