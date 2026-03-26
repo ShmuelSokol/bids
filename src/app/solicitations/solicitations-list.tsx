@@ -42,6 +42,8 @@ interface Solicitation {
   already_bid: boolean;
   last_bid_price: number | null;
   last_bid_date: string | null;
+  est_value: number | null;
+  last_award_price: number | null;
   bid_status: string | null;
   final_price: number | null;
   bid_comment: string | null;
@@ -379,7 +381,7 @@ export function SolicitationsList({
     // Add potential_value for sorting
     items = items.map((s) => ({
       ...s,
-      _potentialValue: (s.suggested_price || s.final_price || 0) * (s.quantity || 1),
+      _potentialValue: s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1),
     }));
 
     // Sort
@@ -549,7 +551,7 @@ export function SolicitationsList({
             </thead>
             <tbody>
               {filtered.map((s) => {
-                const potValue = (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
+                const potValue = (s as any)._potentialValue || s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
                 const isEditing = editingId === s.id;
                 const history = historyByNsn.get(s.nsn) || [];
                 const abeBids = abeBidsByNsn.get(s.nsn) || [];
@@ -626,7 +628,14 @@ export function SolicitationsList({
                         ) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-xs font-bold">
-                        {potValue > 0 ? `$${potValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                        {potValue > 0 ? (
+                          <>
+                            ${potValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {!s.is_sourceable && s.last_award_price && (
+                              <div className="text-[9px] text-muted font-normal">est. from award</div>
+                            )}
+                          </>
+                        ) : "—"}
                       </td>
                       <td className="px-3 py-2 text-center">
                         {s.fob ? (

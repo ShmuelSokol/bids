@@ -33,14 +33,28 @@ async function getData() {
     decisionMap[`${d.solicitation_number}_${d.nsn}`] = d;
   }
 
+  // Build last award price lookup for unsourced items
+  const lastAwardByNsn = new Map<string, number>();
+  for (const a of awards || []) {
+    const nsn = `${a.fsc}-${a.niin}`;
+    if (!lastAwardByNsn.has(nsn) && a.unit_price > 0) {
+      lastAwardByNsn.set(nsn, a.unit_price);
+    }
+  }
+
   const enriched = (solicitations || []).map((s) => {
     const decision = decisionMap[`${s.solicitation_number}_${s.nsn}`];
+    // For unsourced items: estimate value from last award price × qty
+    const lastAward = lastAwardByNsn.get(s.nsn);
+    const estValue = s.potential_value || (s.suggested_price ? s.suggested_price * (s.quantity || 1) : null) || (lastAward ? lastAward * (s.quantity || 1) : null);
     return {
       ...s,
       bid_status: decision?.status || null,
       final_price: decision?.final_price || null,
       bid_comment: decision?.comment || null,
       decided_by: decision?.decided_by || null,
+      est_value: estValue,
+      last_award_price: lastAward || null,
     };
   });
 
