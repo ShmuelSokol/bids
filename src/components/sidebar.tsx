@@ -90,30 +90,28 @@ export function Sidebar({ user }: SidebarProps) {
         })}
       </nav>
 
-      {/* User + Logout */}
+      {/* User + Logout — always show logout button */}
       <div className="border-t border-white/10 px-4 py-3">
-        {user && (
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sidebar-hover text-white text-xs font-bold">
-              {(user.profile?.full_name || user.user.email || "?")[0].toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-white font-medium truncate">
-                {user.profile?.full_name || user.user.email}
-              </p>
-              <p className="text-xs text-sidebar-text/50 capitalize">
-                {user.profile?.role || "viewer"}
-              </p>
-            </div>
-            <button
-              onClick={handleLogout}
-              title="Sign out"
-              className="text-sidebar-text/50 hover:text-white p-1.5 rounded-lg hover:bg-sidebar-hover transition-colors shrink-0"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sidebar-hover text-white text-xs font-bold">
+            {user ? (user.profile?.full_name || user.user?.email || "?")[0].toUpperCase() : "U"}
           </div>
-        )}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-white font-medium truncate">
+              {user?.profile?.full_name || user?.user?.email || "Logged In"}
+            </p>
+            <p className="text-xs text-sidebar-text/50 capitalize">
+              {user?.profile?.role || "user"}
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            title="Sign out"
+            className="text-sidebar-text/50 hover:text-white p-1.5 rounded-lg hover:bg-sidebar-hover transition-colors shrink-0"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </>
   );
