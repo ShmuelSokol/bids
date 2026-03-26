@@ -24,19 +24,37 @@ async function getData() {
     .from("bid_decisions")
     .select("*");
 
-  // Award history for bid history display
-  const { data: awards } = await supabase
-    .from("awards")
-    .select("fsc, niin, unit_price, quantity, description, award_date, contract_number, cage")
-    .order("award_date", { ascending: false })
-    .limit(5000);
+  // Award history — paginate past Supabase 1K default
+  const allAwards: any[] = [];
+  let awardPage = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("awards")
+      .select("fsc, niin, unit_price, quantity, description, award_date, contract_number, cage")
+      .order("award_date", { ascending: false })
+      .range(awardPage * 1000, (awardPage + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allAwards.push(...data);
+    if (data.length < 1000) break;
+    awardPage++;
+  }
+  const awards = allAwards;
 
-  // Abe's bid history from LamLinks
-  const { data: abeBids } = await supabase
-    .from("abe_bids")
-    .select("nsn, bid_price, lead_time_days, bid_qty, bid_date, fob")
-    .order("bid_date", { ascending: false })
-    .limit(10000);
+  // Abe's bid history — paginate
+  const allAbeBids: any[] = [];
+  let bidPage = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("abe_bids")
+      .select("nsn, bid_price, lead_time_days, bid_qty, bid_date, fob")
+      .order("bid_date", { ascending: false })
+      .range(bidPage * 1000, (bidPage + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allAbeBids.push(...data);
+    if (data.length < 1000) break;
+    bidPage++;
+  }
+  const abeBids = allAbeBids;
 
   const decisionMap: Record<string, any> = {};
   for (const d of decisions || []) {
