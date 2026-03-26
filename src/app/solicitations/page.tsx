@@ -21,6 +21,13 @@ async function getData() {
     .order("award_date", { ascending: false })
     .limit(5000);
 
+  // Abe's bid history from LamLinks
+  const { data: abeBids } = await supabase
+    .from("abe_bids")
+    .select("nsn, bid_price, lead_time_days, bid_qty, bid_date, fob")
+    .order("bid_date", { ascending: false })
+    .limit(10000);
+
   const decisionMap: Record<string, any> = {};
   for (const d of decisions || []) {
     decisionMap[`${d.solicitation_number}_${d.nsn}`] = d;
@@ -45,7 +52,7 @@ async function getData() {
     skipped: enriched.filter((s) => s.bid_status === "skipped").length,
   };
 
-  return { solicitations: enriched, counts, awards: awards || [] };
+  return { solicitations: enriched, counts, awards: awards || [], abeBids: abeBids || [] };
 }
 
 export default async function SolicitationsPage({
@@ -53,7 +60,7 @@ export default async function SolicitationsPage({
 }: {
   searchParams: Promise<{ filter?: string; sort?: string }>;
 }) {
-  const { solicitations, counts, awards } = await getData();
+  const { solicitations, counts, awards, abeBids } = await getData();
   const params = await searchParams;
 
   return (
@@ -69,6 +76,7 @@ export default async function SolicitationsPage({
         initialData={solicitations}
         counts={counts}
         awardHistory={awards}
+        abeBidHistory={abeBids}
         initialFilter={params.filter}
         initialSort={params.sort}
       />
