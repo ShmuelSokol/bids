@@ -43,6 +43,11 @@ async function getData() {
   );
   const noSource = all.filter((s) => !s.is_sourceable);
 
+  const totalPotentialValue = sourceable.reduce(
+    (sum, s) => sum + (s.suggested_price || 0) * (s.quantity || 1),
+    0
+  );
+
   const topByValue = [...sourceable]
     .map((s) => ({
       ...s,
@@ -64,6 +69,7 @@ async function getData() {
     submitted: submitted.length,
     noSource: noSource.length,
     topByValue,
+    totalPotentialValue,
     hotFscs: heatmapCount || 0,
   };
 }
@@ -80,7 +86,24 @@ export default async function Dashboard() {
         </p>
       </div>
 
-      {/* Solicitation Pipeline — THE HERO */}
+      {/* Total Potential Value */}
+      {data.totalPotentialValue > 0 && (
+        <div className="mb-4 rounded-xl border-2 border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 p-5 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-green-700">Total Open Bid Potential</div>
+            <div className="text-xs text-green-600 mt-0.5">{data.sourceable} sourceable solicitations ready to bid on</div>
+          </div>
+          <div className="text-3xl md:text-4xl font-bold font-mono text-green-700">
+            ${data.totalPotentialValue >= 1e6
+              ? (data.totalPotentialValue / 1e6).toFixed(2) + "M"
+              : data.totalPotentialValue >= 1e3
+                ? (data.totalPotentialValue / 1e3).toFixed(1) + "K"
+                : data.totalPotentialValue.toFixed(2)}
+          </div>
+        </div>
+      )}
+
+      {/* Solicitation Pipeline */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         <Link
           href="/solicitations?filter=sourceable"
