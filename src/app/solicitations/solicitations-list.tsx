@@ -284,12 +284,25 @@ export function SolicitationsList({
 
   const filtered = useMemo(() => {
     let items = solicitations.filter((s) => {
-      if (filter === "sourceable") return s.is_sourceable && !s.bid_status;
+      // Parse return_by_date (MM-DD-YYYY format from DIBBS)
+      const isOpen = (() => {
+        if (!s.return_by_date) return true;
+        const parts = s.return_by_date.split("-");
+        if (parts.length === 3 && parts[2].length === 4) {
+          const d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+          return d >= new Date(new Date().toDateString());
+        }
+        return new Date(s.return_by_date) >= new Date(new Date().toDateString());
+      })();
+
+      if (filter === "sourceable") return s.is_sourceable && !s.bid_status && !s.already_bid && isOpen;
+      if (filter === "new_only") return s.is_sourceable && !s.bid_status && !s.already_bid && isOpen;
+      if (filter === "already_bid") return s.already_bid;
       if (filter === "quoted") return s.bid_status === "quoted";
       if (filter === "submitted") return s.bid_status === "submitted";
       if (filter === "skipped") return s.bid_status === "skipped";
-      if (filter === "all_unsourced") return !s.is_sourceable;
-      if (filter === "new_only") return s.is_sourceable && !s.bid_status && !s.already_bid;
+      if (filter === "all_unsourced") return !s.is_sourceable && isOpen;
+      if (filter === "expired") return !isOpen;
       return true;
     });
 
@@ -396,7 +409,7 @@ export function SolicitationsList({
           { key: "submitted", label: "Submitted", count: counts.submitted, color: "border-purple-300 bg-purple-50", icon: Send },
           { key: "skipped", label: "Skipped", count: counts.skipped, color: "border-gray-300 bg-gray-50", icon: X },
           { key: "all_unsourced", label: "No Source", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped, color: "border-amber-200 bg-amber-50", icon: Package },
-          { key: "new_only", label: "New (not bid)", count: counts.total, color: "border-teal-200 bg-teal-50", icon: Zap },
+          { key: "already_bid", label: "Bid in LL", count: solicitations.filter(s => s.already_bid).length, color: "border-purple-200 bg-purple-50", icon: Check },
           { key: "all", label: "All", count: counts.total, color: "border-card-border bg-card-bg", icon: Package },
         ].map((step) => (
           <button

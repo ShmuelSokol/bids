@@ -10,6 +10,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No awards provided" }, { status: 400 });
   }
 
+  // Load alternative suppliers from D365 vendor-product data
+  const { data: vendorProducts } = await supabase
+    .from("nsn_costs")
+    .select("nsn, cost, cost_source");
+  // Also load the full vendor parts for alt supplier info
+  // For now, we'll use CAGE as primary supplier and note alternatives exist
+
   // Group awards by supplier (CAGE code)
   const bySupplier = new Map<string, any[]>();
   for (const award of awards) {
