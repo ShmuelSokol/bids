@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Settings, Building2, MapPin, Upload, Database, Activity } from "lucide-react";
+import { Settings, Building2, MapPin, Upload, Database, Activity, Bug } from "lucide-react";
 
 export default function SettingsPage() {
   return (
@@ -128,6 +128,20 @@ export default function SettingsPage() {
             <span>Real-time feed</span>
             <span>Per-user breakdown</span>
             <span>7-day history</span>
+          </div>
+        </Link>
+
+        {/* Bug Management (Admin Only) */}
+        <Link href="/settings/bugs" className="rounded-xl border-2 border-red-200 bg-red-50/30 shadow-sm p-6 hover:border-red-400 transition-colors group">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold group-hover:text-red-700">Bug Management</h2>
+            <Bug className="h-5 w-5 text-red-400 group-hover:text-red-600" />
+          </div>
+          <p className="text-sm text-muted mb-3">Review, respond, and resolve bug reports. Conversation threads with AI analysis. Admin only.</p>
+          <div className="flex gap-4 text-xs text-muted">
+            <span>GitHub Issues</span>
+            <span>Respond from site</span>
+            <span>Close/Reopen</span>
           </div>
         </Link>
       </div>
