@@ -21,55 +21,46 @@ export function BugReporter() {
     setSuccess(null);
     setMarkupMode(false);
     setScreenshot(null);
-    setOpen(true);
-    setCapturing(false); // Skip screenshot — just open the form
+    setCapturing(true);
+    // HIDE modal for clean screenshot (ERG Supply pattern)
+    setOpen(false);
+
+    // ERG Supply proven pattern: hide modal, capture body, show modal with result
+    await new Promise((r) => setTimeout(r, 200));
 
     try {
-      // Use Screen Capture API for a real screenshot
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "browser" } as any,
-        preferCurrentTab: true,
-      } as any);
+      const html2canvas = (await import("html2canvas")).default;
+      const scrollY = window.scrollY;
+      const viewH = window.innerHeight;
+      const viewW = document.documentElement.clientWidth;
 
-      const video = document.createElement("video");
-      video.srcObject = stream;
-      await video.play();
+      const canvas = await html2canvas(document.body, {
+        scale: 1,
+        logging: false,
+        windowWidth: viewW,
+        windowHeight: viewH,
+        height: viewH,
+        y: scrollY,
+        useCORS: false,
+        allowTaint: false,
+        imageTimeout: 5000,
+        onclone: (clonedDoc: Document) => {
+          // Hide cross-origin images (same as ERG Supply)
+          clonedDoc.querySelectorAll("img").forEach((img) => {
+            if (!img.src || img.src.startsWith("data:") || img.src.startsWith(window.location.origin)) return;
+            img.style.visibility = "hidden";
+          });
+          // Freeze animations
+          clonedDoc.querySelectorAll("[class*=animate]").forEach((el) => {
+            (el as HTMLElement).style.animationPlayState = "paused";
+          });
+        },
+      });
 
-      // Wait a frame for video to render
-      await new Promise((r) => requestAnimationFrame(r));
-
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(video, 0, 0);
-
-      // Stop all tracks
-      stream.getTracks().forEach((t) => t.stop());
-
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      setScreenshot(dataUrl);
-    } catch {
-      // Fallback to html2canvas if Screen Capture denied/unavailable
-      try {
-        const html2canvas = (await import("html2canvas")).default;
-        await new Promise((r) => setTimeout(r, 300));
-        const target = document.querySelector("main") || document.body;
-        const canvas = await html2canvas(target as HTMLElement, {
-          scale: 1,
-          logging: false,
-          useCORS: false,
-          allowTaint: false,
-          imageTimeout: 5000,
-          backgroundColor: "#f8fafc",
-          onclone: (clonedDoc: Document) => {
-            clonedDoc.querySelectorAll("img, iframe, video, script").forEach((el) => el.remove());
-          },
-        });
-        setScreenshot(canvas.toDataURL("image/jpeg", 0.85));
-      } catch {
-        setScreenshot(null);
-      }
+      setScreenshot(canvas.toDataURL("image/jpeg", 0.85));
+    } catch (err) {
+      console.error("Screenshot failed:", err);
+      setScreenshot(null);
     }
 
     setCapturing(false);
