@@ -477,16 +477,31 @@ export function SolicitationsList({
           )}
         </div>
         <div className="flex items-center gap-3">
-          {lastSync && (
-            <div className="text-[10px] text-muted text-right">
-              <div>Last sync: {new Date(lastSync.created_at).toLocaleString()}</div>
-              <div>
-                {lastSync.details?.sourceable && `${lastSync.details.sourceable} sourceable`}
-                {lastSync.details?.already_bid && ` · ${lastSync.details.already_bid} already bid`}
-                {lastSync.details?.count && ` · ${lastSync.details.count} scraped`}
-              </div>
+          <div className="text-[10px] text-muted text-right">
+            {lastSync && (
+              <>
+                <div>Last sync: {new Date(lastSync.created_at).toLocaleString()}</div>
+                <div>
+                  {lastSync.details?.sourceable && `${lastSync.details.sourceable} sourceable`}
+                  {lastSync.details?.already_bid && ` · ${lastSync.details.already_bid} already bid`}
+                  {lastSync.details?.count && ` · ${lastSync.details.count} scraped`}
+                </div>
+              </>
+            )}
+            <div className="text-muted/60">
+              Next sync: {(() => {
+                const now = new Date();
+                const h = now.getUTCHours();
+                const next = new Date(now);
+                if (h < 11) { next.setUTCHours(11, 0, 0, 0); }
+                else if (h < 17) { next.setUTCHours(17, 0, 0, 0); }
+                else { next.setUTCDate(next.getUTCDate() + 1); next.setUTCHours(11, 0, 0, 0); }
+                // Skip weekends
+                while (next.getUTCDay() === 0 || next.getUTCDay() === 6) next.setUTCDate(next.getUTCDate() + 1);
+                return next.toLocaleString();
+              })()}
             </div>
-          )}
+          </div>
           <button onClick={handleScrapeNow} disabled={scraping || enriching}
             className="flex items-center gap-1 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-white disabled:opacity-50">
             {scraping || enriching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
