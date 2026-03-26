@@ -11,7 +11,8 @@ export function BugReporter() {
   const [success, setSuccess] = useState<{ number: number; url: string } | null>(null);
   const [capturing, setCapturing] = useState(false);
 
-  // Markup state
+  // Markup state — starts OFF, user clicks "Edit Markup" to activate (Bug #4)
+  const [markupActive, setMarkupActive] = useState(false);
   const [tool, setTool] = useState<Tool>("draw");
   const [color, setColor] = useState("#ef4444");
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -42,6 +43,7 @@ export function BugReporter() {
 
   const startCapture = useCallback(async () => {
     setSuccess(null);
+    setMarkupActive(false);
     setScreenshot(null);
     setCapturing(true);
     setOpen(false);
@@ -265,9 +267,9 @@ export function BugReporter() {
     undoStackRef.current = [first];
   }, []);
 
-  // Get final screenshot from canvas for submission
+  // Get final screenshot from canvas (if markup was used) or original
   function getMarkupScreenshot(): string | null {
-    if (canvasRef.current) {
+    if (canvasRef.current && canvasRef.current.width > 0 && undoStackRef.current.length > 1) {
       return canvasRef.current.toDataURL("image/jpeg", 0.85);
     }
     return screenshot;
@@ -391,8 +393,8 @@ export function BugReporter() {
               </div>
             ) : (
               <div className="p-4">
-                {/* Markup Toolbar */}
-                {screenshot && (
+                {/* Markup Toolbar — only shown when markup is active */}
+                {screenshot && markupActive && (
                   <div className="flex items-center gap-1 mb-2 flex-wrap">
                     <span className="text-xs font-medium text-gray-500 mr-1">Markup:</span>
 
@@ -431,37 +433,31 @@ export function BugReporter() {
 
                     <div className="w-px h-6 bg-gray-200 mx-1" />
 
-                    {/* Undo / Clear */}
-                    <button
-                      onClick={undo}
-                      disabled={undoStackRef.current.length <= 1}
-                      className="text-xs px-2 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg font-medium disabled:opacity-30"
-                      title="Undo (Ctrl+Z)"
-                    >
+                    {/* Undo / Clear / Done */}
+                    <button onClick={undo} disabled={undoStackRef.current.length <= 1}
+                      className="text-xs px-2 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg font-medium disabled:opacity-30" title="Undo (Ctrl+Z)">
                       Undo
                     </button>
-                    <button
-                      onClick={clearMarkup}
-                      disabled={undoStackRef.current.length <= 1}
-                      className="text-xs px-2 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg font-medium disabled:opacity-30"
-                      title="Clear all markup"
-                    >
+                    <button onClick={clearMarkup} disabled={undoStackRef.current.length <= 1}
+                      className="text-xs px-2 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg font-medium disabled:opacity-30">
                       Clear
                     </button>
-                    <button
-                      onClick={startCapture}
-                      className="text-xs px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg font-medium ml-auto"
-                    >
+                    <button onClick={() => setMarkupActive(false)}
+                      className="text-xs px-2 py-1 bg-green-100 text-green-700 hover:bg-green-200 rounded-lg font-medium">
+                      Done Editing
+                    </button>
+                    <button onClick={startCapture}
+                      className="text-xs px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg font-medium ml-auto">
                       Retake
                     </button>
                   </div>
                 )}
 
                 <div className="grid lg:grid-cols-2 gap-4">
-                  {/* Screenshot Canvas — always editable */}
+                  {/* Screenshot — static image by default, canvas when markup active */}
                   <div>
                     <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50 relative">
-                      {screenshot ? (
+                      {screenshot && markupActive ? (
                         <canvas
                           ref={canvasRef}
                           className={`w-full ${
@@ -477,6 +473,18 @@ export function BugReporter() {
                           onTouchMove={handleMouseMove}
                           onTouchEnd={handleMouseUp}
                         />
+                      ) : screenshot ? (
+                        <div className="relative group">
+                          <img src={screenshot} alt="Screenshot" className="w-full" />
+                          <button
+                            onClick={() => setMarkupActive(true)}
+                            className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-all"
+                          >
+                            <span className="opacity-0 group-hover:opacity-100 bg-white/90 text-gray-800 text-xs font-semibold px-4 py-2 rounded-lg shadow transition-opacity">
+                              Click to Edit Markup
+                            </span>
+                          </button>
+                        </div>
                       ) : (
                         <div className="flex items-center justify-center py-20 text-gray-400">
                           <span className="text-sm">Screenshot capture failed</span>
