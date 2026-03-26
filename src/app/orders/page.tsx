@@ -4,22 +4,14 @@ import { AwardsList } from "./awards-list";
 async function getData() {
   const supabase = createServiceClient();
 
-  // Paginate our awards past 1K default
-  const allAwards: any[] = [];
-  let awPage = 0;
-  while (true) {
-    const { data } = await supabase
-      .from("awards")
-      .select("*")
-      .eq("cage", "0AG09")
-      .order("award_date", { ascending: false })
-      .range(awPage * 1000, (awPage + 1) * 1000 - 1);
-    if (!data || data.length === 0) break;
-    allAwards.push(...data);
-    if (data.length < 1000) break;
-    awPage++;
-  }
-  const awards = allAwards;
+  // Load recent awards only (last 90 days) — avoid Railway timeout on 74K rows
+  const { data: awards } = await supabase
+    .from("awards")
+    .select("*")
+    .eq("cage", "0AG09")
+    .gte("award_date", new Date(Date.now() - 90 * 86400000).toISOString())
+    .order("award_date", { ascending: false })
+    .limit(1000);
 
   // Load cost data for margin calculation
   const { data: costs } = await supabase

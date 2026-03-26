@@ -123,6 +123,10 @@ export function SolicitationsList({
   const [fscFilter, setFscFilter] = useState<string>("all");
   const [scoreFilter, setScoreFilter] = useState<string>("all");
   const [fobFilter, setFobFilter] = useState<string>("all");
+  const [marginFilter, setMarginFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [qtyFilter, setQtyFilter] = useState<string>("all");
+  const [valueFilter, setValueFilter] = useState<string>("all");
   const [supplierSearchId, setSupplierSearchId] = useState<number | null>(null);
   const [supplierResults, setSupplierResults] = useState<any>(null);
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
@@ -487,9 +491,21 @@ export function SolicitationsList({
       );
     }
 
-    // Column filters (non-score)
+    // Column filters
     if (fscFilter !== "all") items = items.filter((s) => s.fsc === fscFilter);
     if (fobFilter !== "all") items = items.filter((s) => fobFilter === "D" ? s.fob === "D" : fobFilter === "O" ? s.fob === "O" : !s.fob);
+    if (sourceFilter !== "all") items = items.filter((s) => s.source === sourceFilter);
+    if (marginFilter === "high") items = items.filter((s) => (s.margin_pct || 0) >= 20);
+    else if (marginFilter === "mid") items = items.filter((s) => (s.margin_pct || 0) >= 10 && (s.margin_pct || 0) < 20);
+    else if (marginFilter === "low") items = items.filter((s) => (s.margin_pct || 0) > 0 && (s.margin_pct || 0) < 10);
+    if (qtyFilter === "1") items = items.filter((s) => (s.quantity || 0) === 1);
+    else if (qtyFilter === "2-10") items = items.filter((s) => (s.quantity || 0) >= 2 && (s.quantity || 0) <= 10);
+    else if (qtyFilter === "11-100") items = items.filter((s) => (s.quantity || 0) >= 11 && (s.quantity || 0) <= 100);
+    else if (qtyFilter === "100+") items = items.filter((s) => (s.quantity || 0) > 100);
+    if (valueFilter === "5k+") items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) >= 5000);
+    else if (valueFilter === "1k+") items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) >= 1000);
+    else if (valueFilter === "500+") items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) >= 500);
+    else if (valueFilter === "<500") items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) < 500);
 
     // Add potential_value + bid score
     const parseDaysUntilDue = (d: string | null) => {
@@ -550,7 +566,7 @@ export function SolicitationsList({
     });
 
     return items;
-  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter, fscFilter, scoreFilter, fobFilter]);
+  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter, fscFilter, scoreFilter, fobFilter, marginFilter, sourceFilter, qtyFilter, valueFilter]);
 
   const filteredTotalValue = useMemo(() => {
     return filtered.reduce((sum, s) => sum + ((s as any)._potentialValue || s.est_value || 0), 0);
@@ -753,12 +769,41 @@ export function SolicitationsList({
           <option value="D">FOB Dest</option>
           <option value="O">FOB Origin</option>
         </select>
-        {(searchQuery || dateFilter !== "all" || fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all") && (
+        <select value={marginFilter} onChange={(e) => setMarginFilter(e.target.value)}
+          className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
+          <option value="all">All Margins</option>
+          <option value="high">20%+</option>
+          <option value="mid">10-20%</option>
+          <option value="low">1-10%</option>
+        </select>
+        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}
+          className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
+          <option value="all">All Sources</option>
+          <option value="ax">AX</option>
+          <option value="masterdb">Master DB</option>
+        </select>
+        <select value={qtyFilter} onChange={(e) => setQtyFilter(e.target.value)}
+          className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
+          <option value="all">All Qty</option>
+          <option value="1">1 unit</option>
+          <option value="2-10">2-10</option>
+          <option value="11-100">11-100</option>
+          <option value="100+">100+</option>
+        </select>
+        <select value={valueFilter} onChange={(e) => setValueFilter(e.target.value)}
+          className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
+          <option value="all">All Values</option>
+          <option value="5k+">$5K+</option>
+          <option value="1k+">$1K+</option>
+          <option value="500+">$500+</option>
+          <option value="<500">&lt;$500</option>
+        </select>
+        {(searchQuery || dateFilter !== "all" || fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all") && (
           <span className="text-xs text-muted">{filtered.length} results</span>
         )}
-        {(fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all") && (
-          <button onClick={() => { setFscFilter("all"); setScoreFilter("all"); setFobFilter("all"); }}
-            className="text-[10px] text-red-500 hover:text-red-700 font-medium">Clear filters</button>
+        {(fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all") && (
+          <button onClick={() => { setFscFilter("all"); setScoreFilter("all"); setFobFilter("all"); setMarginFilter("all"); setSourceFilter("all"); setQtyFilter("all"); setValueFilter("all"); }}
+            className="text-[10px] text-red-500 hover:text-red-700 font-medium">Clear all</button>
         )}
       </div>
 
