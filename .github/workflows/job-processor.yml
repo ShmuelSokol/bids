@@ -1,0 +1,22 @@
+name: Background Job Processor
+
+on:
+  schedule:
+    # Every 10 minutes, 24/7 (GitHub throttles < 10min)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Process job batch
+        run: |
+          echo "Processing jobs..."
+          RESULT=$(curl -s -X POST "https://dibs-gov-production.up.railway.app/api/jobs/process" 2>&1)
+          echo "$RESULT"
+          PROCESSED=$(echo "$RESULT" | jq -r '.processed // 0')
+          DONE=$(echo "$RESULT" | jq -r '.done // 0')
+          echo "Processed: $PROCESSED, Done: $DONE"

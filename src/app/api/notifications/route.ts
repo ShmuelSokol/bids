@@ -10,7 +10,7 @@ const REPO = "bids";
 export async function GET() {
   try {
     const res = await fetch(
-      `https://api.github.com/repos/${OWNER}/${REPO}/issues?state=open&per_page=10&sort=created&direction=desc`,
+      `https://api.github.com/repos/${OWNER}/${REPO}/issues?state=all&per_page=20&sort=created&direction=desc`,
       {
         headers: { Accept: "application/vnd.github.v3+json" },
         next: { revalidate: 120 }, // cache 2 minutes
@@ -57,9 +57,11 @@ export async function GET() {
         const priority = labels.find((l: string) => l.startsWith("priority:"))?.replace("priority: ", "") || "medium";
         const type = labels.includes("feature") ? "feature" : "bug";
 
-        // Extract page from body
+        // Extract page and reporter from body
         const pageMatch = issue.body?.match(/\*\*Page:\*\*\s*(https?:\/\/\S+)/);
         const page = pageMatch ? new URL(pageMatch[1]).pathname : null;
+        const reporterMatch = issue.body?.match(/\*\*Reporter:\*\*\s*(.+)/);
+        const reporter = reporterMatch?.[1]?.trim() || "Anonymous";
 
         return {
           number: issue.number,
@@ -69,6 +71,7 @@ export async function GET() {
           state: issue.state,
           created_at: issue.created_at,
           page,
+          reporter,
           hasResponse,
           responsePreview,
           url: issue.html_url,
