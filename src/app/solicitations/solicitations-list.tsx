@@ -96,6 +96,7 @@ export function SolicitationsList({
   const [selectedQuoted, setSelectedQuoted] = useState<Set<number>>(new Set());
   const [expandedNsn, setExpandedNsn] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState<string>("all");
 
   // Build award history lookup
   const historyByNsn = useMemo(() => {
@@ -257,6 +258,46 @@ export function SolicitationsList({
       return true;
     });
 
+    // Date filter
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const today = now.toISOString().split("T")[0];
+      const yesterday = new Date(now.getTime() - 86400000).toISOString().split("T")[0];
+      const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split("T")[0];
+
+      items = items.filter((s) => {
+        const issueDate = s.issue_date || "";
+        const dueDate = s.return_by_date || "";
+        if (dateFilter === "today") {
+          return issueDate.includes(today.replace(/-/g, "-").slice(5)) || issueDate.includes(today.slice(5).replace("-", "-"));
+        }
+        if (dateFilter === "yesterday") {
+          return issueDate.includes(yesterday.slice(5).replace(/-0?/, "-")) || issueDate.includes(today.slice(5).replace(/-0?/, "-"));
+        }
+        if (dateFilter === "this_week") {
+          // Compare MM-DD-YYYY format
+          const parseDate = (d: string) => {
+            const parts = d.split("-");
+            if (parts.length === 3 && parts[2].length === 4) return new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+            return new Date(d);
+          };
+          const issued = parseDate(issueDate);
+          return issued >= new Date(weekAgo);
+        }
+        if (dateFilter === "closing_soon") {
+          const parseDate = (d: string) => {
+            const parts = d.split("-");
+            if (parts.length === 3 && parts[2].length === 4) return new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+            return new Date(d);
+          };
+          const due = parseDate(dueDate);
+          const threeDays = new Date(now.getTime() + 3 * 86400000);
+          return due <= threeDays && due >= now;
+        }
+        return true;
+      });
+    }
+
     // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -377,17 +418,38 @@ export function SolicitationsList({
         <div className="mb-3 rounded-lg bg-blue-50 text-blue-700 px-3 py-2 text-xs">{message}</div>
       )}
 
-      {/* Search */}
-      <div className="mb-3">
+      {/* Search + Date Filters */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search NSN, item name, solicitation #, or FSC..."
-          className="w-full md:w-96 rounded-lg border border-card-border px-3 py-2 text-sm"
+          placeholder="Search NSN, item, sol #, FSC..."
+          className="flex-1 min-w-[200px] md:max-w-sm rounded-lg border border-card-border px-3 py-2 text-sm"
         />
-        {searchQuery && (
-          <span className="text-xs text-muted ml-2">{filtered.length} results</span>
+        <div className="flex gap-1">
+          {[
+            { key: "all", label: "All Dates" },
+            { key: "today", label: "Today" },
+            { key: "yesterday", label: "Today+Yesterday" },
+            { key: "this_week", label: "This Week" },
+            { key: "closing_soon", label: "Closing Soon" },
+          ].map((d) => (
+            <button
+              key={d.key}
+              onClick={() => setDateFilter(d.key)}
+              className={`px-2 py-1 rounded text-[10px] font-medium ${
+                dateFilter === d.key
+                  ? "bg-accent text-white"
+                  : "bg-card-bg border border-card-border text-muted hover:bg-gray-50"
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        {(searchQuery || dateFilter !== "all") && (
+          <span className="text-xs text-muted">{filtered.length} results</span>
         )}
       </div>
 
