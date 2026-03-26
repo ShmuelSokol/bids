@@ -143,6 +143,77 @@ async function handleAwardLookup(payload: any): Promise<any> {
   };
 }
 
+async function handleUsaspendingAwards(payload: any, supabase: any): Promise<any> {
+  const { fsc, start, end } = payload;
+  if (!fsc || !start || !end) throw new Error("Missing fsc, start, or end");
+
+  // Query USASpending API for DLA awards in this FSC + date range
+  const body = {
+    filters: {
+      agencies: [{ type: "awarding", tier: "subtier", name: "Defense Logistics Agency" }],
+      award_type_codes: ["A", "B", "C", "D"],
+      time_period: [{ start_date: start, end_date: end }],
+      psc_codes: { require: [fsc] },
+    },
+    fields: [
+      "Award ID", "Recipient Name", "Recipient DUNS", "Award Amount",
+      "Start Date", "End Date", "Description", "PSC Code",
+      "recipient_id", "prime_award_recipient_id",
+    ],
+    limit: 100,
+    page: 1,
+  };
+
+  let allResults: any[] = [];
+  let page = 1;
+  let hasNext = true;
+
+  while (hasNext && page <= 10) {
+    body.page = page;
+    const resp = await fetch("https://api.usaspending.gov/api/v2/search/spending_by_award/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!resp.ok) throw new Error(`USASpending API ${resp.status}`);
+    const data = await resp.json();
+    const results = data.results || [];
+    allResults.push(...results);
+    hasNext = data.page_metadata?.hasNext || false;
+    page++;
+
+    await delay(1000); // Rate limit
+  }
+
+  // Transform and save to awards table
+  const awards = allResults
+    .filter((r: any) => r["Award Amount"] > 0)
+    .map((r: any) => ({
+      contract_number: r["Award ID"] || "",
+      fsc,
+      niin: "", // USASpending doesn't give NIIN directly
+      description: (r["Description"] || "").slice(0, 100),
+      cage: "", // Would need CAGE lookup from recipient
+      unit_price: r["Award Amount"] || 0,
+      quantity: 1,
+      award_date: r["Start Date"] || start,
+      data_source: "usaspending_bulk",
+    }));
+
+  if (awards.length > 0) {
+    for (let i = 0; i < awards.length; i += 50) {
+      await supabase
+        .from("usaspending_awards")
+        .upsert(awards.slice(i, i + 50), { onConflict: "contract_number", ignoreDuplicates: true })
+        .catch(() => {});
+    }
+  }
+
+  return { fsc, period: `${start} to ${end}`, awards_found: allResults.length, saved: awards.length };
+}
+
 // --- Main processor ---
 
 export async function POST() {
@@ -182,6 +253,9 @@ export async function POST() {
           break;
         case "award_lookup":
           result = await handleAwardLookup(job.payload);
+          break;
+        case "usaspending_awards":
+          result = await handleUsaspendingAwards(job.payload, supabase);
           break;
         default:
           throw new Error(`Unknown job type: ${job.job_type}`);
