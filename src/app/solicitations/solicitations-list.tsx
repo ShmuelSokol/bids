@@ -851,28 +851,42 @@ export function SolicitationsList({
                                 </div>
                               )}
 
-                              {/* External Search Links */}
-                              <div>
-                                <div className="text-[10px] font-medium text-gray-700 mb-1">Search External Suppliers</div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {supplierResults.searches?.map((s2: any, i: number) => (
-                                    <a
-                                      key={i}
-                                      href={s2.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-[10px] px-2 py-1 rounded bg-white border border-gray-200 text-gray-700 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 font-medium transition-colors"
-                                    >
-                                      {s2.name} ↗
-                                    </a>
-                                  ))}
+                              {/* Web Search Results */}
+                              {/* Web Search Results */}
+                              {supplierResults.webResults?.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-medium text-indigo-700 mb-1">
+                                    Found Online ({supplierResults.webResults.length} results from {supplierResults.searchCount} searches)
+                                  </div>
+                                  <div className="grid gap-1">
+                                    {supplierResults.webResults.map((r: any, i: number) => (
+                                      <a key={i} href={r.url} target="_blank" rel="noopener noreferrer"
+                                        className="flex items-center justify-between text-xs bg-white border border-gray-200 rounded px-2 py-1.5 hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
+                                        <div className="min-w-0">
+                                          <div className="font-medium text-indigo-800 truncate">{r.title}</div>
+                                          <div className="text-[10px] text-muted truncate">{r.supplier}</div>
+                                        </div>
+                                        <span className="text-[9px] text-indigo-400 ml-2 shrink-0">{r.searchType}</span>
+                                      </a>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
+                              )}
 
-                              {supplierResults.vendorPrices?.length === 0 && supplierResults.pastWinners?.length === 0 && supplierResults.masterDbMatches?.length === 0 && (
-                                <div className="text-xs text-muted py-2">
-                                  No known suppliers in our system. Try the external search links above to find new sources.
+                              {/* NSN Approved Sources */}
+                              {supplierResults.nsnApprovedCages?.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-medium text-gray-700 mb-1">NSN Approved CAGE Codes</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {supplierResults.nsnApprovedCages.map((c: string, i: number) => (
+                                      <span key={i} className="text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded">{c}</span>
+                                    ))}
+                                  </div>
                                 </div>
+                              )}
+
+                              {supplierResults.webResults?.length === 0 && supplierResults.vendorPrices?.length === 0 && supplierResults.pastWinners?.length === 0 && (
+                                <div className="text-xs text-muted py-2">No suppliers found. Try a different search term.</div>
                               )}
                             </div>
                           ) : (

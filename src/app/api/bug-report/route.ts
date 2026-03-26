@@ -5,10 +5,8 @@ const OWNER = "ShmuelSokol";
 const REPO = "bids";
 
 export async function POST(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  // Don't require auth for bug reports — should always work
+  const user = await getCurrentUser().catch(() => null);
 
   const payload = await req.json();
   const { type, priority, description, expected, url, screenshot, screen_size } =
@@ -34,7 +32,7 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
 
   let body = `## ${titlePrefix} Report\n\n`;
-  body += `**Reporter:** ${user.profile?.full_name || user.user.email}\n`;
+  body += `**Reporter:** ${user?.profile?.full_name || user?.user?.email || "Anonymous"}\n`;
   body += `**Priority:** ${priority || "medium"}\n`;
   body += `**Page:** ${url || "unknown"}\n`;
   body += `**Date:** ${now}\n\n`;

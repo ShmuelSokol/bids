@@ -18,12 +18,11 @@ export function BugReporter() {
   const undoStackRef = useRef<ImageData[]>([]);
 
   const startCapture = useCallback(async () => {
-    // Open modal immediately — screenshot is attempted in background
     setSuccess(null);
     setMarkupMode(false);
     setScreenshot(null);
     setOpen(true);
-    setCapturing(true);
+    setCapturing(false); // Skip screenshot — just open the form
 
     try {
       // Use Screen Capture API for a real screenshot
@@ -216,8 +215,8 @@ export function BugReporter() {
           setScreenshot(null);
         }, 3000);
       }
-    } catch {
-      // fail silently
+    } catch (err) {
+      alert("Bug report failed: " + (err instanceof Error ? err.message : "Unknown error"));
     } finally {
       setSubmitting(false);
     }
