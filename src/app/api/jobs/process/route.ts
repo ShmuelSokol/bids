@@ -220,13 +220,20 @@ export async function POST() {
   const supabase = createServiceClient();
   const startTime = Date.now();
 
-  // Claim a batch of pending jobs
-  const { data: jobs } = await supabase
-    .from("job_queue")
-    .select("*")
-    .eq("status", "pending")
-    .order("created_at", { ascending: true })
-    .limit(BATCH_SIZE);
+  // Claim jobs with fair rotation across types — 1 of each type per batch
+  const jobTypes = ["supplier_discovery", "usaspending_awards", "nsn_crawl", "award_lookup"];
+  const allJobs: any[] = [];
+  for (const jt of jobTypes) {
+    const { data } = await supabase
+      .from("job_queue")
+      .select("*")
+      .eq("status", "pending")
+      .eq("job_type", jt)
+      .order("created_at", { ascending: true })
+      .limit(2);
+    if (data && data.length > 0) allJobs.push(...data);
+  }
+  const jobs = allJobs.slice(0, BATCH_SIZE);
 
   if (!jobs || jobs.length === 0) {
     return NextResponse.json({ processed: 0, message: "No pending jobs" });
