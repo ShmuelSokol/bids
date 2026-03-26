@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
       .from("dibbs_solicitations")
       .select("nsn, nomenclature, solicitation_number, quantity, est_value")
       .eq("is_sourceable", false)
-      .order("est_value", { ascending: false, nullsFirst: false })
+      .not("nomenclature", "is", null)
+      .order("scraped_at", { ascending: false })
       .limit(2000);
 
     // Check which NSNs already have jobs
