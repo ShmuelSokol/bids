@@ -466,15 +466,24 @@ export function SolicitationsList({
                       </td>
                       <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">{s.return_by_date}</td>
                       <td className="px-3 py-2">
-                        {s.channel === "dibbs_only" ? (
-                          <span className="text-[10px] px-1 rounded bg-orange-100 text-orange-700 font-medium" title="FSC not active in LamLinks — found via DIBBS scrape">
-                            DIBBS only
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-1 rounded bg-gray-50 text-gray-500">
-                            {s.source === "ax" ? "AX" : s.source === "masterdb" ? "MDB" : "LL"}
-                          </span>
-                        )}
+                        <div className="flex flex-col gap-0.5">
+                          {s.source === "ax" ? (
+                            <span className="text-[10px] px-1 rounded bg-green-100 text-green-700 font-medium" title="Matched in D365/AX — proven purchase history">
+                              via AX
+                            </span>
+                          ) : s.source === "masterdb" ? (
+                            <span className="text-[10px] px-1 rounded bg-blue-100 text-blue-700 font-medium" title="Matched in Master DB — we carry this product">
+                              via Master
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-1 rounded bg-gray-50 text-gray-400">—</span>
+                          )}
+                          {s.channel === "dibbs_only" && (
+                            <span className="text-[9px] px-1 rounded bg-orange-100 text-orange-600 font-medium" title="FSC not active in LamLinks">
+                              DIBBS only
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         {s.is_sourceable && !s.bid_status && !isEditing && (
