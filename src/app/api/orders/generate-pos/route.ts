@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
+import { trackEvent, requestContext } from "@/lib/track";
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -95,6 +96,19 @@ export async function POST(req: NextRequest) {
       total_cost: totalCost,
     });
   }
+
+  // Track PO generation
+  const { ip, userAgent } = requestContext(req);
+  trackEvent({
+    userId: user?.user?.id,
+    userName: user?.profile?.full_name || user?.user?.email,
+    eventType: "order",
+    eventAction: "po_created",
+    page: "/orders",
+    details: { po_count: createdPOs.length, line_count: awards.length, total_value: createdPOs.reduce((s, p) => s + p.total_cost, 0) },
+    ip,
+    userAgent,
+  });
 
   return NextResponse.json({
     success: true,

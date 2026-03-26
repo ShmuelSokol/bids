@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { trackEvent, requestContext } from "@/lib/track";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,8 +23,22 @@ export async function POST(req: NextRequest) {
   });
 
   if (error) {
+    const { ip, userAgent } = requestContext(req);
+    trackEvent({ eventType: "auth", eventAction: "login_failed", details: { email, error: error.message }, ip, userAgent });
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
+
+  // Track successful login
+  const { ip, userAgent } = requestContext(req);
+  trackEvent({
+    userId: data.user.id,
+    userName: data.user.email,
+    eventType: "auth",
+    eventAction: "login",
+    details: { email },
+    ip,
+    userAgent,
+  });
 
   const response = NextResponse.json({ success: true, user: data.user });
 

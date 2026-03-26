@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase-server";
+import { trackEvent, requestContext } from "@/lib/track";
 
 /**
  * GET /api/solicitations/find-suppliers?nsn=...&description=...
@@ -110,6 +111,17 @@ export async function GET(req: NextRequest) {
       } catch {}
     }
   }
+
+  // Track supplier search
+  const { ip, userAgent } = requestContext(req);
+  trackEvent({
+    eventType: "search",
+    eventAction: "supplier_search",
+    page: "/solicitations",
+    details: { nsn, description: cleanName, results: webResults.length, vendors: vendorPrices?.length || 0 },
+    ip,
+    userAgent,
+  });
 
   return NextResponse.json({
     nsn,

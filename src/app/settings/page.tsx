@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Settings, Building2, MapPin, Upload, Database } from "lucide-react";
+import { Settings, Building2, MapPin, Upload, Database, Activity } from "lucide-react";
 
 export default function SettingsPage() {
   return (
@@ -114,6 +114,20 @@ export default function SettingsPage() {
           <div className="flex gap-4 text-xs text-muted">
             <span>EDI parser ready</span>
             <span>CSV/Excel upload</span>
+          </div>
+        </Link>
+
+        {/* User Activity */}
+        <Link href="/settings/activity" className="rounded-xl border border-card-border bg-card-bg shadow-sm p-6 hover:border-accent transition-colors group">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold group-hover:text-accent">User Activity</h2>
+            <Activity className="h-5 w-5 text-muted group-hover:text-accent" />
+          </div>
+          <p className="text-sm text-muted mb-3">Track page views, bid decisions, logins, searches, and all user interactions</p>
+          <div className="flex gap-4 text-xs text-muted">
+            <span>Real-time feed</span>
+            <span>Per-user breakdown</span>
+            <span>7-day history</span>
           </div>
         </Link>
       </div>

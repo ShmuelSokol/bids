@@ -16,6 +16,7 @@ import {
   History,
 } from "lucide-react";
 import Link from "next/link";
+import { trackAction } from "@/components/activity-tracker";
 
 interface Solicitation {
   id: number;
@@ -208,6 +209,7 @@ export function SolicitationsList({
   async function handleScrapeNow() {
     setScraping(true);
     setMessage("Step 1/3: Scraping DIBBS for new solicitations...");
+    trackAction("sync", "scrape_started");
     try {
       // Mark sync as started (persists across refresh)
       await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "start" }), headers: { "Content-Type": "application/json" } });

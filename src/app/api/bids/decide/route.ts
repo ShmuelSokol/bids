@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
+import { trackEvent, requestContext } from "@/lib/track";
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -54,6 +55,19 @@ export async function POST(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Track the bid decision
+  const { ip, userAgent } = requestContext(req);
+  trackEvent({
+    userId: user.user.id,
+    userName: user.profile?.full_name || user.user.email,
+    eventType: "bid",
+    eventAction: status,
+    page: "/solicitations",
+    details: { solicitation_number, nsn, nomenclature, final_price, suggested_price, quantity, lead_time_days },
+    ip,
+    userAgent,
+  });
 
   return NextResponse.json({ success: true });
 }

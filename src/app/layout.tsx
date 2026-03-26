@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
 import { BugReporter } from "@/components/bug-reporter";
+import { ActivityTracker } from "@/components/activity-tracker";
 import { getCurrentUser } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -67,6 +68,7 @@ export default async function RootLayout({
         {showChrome && <Sidebar user={currentUser} />}
         <main className="flex-1 overflow-auto">{children}</main>
         {showChrome && <BugReporter />}
+        {showChrome && <ActivityTracker />}
       </body>
     </html>
   );
