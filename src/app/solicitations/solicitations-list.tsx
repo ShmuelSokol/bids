@@ -424,6 +424,9 @@ export function SolicitationsList({
                               }`}>{s.bid_status.toUpperCase()}</span>
                             )}
                             <div className="text-xs truncate max-w-[180px]">{s.nomenclature || "—"}</div>
+                            {s.set_aside && s.set_aside !== "None" && (
+                              <span className="text-[9px] px-1 rounded bg-amber-50 text-amber-700">{s.set_aside}</span>
+                            )}
                           </div>
                         </div>
                       </td>
