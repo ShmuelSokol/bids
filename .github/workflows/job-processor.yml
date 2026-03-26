@@ -1,0 +1,27 @@
+name: Background Job Processor
+
+on:
+  schedule:
+    # Every 5 minutes, 24/7
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Process job batch
+        run: |
+          echo "Processing jobs..."
+          RESULT=$(curl -s -X POST "${{ secrets.RAILWAY_URL }}/api/jobs/process" 2>&1)
+          echo "$RESULT"
+
+          # Extract stats
+          PROCESSED=$(echo "$RESULT" | jq -r '.processed // 0')
+          DONE=$(echo "$RESULT" | jq -r '.done // 0')
+          ERRORS=$(echo "$RESULT" | jq -r '.errors // 0')
+          echo "Processed: $PROCESSED, Done: $DONE, Errors: $ERRORS"
+        env:
+          RAILWAY_URL: ${{ secrets.RAILWAY_URL || 'https://dibs-gov-production.up.railway.app' }}
