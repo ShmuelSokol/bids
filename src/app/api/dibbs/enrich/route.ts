@@ -92,10 +92,27 @@ export async function POST() {
     if (w.fob && !fobByNsn.has(nsn)) fobByNsn.set(nsn, w.fob);
   }
 
+  // Load Abe's bids by exact solicitation number
+  const bidsBySol = new Map<string, { price: number; date: string }>();
+  let bidPage = 0;
+  while (true) {
+    const { data: bids } = await supabase
+      .from("abe_bids")
+      .select("solicitation_number, bid_price, bid_date")
+      .range(bidPage * 1000, (bidPage + 1) * 1000 - 1);
+    if (!bids || bids.length === 0) break;
+    bids.forEach((b) => {
+      if (b.solicitation_number) {
+        bidsBySol.set(b.solicitation_number, { price: b.bid_price, date: b.bid_date });
+      }
+    });
+    bidPage++;
+  }
+
   // Get unenriched solicitations
   const { data: solicitations } = await supabase
     .from("dibbs_solicitations")
-    .select("id, nsn, nomenclature, quantity, fsc")
+    .select("id, nsn, nomenclature, quantity, fsc, solicitation_number")
     .eq("is_sourceable", false);
 
   if (!solicitations || solicitations.length === 0) {
@@ -181,6 +198,9 @@ export async function POST() {
 
     const potentialValue = suggestedPrice ? suggestedPrice * (sol.quantity || 1) : null;
 
+    // Check if Abe already bid on this exact solicitation via LamLinks
+    const recentBid = bidsBySol.get(sol.solicitation_number || "");
+
     await supabase
       .from("dibbs_solicitations")
       .update({
@@ -196,6 +216,9 @@ export async function POST() {
         fob,
         est_shipping: estShipping,
         potential_value: potentialValue,
+        already_bid: !!recentBid,
+        last_bid_price: recentBid?.price || null,
+        last_bid_date: recentBid?.date || null,
       })
       .eq("id", sol.id);
 

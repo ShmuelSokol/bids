@@ -39,6 +39,9 @@ interface Solicitation {
   fob: string | null;
   est_shipping: number | null;
   potential_value: number | null;
+  already_bid: boolean;
+  last_bid_price: number | null;
+  last_bid_date: string | null;
   bid_status: string | null;
   final_price: number | null;
   bid_comment: string | null;
@@ -276,6 +279,7 @@ export function SolicitationsList({
       if (filter === "submitted") return s.bid_status === "submitted";
       if (filter === "skipped") return s.bid_status === "skipped";
       if (filter === "all_unsourced") return !s.is_sourceable;
+      if (filter === "new_only") return s.is_sourceable && !s.bid_status && !s.already_bid;
       return true;
     });
 
@@ -382,6 +386,7 @@ export function SolicitationsList({
           { key: "submitted", label: "Submitted", count: counts.submitted, color: "border-purple-300 bg-purple-50", icon: Send },
           { key: "skipped", label: "Skipped", count: counts.skipped, color: "border-gray-300 bg-gray-50", icon: X },
           { key: "all_unsourced", label: "No Source", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped, color: "border-amber-200 bg-amber-50", icon: Package },
+          { key: "new_only", label: "New (not bid)", count: counts.total, color: "border-teal-200 bg-teal-50", icon: Zap },
           { key: "all", label: "All", count: counts.total, color: "border-card-border bg-card-bg", icon: Package },
         ].map((step) => (
           <button
@@ -540,6 +545,11 @@ export function SolicitationsList({
                               }`}>{s.bid_status.toUpperCase()}</span>
                             )}
                             <div className="text-xs truncate max-w-[180px]">{s.nomenclature || "—"}</div>
+                            {s.already_bid && (
+                              <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium" title={`Last bid: $${s.last_bid_price?.toFixed(2)} on ${s.last_bid_date ? new Date(s.last_bid_date).toLocaleDateString() : '?'}`}>
+                                Bid in LL ${s.last_bid_price ? `@$${s.last_bid_price.toFixed(2)}` : ''}
+                              </span>
+                            )}
                             {s.set_aside && s.set_aside !== "None" && (
                               <span className="text-[9px] px-1 rounded bg-amber-50 text-amber-700">{s.set_aside}</span>
                             )}
