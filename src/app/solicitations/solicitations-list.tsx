@@ -156,15 +156,18 @@ export function SolicitationsList({
       }
       return new Date(s.return_by_date) >= new Date(new Date().toDateString());
     };
-    let sourceable = 0, quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0;
+    let sourceable = 0, quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0, llActive = 0, dibbsOnly = 0;
     for (const s of solicitations) {
+      const open = parseOpen(s);
+      if (s.data_source === "lamlinks" && open) llActive++;
+      if (s.data_source !== "lamlinks" && open) dibbsOnly++;
       if (s.bid_status === "quoted") { quoted++; continue; }
       if (s.bid_status === "submitted") { submitted++; continue; }
       if (s.bid_status === "skipped") { skipped++; continue; }
       if (s.already_bid) { alreadyBid++; continue; }
-      if (s.is_sourceable && !s.bid_status && parseOpen(s)) sourceable++;
+      if (s.is_sourceable && !s.bid_status && open) sourceable++;
     }
-    return { total: solicitations.length, sourceable, quoted, submitted, skipped, alreadyBid };
+    return { total: solicitations.length, sourceable, quoted, submitted, skipped, alreadyBid, llActive, dibbsOnly };
   }, [solicitations]);
 
   async function handleFindSuppliers(sol: Solicitation) {
@@ -391,6 +394,8 @@ export function SolicitationsList({
       if (filter === "submitted") return s.bid_status === "submitted";
       if (filter === "skipped") return s.bid_status === "skipped";
       if (filter === "all_unsourced") return !s.is_sourceable && isOpen;
+      if (filter === "ll_active") return s.data_source === "lamlinks" && isOpen;
+      if (filter === "dibbs_only") return s.data_source !== "lamlinks" && isOpen;
       if (filter === "expired") return !isOpen;
       return true;
     });
@@ -505,15 +510,13 @@ export function SolicitationsList({
       </div>
 
       {/* Pipeline Stats */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
+      <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mb-2">
         {[
           { key: "sourceable", label: "Sourceable", count: counts.sourceable, color: "border-green-300 bg-green-50", icon: Zap },
           { key: "quoted", label: "Quoted", count: counts.quoted, color: "border-blue-300 bg-blue-50", icon: DollarSign },
           { key: "submitted", label: "Submitted", count: counts.submitted, color: "border-purple-300 bg-purple-50", icon: Send },
           { key: "skipped", label: "Skipped", count: counts.skipped, color: "border-gray-300 bg-gray-50", icon: X },
-          { key: "all_unsourced", label: "No Source", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped - counts.alreadyBid, color: "border-amber-200 bg-amber-50", icon: Package },
           { key: "already_bid", label: "Bid in LL", count: counts.alreadyBid, color: "border-purple-200 bg-purple-50", icon: Check },
-          { key: "all", label: "All", count: counts.total, color: "border-card-border bg-card-bg", icon: Package },
         ].map((step) => (
           <button
             key={step.key}
@@ -522,6 +525,20 @@ export function SolicitationsList({
           >
             <div className="text-xl font-bold">{step.count}</div>
             <div className="text-[10px] font-medium">{step.label}</div>
+          </button>
+        ))}
+      </div>
+      {/* Source Filters */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {[
+          { key: "ll_active", label: "LamLinks FSCs", count: counts.llActive, color: "border-cyan-300 bg-cyan-50 text-cyan-800" },
+          { key: "dibbs_only", label: "DIBBS Expansion", count: counts.dibbsOnly, color: "border-orange-300 bg-orange-50 text-orange-800" },
+          { key: "all_unsourced", label: "No Source", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped - counts.alreadyBid, color: "border-amber-200 bg-amber-50 text-amber-800" },
+          { key: "all", label: "All", count: counts.total, color: "border-card-border bg-card-bg" },
+        ].map((f) => (
+          <button key={f.key} onClick={() => setFilter(f.key)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${f.color} ${filter === f.key ? "ring-2 ring-accent" : ""}`}>
+            {f.label} <span className="font-bold ml-1">{f.count}</span>
           </button>
         ))}
       </div>
