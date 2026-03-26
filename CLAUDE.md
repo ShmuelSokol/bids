@@ -9,6 +9,15 @@ Intelligence layer on top of LamLinks for Ever Ready First Aid (CAGE 0AG09). ~$8
 - **Railway auto-deploys from GitHub** — do NOT use `railway up`. Just `git push`.
 - **Check deploy after every push**: `railway logs 2>&1 | tail -5` — look for "Ready in" (success) or errors.
 - **Always run `npm run build` locally before pushing** to catch errors.
+- **After pushing, verify with Playwright** that the page actually loads data (build passing ≠ working).
+
+## SUPABASE QUERY RULES (learned the hard way)
+- **Supabase default limit is 1,000 rows** — `.limit(5000)` does NOT work, you MUST paginate with `.range()` or use parallel range queries.
+- **NEVER use `unstable_cache`** — it breaks silently on Railway serverless (returns empty data, no error).
+- **Only SELECT columns that EXIST in the table** — computed fields like `est_value` cause silent failures. Check the actual table schema, not what the code computes.
+- **Railway serverless has a ~30s timeout** — while-loop pagination over 14K+ rows will time out. Use parallel `.range()` queries instead (e.g., `Promise.all([range(0,999), range(1000,1999)])`).
+- **Always check Railway logs after deploy**: `railway logs -n 50` — Supabase errors only show in server logs, not in the browser.
+- **Test with Playwright after every deploy** to verify data actually loads (server errors are swallowed in SSR).
 
 ## Deployment
 - **GitHub:** ShmuelSokol/bids (master branch)
