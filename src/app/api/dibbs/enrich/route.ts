@@ -12,17 +12,32 @@ import { createServiceClient } from "@/lib/supabase-server";
 export async function POST() {
   const supabase = createServiceClient();
 
-  // Load NSN catalog (AX source — 24K NSNs)
-  const { data: catalog } = await supabase
-    .from("nsn_catalog")
-    .select("nsn, source, description");
-  const axNsnSet = new Set((catalog || []).map((c) => c.nsn));
+  // Load NSN catalog (AX source — 24K NSNs, need to paginate past 1K default)
+  const axNsnSet = new Set<string>();
+  let catalogPage = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("nsn_catalog")
+      .select("nsn")
+      .range(catalogPage * 1000, (catalogPage + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    data.forEach((c) => axNsnSet.add(c.nsn));
+    catalogPage++;
+  }
 
-  // Load NSN costs
-  const { data: costs } = await supabase.from("nsn_costs").select("nsn, cost, cost_source");
+  // Load NSN costs (also paginate)
   const costMap = new Map<string, { cost: number; source: string }>();
-  for (const c of costs || []) {
-    if (c.cost > 0) costMap.set(c.nsn, { cost: c.cost, source: c.cost_source });
+  let costPage = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("nsn_costs")
+      .select("nsn, cost, cost_source")
+      .range(costPage * 1000, (costPage + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    data.forEach((c) => {
+      if (c.cost > 0) costMap.set(c.nsn, { cost: c.cost, source: c.cost_source });
+    });
+    costPage++;
   }
 
   // Load award history for pricing (last award price per NSN)
