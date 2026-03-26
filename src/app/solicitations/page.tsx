@@ -4,11 +4,21 @@ import { SolicitationsList } from "./solicitations-list";
 async function getData() {
   const supabase = createServiceClient();
 
-  const { data: solicitations } = await supabase
-    .from("dibbs_solicitations")
-    .select("*")
-    .order("scraped_at", { ascending: false })
-    .limit(500);
+  // Load all solicitations (paginate past Supabase 1K default)
+  const allSolicitations: any[] = [];
+  let solPage = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("dibbs_solicitations")
+      .select("*")
+      .order("scraped_at", { ascending: false })
+      .range(solPage * 1000, (solPage + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allSolicitations.push(...data);
+    if (data.length < 1000) break;
+    solPage++;
+  }
+  const solicitations = allSolicitations;
 
   const { data: decisions } = await supabase
     .from("bid_decisions")
