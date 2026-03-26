@@ -95,6 +95,7 @@ export function SolicitationsList({
   const [saving, setSaving] = useState(false);
   const [selectedQuoted, setSelectedQuoted] = useState<Set<number>>(new Set());
   const [expandedNsn, setExpandedNsn] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Build award history lookup
   const historyByNsn = useMemo(() => {
@@ -109,15 +110,20 @@ export function SolicitationsList({
 
   async function handleScrapeNow() {
     setScraping(true);
-    setMessage(null);
+    setMessage("Scraping DIBBS for new solicitations...");
     try {
       const res = await fetch("/api/dibbs/scrape-now", { method: "POST" });
       const data = await res.json();
-      setMessage(`Scraped ${data.count} solicitations. Enriching...`);
-      await handleEnrich();
-      window.location.reload();
+      if (data.count > 0) {
+        setMessage(`Found ${data.count} solicitations across ${data.fscs_scraped} FSCs (${data.elapsed_seconds}s). Matching NSNs...`);
+        await handleEnrich();
+        setMessage(`Done! ${data.count} solicitations scraped and enriched. Refreshing...`);
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        setMessage(`No new solicitations found (${data.fscs_scraped} FSCs checked, ${data.errors?.length || 0} errors)`);
+      }
     } catch {
-      setMessage("Scrape failed");
+      setMessage("Scrape failed — check connection");
     } finally {
       setScraping(false);
     }
@@ -251,6 +257,17 @@ export function SolicitationsList({
       return true;
     });
 
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      items = items.filter((s) =>
+        s.nsn?.toLowerCase().includes(q) ||
+        s.nomenclature?.toLowerCase().includes(q) ||
+        s.solicitation_number?.toLowerCase().includes(q) ||
+        s.fsc?.includes(q)
+      );
+    }
+
     // Add potential_value for sorting
     items = items.map((s) => ({
       ...s,
@@ -359,6 +376,20 @@ export function SolicitationsList({
       {message && (
         <div className="mb-3 rounded-lg bg-blue-50 text-blue-700 px-3 py-2 text-xs">{message}</div>
       )}
+
+      {/* Search */}
+      <div className="mb-3">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search NSN, item name, solicitation #, or FSC..."
+          className="w-full md:w-96 rounded-lg border border-card-border px-3 py-2 text-sm"
+        />
+        {searchQuery && (
+          <span className="text-xs text-muted ml-2">{filtered.length} results</span>
+        )}
+      </div>
 
       {/* Solicitation Table */}
       <div className="rounded-xl border border-card-border bg-card-bg shadow-sm overflow-hidden">
