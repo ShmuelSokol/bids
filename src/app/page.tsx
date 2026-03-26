@@ -1,5 +1,4 @@
 import { createServiceClient } from "@/lib/supabase-server";
-import { unstable_cache } from "next/cache";
 import Link from "next/link";
 import {
   Zap,
@@ -10,35 +9,30 @@ import {
   Clock,
 } from "lucide-react";
 
-// Cache sourceable items for 60s
-const getCachedSourceable = unstable_cache(
-  async () => {
-    const supabase = createServiceClient();
-    const items: any[] = [];
-    let p = 0;
-    while (true) {
-      const { data } = await supabase
-        .from("dibbs_solicitations")
-        .select("*")
-        .eq("is_sourceable", true)
-        .range(p * 1000, (p + 1) * 1000 - 1);
-      if (!data || data.length === 0) break;
-      items.push(...data);
-      if (data.length < 1000) break;
-      p++;
-    }
-    return items;
-  },
-  ["dashboard-sourceable"],
-  { revalidate: 60 }
-);
+async function paginateSourceable() {
+  const supabase = createServiceClient();
+  const items: any[] = [];
+  let p = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("dibbs_solicitations")
+      .select("*")
+      .eq("is_sourceable", true)
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    items.push(...data);
+    if (data.length < 1000) break;
+    p++;
+  }
+  return items;
+}
 
 async function getData() {
   const supabase = createServiceClient();
 
-  // Cached sourceable + fresh counts/decisions/live bids in parallel
+  // All queries in parallel
   const [solicitations, totalCountRes, noSourceRes, decisions, liveBids] = await Promise.all([
-    getCachedSourceable(),
+    paginateSourceable(),
     supabase.from("dibbs_solicitations").select("*", { count: "exact", head: true }),
     supabase.from("dibbs_solicitations").select("*", { count: "exact", head: true }).eq("is_sourceable", false),
     supabase.from("bid_decisions").select("solicitation_number, nsn, status").then((r: any) => r.data || []),

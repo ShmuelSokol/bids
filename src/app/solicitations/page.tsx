@@ -1,14 +1,12 @@
 import { createServiceClient } from "@/lib/supabase-server";
-import { unstable_cache } from "next/cache";
 import { SolicitationsList } from "./solicitations-list";
 
-async function paginateAll(supabase: any, table: string, select: string, options?: { order?: string; eq?: [string, any] }) {
+async function paginateAll(supabase: any, table: string, select: string, options?: { order?: string }) {
   const all: any[] = [];
   let page = 0;
   while (true) {
     let q = supabase.from(table).select(select).range(page * 1000, (page + 1) * 1000 - 1);
     if (options?.order) q = q.order(options.order, { ascending: false });
-    if (options?.eq) q = q.eq(options.eq[0], options.eq[1]);
     const { data } = await q;
     if (!data || data.length === 0) break;
     all.push(...data);
@@ -18,25 +16,15 @@ async function paginateAll(supabase: any, table: string, select: string, options
   return all;
 }
 
-// Cache solicitations for 60 seconds — serves instantly on repeat loads
-const getCachedSolicitations = unstable_cache(
-  async () => {
-    const supabase = createServiceClient();
-    return paginateAll(supabase, "dibbs_solicitations",
-      "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count",
-      { order: "scraped_at" }
-    );
-  },
-  ["solicitations-all"],
-  { revalidate: 60 }
-);
-
 async function getData() {
   const supabase = createServiceClient();
 
-  // Solicitations cached 60s, rest fresh every time
+  // All queries in parallel — no cache (unstable_cache breaks on Railway)
   const [solicitations, decisions, liveBids, lastSync] = await Promise.all([
-    getCachedSolicitations(),
+    paginateAll(supabase, "dibbs_solicitations",
+      "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, est_value, data_source, competitor_cage, award_count",
+      { order: "scraped_at" }
+    ),
     supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
     supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
