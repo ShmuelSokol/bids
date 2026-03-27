@@ -159,7 +159,7 @@ async function handleUsaspendingAwards(payload: any, supabase: any): Promise<any
       agencies: [{ type: "awarding", tier: "subtier", name: "Defense Logistics Agency" }],
       award_type_codes: ["A", "B", "C", "D"],
       time_period: [{ start_date: start, end_date: end }],
-      psc_codes: { require: [fsc] },
+      psc_codes: [fsc],
     },
     fields: [
       "Award ID", "Recipient Name", "Recipient DUNS", "Award Amount",
