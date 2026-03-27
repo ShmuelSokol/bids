@@ -96,25 +96,25 @@ export async function POST() {
   // Scrape 30 FSCs per call — UI can call multiple times, or cron handles all.
   const BATCH_SIZE = 30;
 
-  // Track which FSCs were already scraped today so we don't re-scrape
-  let alreadyScrapedToday: string[] = [];
+  // Track which FSCs were already scraped in the last 4 hours (not full day)
+  // This allows the 6am + 12pm crons to both run fresh
+  let alreadyScrapedRecently: string[] = [];
   try {
-    const todayStart = new Date(new Date().toDateString()).toISOString();
-    const { data: todayLog } = await supabaseCheck
+    const fourHoursAgo = new Date(Date.now() - 4 * 3600000).toISOString();
+    const { data: recentLog } = await supabaseCheck
       .from("sync_log")
       .select("details")
       .eq("action", "scrape")
-      .gte("created_at", todayStart)
-      .order("created_at", { ascending: false })
+      .gte("created_at", fourHoursAgo)
       .limit(10);
-    for (const log of todayLog || []) {
+    for (const log of recentLog || []) {
       if (log.details?.fscs_scraped_list) {
-        alreadyScrapedToday.push(...log.details.fscs_scraped_list);
+        alreadyScrapedRecently.push(...log.details.fscs_scraped_list);
       }
     }
   } catch {}
 
-  const alreadySet = new Set(alreadyScrapedToday);
+  const alreadySet = new Set(alreadyScrapedRecently);
   const remainingFscs = fscsToScrape.filter(fsc => !alreadySet.has(fsc));
   const batchFscs = remainingFscs.slice(0, BATCH_SIZE);
   const moreRemaining = remainingFscs.length - batchFscs.length;
