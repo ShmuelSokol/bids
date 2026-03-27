@@ -133,7 +133,7 @@ export function SolicitationsList({
   const [detailId, setDetailId] = useState<number | null>(null);
 
   // Lazy-load award + bid history per NSN (instead of loading 74K+10K upfront)
-  const [historyCache, setHistoryCache] = useState<Map<string, { awards: AwardHistory[]; bids: AbeBid[] }>>(new Map());
+  const [historyCache, setHistoryCache] = useState<Map<string, { awards: AwardHistory[]; bids: AbeBid[]; itemSpec?: any; matches?: any[] }>>(new Map());
   const [loadingHistory, setLoadingHistory] = useState<string | null>(null);
 
   // Also keep any server-provided data as fallback
@@ -165,7 +165,7 @@ export function SolicitationsList({
       const data = await res.json();
       setHistoryCache(prev => {
         const next = new Map(prev);
-        next.set(nsn, { awards: data.awards || [], bids: data.bids || [] });
+        next.set(nsn, { awards: data.awards || [], bids: data.bids || [], itemSpec: data.itemSpec || null, matches: data.matches || [] });
         return next;
       });
     } catch {} finally { setLoadingHistory(null); }
@@ -1246,6 +1246,43 @@ export function SolicitationsList({
                                 </div>
                               </div>
                             </div>
+
+                            {/* Item Spec + Part Number Matches (from lazy-loaded data) */}
+                            {(() => {
+                              const cached = historyCache.get(s.nsn);
+                              const spec = (cached as any)?.itemSpec;
+                              const matches = (cached as any)?.matches;
+                              if (!spec && !matches?.length) return null;
+                              return (
+                                <div className="grid md:grid-cols-2 gap-3 mb-3">
+                                  {spec && (
+                                    <div className="bg-gray-50 rounded-lg p-2 border border-card-border text-xs">
+                                      <div className="text-[10px] font-bold text-gray-600 mb-1">Item Details (LamLinks)</div>
+                                      {spec.item_name && <div>{spec.item_name}</div>}
+                                      <div className="grid grid-cols-2 gap-1 mt-1 text-[10px] text-muted">
+                                        {spec.part_number && <div>P/N: <span className="font-mono">{spec.part_number}</span></div>}
+                                        {spec.cage_code && <div>CAGE: <span className="font-mono">{spec.cage_code}</span></div>}
+                                        {spec.unit_price > 0 && <div>LL Price: ${spec.unit_price}</div>}
+                                        {spec.unit_of_issue && <div>UoI: {spec.unit_of_issue}</div>}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {matches?.length > 0 && (
+                                    <div className="bg-yellow-50 rounded-lg p-2 border border-yellow-200 text-xs">
+                                      <div className="text-[10px] font-bold text-yellow-700 mb-1">Part Number Matches ({matches.length})</div>
+                                      {matches.map((m: any, i: number) => (
+                                        <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
+                                          <span className={`px-1 rounded font-medium ${m.confidence === "HIGH" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{m.confidence}</span>
+                                          <span className="font-mono">{m.matched_part_number}</span>
+                                          <span className="text-muted truncate">{m.matched_description?.slice(0, 40)}</span>
+                                          <span className="text-[9px] text-muted">({m.matched_source})</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
 
                             {/* Award History + Our Bids — two clean tables side by side */}
                             {loadingHistory === s.nsn ? (
