@@ -1177,6 +1177,20 @@ export function SolicitationsList({
                                   className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-medium">
                                   Find Suppliers
                                 </button>
+                                <button onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const btn = e.currentTarget;
+                                  btn.textContent = "Checking...";
+                                  try {
+                                    const res = await fetch(`/api/dibbs/check-open?sol=${encodeURIComponent(s.solicitation_number)}`);
+                                    const data = await res.json();
+                                    btn.textContent = data.is_open ? "Still Open" : "Closed/Not Found";
+                                    btn.className = `text-xs px-2 py-1 rounded font-medium border ${data.is_open ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`;
+                                  } catch { btn.textContent = "Check Failed"; }
+                                }}
+                                  className="text-xs px-2 py-1 rounded bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 font-medium">
+                                  Check DIBBS
+                                </button>
                                 {filtered.indexOf(s) < filtered.length - 1 && (
                                   <button onClick={(e) => { e.stopPropagation(); setDetailId(filtered[filtered.indexOf(s) + 1].id); }}
                                     className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium">

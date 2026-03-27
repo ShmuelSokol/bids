@@ -11,12 +11,15 @@ async function getData() {
     .order("total_bids", { ascending: false })
     .limit(500);
 
-  // Get award counts by FSC (last 1K awards)
-  const { data: awardCounts } = await supabase
-    .from("awards")
-    .select("fsc")
-    .eq("cage", "0AG09")
-    .limit(1000);
+  // Get award counts by FSC — parallel range queries for more coverage
+  const [aw1, aw2, aw3, aw4, aw5] = await Promise.all([
+    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(0, 999),
+    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(1000, 1999),
+    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(2000, 2999),
+    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(3000, 3999),
+    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(4000, 4999),
+  ]);
+  const awardCounts = [...(aw1.data||[]), ...(aw2.data||[]), ...(aw3.data||[]), ...(aw4.data||[]), ...(aw5.data||[])];
 
   const awardsByFsc: Record<string, number> = {};
   for (const a of awardCounts || []) {
