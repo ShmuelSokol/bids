@@ -34,13 +34,11 @@ async function getData() {
       console.log(`Loaded ${items.length} sourceable items`);
       return items;
     }),
-    // Recent unsourceable (last 30 days, for search)
-    supabase.from("dibbs_solicitations").select(cols)
-      .eq("is_sourceable", false)
-      .gte("scraped_at", new Date(Date.now() - 30 * 86400000).toISOString())
-      .order("scraped_at", { ascending: false })
-      .limit(1000)
-      .then((r: any) => r.data || []),
+    // Unsourceable — load in parallel range queries (same pattern as sourceable)
+    Promise.all([
+      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", false).range(0, 999),
+      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", false).range(1000, 1999),
+    ]).then(([a, b]) => [...(a.data || []), ...(b.data || [])]),
     supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
     supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
