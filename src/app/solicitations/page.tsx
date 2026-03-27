@@ -41,7 +41,7 @@ async function getData() {
       supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", false).range(1000, 1999),
     ]).then(([a, b]) => [...(a.data || []), ...(b.data || [])]),
     supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
-    supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
+    supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).gte("bid_time", new Date().toISOString().split("T")[0]).then((r: any) => r.data || []),
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
     // NSN matches for unsourceable items
     supabase.from("nsn_matches").select("nsn, match_type, confidence, matched_part_number, matched_description, matched_source").limit(1000).then((r: any) => r.data || []),
