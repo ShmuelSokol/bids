@@ -131,22 +131,27 @@ async function handleSupplierDiscovery(payload: any, supabase: any): Promise<any
   return { nsn, suppliers_found: unique.length, searches: searches.length };
 }
 
-async function handleAwardLookup(payload: any): Promise<any> {
+async function handleAwardLookup(payload: any, supabase: any): Promise<any> {
   const { cage } = payload;
   if (!cage) throw new Error("Missing cage");
 
-  // Look up CAGE code on cage.report
   const resp = await fetch(`https://cage.report/CAGE/${cage}`, {
     headers: { "User-Agent": "Mozilla/5.0" },
     signal: AbortSignal.timeout(8000),
   });
   const html = await resp.text();
   const nameMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/);
+  const name = nameMatch?.[1]?.trim()?.replace(/&amp;/g, "&") || null;
 
-  return {
-    cage,
-    company_name: nameMatch?.[1]?.trim() || null,
-  };
+  // Save to cage_directory
+  if (name) {
+    await supabase.from("cage_directory").upsert(
+      { cage_code: cage, company_name: name, source: "cage_report" },
+      { onConflict: "cage_code" }
+    );
+  }
+
+  return { cage, company_name: name };
 }
 
 async function handleUsaspendingAwards(payload: any, supabase: any): Promise<any> {
@@ -265,7 +270,7 @@ export async function POST() {
           result = await handleSupplierDiscovery(job.payload, supabase);
           break;
         case "award_lookup":
-          result = await handleAwardLookup(job.payload);
+          result = await handleAwardLookup(job.payload, supabase);
           break;
         case "usaspending_awards":
           result = await handleUsaspendingAwards(job.payload, supabase);
