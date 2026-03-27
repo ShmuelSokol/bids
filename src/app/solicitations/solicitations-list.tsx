@@ -171,20 +171,21 @@ export function SolicitationsList({
     } catch {} finally { setLoadingHistory(null); }
   }
 
-  // Compute counts client-side — applies same isOpen + already_bid logic as filters
+  // Compute counts client-side — MUST match isSourceableOpen() in lib/solicitation-filters.ts
   const counts = useMemo(() => {
-    const parseOpen = (s: Solicitation) => {
-      if (!s.return_by_date) return true;
-      const parts = s.return_by_date.split("-");
+    const isOpen = (returnByDate: string | null | undefined) => {
+      if (!returnByDate) return true;
+      const todayStr = new Date().toISOString().split("T")[0];
+      const parts = returnByDate.split("-");
       if (parts.length === 3 && parts[2].length === 4) {
-        const d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
-        return d >= new Date(new Date().toDateString());
+        const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
+        return isoDate >= todayStr;
       }
-      return new Date(s.return_by_date) >= new Date(new Date().toDateString());
+      return returnByDate >= todayStr;
     };
     let sourceable = 0, quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0, llActive = 0, dibbsOnly = 0;
     for (const s of solicitations) {
-      const open = parseOpen(s);
+      const open = isOpen(s.return_by_date);
       if (s.data_source === "lamlinks" && open) llActive++;
       if (s.data_source !== "lamlinks" && open) dibbsOnly++;
       if (s.bid_status === "quoted") { quoted++; continue; }
