@@ -119,15 +119,54 @@ export async function POST() {
   const batchFscs = remainingFscs.slice(0, BATCH_SIZE);
   const moreRemaining = remainingFscs.length - batchFscs.length;
 
-  // Accept consent
+  // Accept consent — DIBBS is ASP.NET, requires __VIEWSTATE + cookies.
+  // Critical: use redirect:"manual" on POST to capture the `dw` consent cookie.
+  let consentCookies = "";
   try {
-    await fetch(`${DIBBS_BASE}/dodwarning.aspx?goto=/`, {
+    // Step 1: GET the consent page to capture session cookies and ASP.NET hidden fields
+    const consentPage = await fetch(`${DIBBS_BASE}/dodwarning.aspx?goto=/`, { redirect: "manual" });
+    const consentHtml = await consentPage.text();
+
+    const getCookies = consentPage.headers.getSetCookie?.() || [];
+    consentCookies = getCookies.map(c => c.split(";")[0]).join("; ");
+
+    // Extract all hidden form fields (__VIEWSTATE, __EVENTVALIDATION, etc.)
+    const hiddenFields: Record<string, string> = {};
+    const fieldRe = /<input[^>]*type="hidden"[^>]*name="([^"]+)"[^>]*value="([^"]*)"/gi;
+    let fm;
+    while ((fm = fieldRe.exec(consentHtml)) !== null) {
+      hiddenFields[fm[1]] = fm[2];
+    }
+
+    // Step 2: POST consent with all ASP.NET fields + cookies. Use redirect:"manual"
+    // so we capture the `dw` cookie that DIBBS sets to prove consent was accepted.
+    const params = new URLSearchParams(hiddenFields);
+    params.append("butAgree", "OK");
+
+    const postResp = await fetch(`${DIBBS_BASE}/dodwarning.aspx?goto=/`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "butAgree=OK",
-      redirect: "follow",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: consentCookies,
+      },
+      body: params.toString(),
+      redirect: "manual",
     });
-  } catch {}
+
+    // Merge all cookies (GET + POST) — the `dw` cookie from POST is the consent proof
+    const postCookies = postResp.headers.getSetCookie?.() || [];
+    const merged = new Map<string, string>();
+    for (const c of [...getCookies, ...postCookies]) {
+      const [kv] = c.split(";");
+      const [k] = kv.split("=");
+      if (kv.includes("=") && !kv.endsWith("=")) {
+        merged.set(k.trim(), kv);
+      }
+    }
+    consentCookies = [...merged.values()].join("; ");
+  } catch (e: any) {
+    errors.push(`consent failed: ${e.message}`);
+  }
 
   // Scrape FSCs in parallel batches of 5 for speed
   for (let i = 0; i < batchFscs.length; i += 5) {
@@ -138,7 +177,11 @@ export async function POST() {
         const timeout = setTimeout(() => controller.abort(), 15000);
         try {
           const url = `${DIBBS_BASE}/Rfq/RfqRecs.aspx?category=FSC&value=${fsc}&scope=today`;
-          const resp = await fetch(url, { redirect: "follow", signal: controller.signal });
+          const resp = await fetch(url, {
+            redirect: "follow",
+            signal: controller.signal,
+            headers: consentCookies ? { Cookie: consentCookies } : {},
+          });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const html = await resp.text();
           return { fsc, items: parseTable(html, fsc) };
