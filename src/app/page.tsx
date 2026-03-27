@@ -36,7 +36,7 @@ async function getData() {
     supabase.from("dibbs_solicitations").select("*", { count: "exact", head: true }),
     supabase.from("dibbs_solicitations").select("*", { count: "exact", head: true }).eq("is_sourceable", false),
     supabase.from("bid_decisions").select("solicitation_number, nsn, status").then((r: any) => r.data || []),
-    supabase.from("abe_bids_live").select("*").order("bid_time", { ascending: false }).then((r: any) => r.data || []),
+    supabase.from("abe_bids_live").select("*").order("bid_time", { ascending: false }).gte("bid_time", new Date().toISOString().split("T")[0]).then((r: any) => r.data || []),
   ]);
 
   const totalCount = totalCountRes.count || 0;
