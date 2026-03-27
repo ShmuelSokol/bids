@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase-server";
+import { isSourceableOpen, buildFilterContext } from "@/lib/solicitation-filters";
 import { SolicitationsList } from "./solicitations-list";
 
 async function paginateAll(supabase: any, table: string, select: string, options?: { order?: string }) {
@@ -73,9 +74,10 @@ async function getData() {
     };
   });
 
+  const ctx = buildFilterContext(liveBids, decisions);
   const counts = {
     total: enriched.length,
-    sourceable: enriched.filter((s: any) => s.is_sourceable && !s.bid_status).length,
+    sourceable: enriched.filter((s: any) => isSourceableOpen(s, ctx)).length,
     quoted: enriched.filter((s: any) => s.bid_status === "quoted").length,
     submitted: enriched.filter((s: any) => s.bid_status === "submitted").length,
     skipped: enriched.filter((s: any) => s.bid_status === "skipped").length,

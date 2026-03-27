@@ -416,15 +416,17 @@ export function SolicitationsList({
 
   const filtered = useMemo(() => {
     let items = solicitations.filter((s) => {
-      // Parse return_by_date (MM-DD-YYYY format from DIBBS)
+      // Parse return_by_date — use string comparison to avoid timezone issues
       const isOpen = (() => {
         if (!s.return_by_date) return true;
+        const todayStr = new Date().toISOString().split("T")[0];
         const parts = s.return_by_date.split("-");
         if (parts.length === 3 && parts[2].length === 4) {
-          const d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
-          return d >= new Date(new Date().toDateString());
+          // MM-DD-YYYY → YYYY-MM-DD
+          const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
+          return isoDate >= todayStr;
         }
-        return new Date(s.return_by_date) >= new Date(new Date().toDateString());
+        return s.return_by_date >= todayStr;
       })();
 
       if (filter === "sourceable") return s.is_sourceable && !s.bid_status && !s.already_bid && isOpen;

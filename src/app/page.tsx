@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase-server";
+import { isSourceableOpen, buildFilterContext } from "@/lib/solicitation-filters";
 import Link from "next/link";
 import {
   Zap,
@@ -49,37 +50,14 @@ async function getData() {
 
   const all = solicitations || [];
 
-  // Parse open status — use YYYY-MM-DD string comparison to avoid timezone issues
-  const todayStr = new Date().toISOString().split("T")[0]; // "2026-03-26" in UTC
-  const isOpen = (s: any) => {
-    if (!s.return_by_date) return true;
-    const parts = s.return_by_date.split("-");
-    if (parts.length === 3 && parts[2].length === 4) {
-      // MM-DD-YYYY → YYYY-MM-DD for string comparison
-      const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
-      return isoDate >= todayStr;
-    }
-    return s.return_by_date >= todayStr;
-  };
+  const ctx = buildFilterContext(liveBids, decisions);
 
-  // Also exclude items Abe bid on today (live bids)
-  const liveBidSols = new Set(liveBids.map((b: any) => b.solicitation_number?.trim()).filter(Boolean));
-
-  const sourceable = all.filter(
-    (s) =>
-      s.is_sourceable &&
-      !s.already_bid &&
-      !liveBidSols.has(s.solicitation_number?.trim()) &&
-      isOpen(s) &&
-      !decisionMap.has(`${s.solicitation_number}_${s.nsn}`)
-  );
+  const sourceable = all.filter((s) => isSourceableOpen(s, ctx));
   const quoted = all.filter(
-    (s) =>
-      decisionMap.get(`${s.solicitation_number}_${s.nsn}`) === "quoted"
+    (s) => decisionMap.get(`${s.solicitation_number}_${s.nsn}`) === "quoted"
   );
   const submitted = all.filter(
-    (s) =>
-      decisionMap.get(`${s.solicitation_number}_${s.nsn}`) === "submitted"
+    (s) => decisionMap.get(`${s.solicitation_number}_${s.nsn}`) === "submitted"
   );
   const noSource = noSourceCount || 0;
 
