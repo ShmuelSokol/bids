@@ -5,7 +5,7 @@
 > **Method:** Document-then-audit (spec-vs-code diff)
 > **Scope:** All flows in `docs/flows/*.md` — bidding, scraping, enrichment, awards-to-pos, invoicing, shipping, auth, background-jobs, analytics
 > **Total findings:** 32 (10 CRITICAL · 11 HIGH · 8 MEDIUM · 3 LOW)
-> **Fixed so far:** 17 — **all 10 CRITICALs** + 5 HIGH + 2 pagination/silent-failure. Commits `3967521`, `3337454`, `b4e8fb0`.
+> **Fixed so far:** 27 — **all 10 CRITICALs** + **all 11 HIGHs** + 6 MEDIUM. Commits `3967521`, `3337454`, `b4e8fb0`, `cedef01`.
 
 ## Status legend
 
@@ -117,7 +117,7 @@ Two rounds of fixes shipped: commits `3967521`, `3337454`, `b4e8fb0`.
 - `final_price` is allowed null on quotes. Downstream consumers of "quoted" bids expect a price.
 - **Fix:** Reject request if `(status==="quoted" || status==="submitted") && !final_price`.
 
-**13. `handleSubmitAll` has no optimistic lock — overrides concurrent changes**
+**13. `handleSubmitAll` has no optimistic lock — overrides concurrent changes** — **FIXED 2026-04-14** (round 3) — new `POST /api/bids/submit-batch` updates with `WHERE status='quoted'` filter per pair in parallel; skipped rows reported with reason (ownership, concurrent change, wrong state).
 - `src/app/solicitations/solicitations-list.tsx:382-410`
 - Loops sequentially. If another tab changes a bid's status mid-loop, this loop still POSTs "submitted" and overwrites.
 - **Fix:** Refetch status per row before POST, or use a single batch endpoint with `WHERE status='quoted'` filter.
@@ -132,7 +132,7 @@ Two rounds of fixes shipped: commits `3967521`, `3337454`, `b4e8fb0`.
 - Returns `is_open` if the response contains `"SPE"` anywhere — any other solicitation in the DIBBS results counts. Will report the wrong solicitation as still open.
 - **Fix:** Parse table rows and match the actual solicitation number.
 
-**16. Margin computed two different ways (enrichment vs PO generation)**
+**16. Margin computed two different ways (enrichment vs PO generation)** — **FIXED 2026-04-14** (round 3) — shared `src/lib/margin.ts` with `computeMarginPct` and `computeMarginPctFob`; wired into orders/page enrichment, generate-pos, switch-supplier.
 - `src/app/orders/page.tsx:39` (page-load enrichment) vs `src/app/api/orders/generate-pos/route.ts:70-73` (PO creation)
 - If `nsn_costs` changed between page load and PO generation, the margin stored in `po_lines` differs from what the user approved.
 - **Fix:** Store the cost used with the line at PO creation time (`cost_snapshot_at`) or lock cost during the generate call.
@@ -157,7 +157,7 @@ Two rounds of fixes shipped: commits `3967521`, `3337454`, `b4e8fb0`.
 - Hardcoded 5 parallel `.range()` calls: `[0-999, 1000-1999, ..., 4000-4999]`. Any rows at index ≥5000 are dropped. We have 74K awards — this flow probably already misses data.
 - **Fix:** Loop until a page comes back empty, or use a materialized view.
 
-**21. `handleSubmitAll` N+1 — sequential POSTs for N bids**
+**21. `handleSubmitAll` N+1 — sequential POSTs for N bids** — **FIXED 2026-04-14** (round 3) — client now calls the new `/api/bids/submit-batch` once with a `pairs[]` array instead of N sequential POSTs to `/api/bids/decide`.
 - `src/app/solicitations/solicitations-list.tsx:389-398`
 - 50 bids × ~50ms each = 2.5s latency, compounding if the endpoint is slow.
 - **Fix:** Add a batch endpoint that takes an array.
@@ -166,19 +166,19 @@ Two rounds of fixes shipped: commits `3967521`, `3337454`, `b4e8fb0`.
 
 ## MEDIUM (8)
 
-**22. `/api/quotes/export` is dead code** (`src/app/api/quotes/export/route.ts`) — helper exists, no UI button calls it. Either wire it up or delete.
+**22. `/api/quotes/export` is dead code** — **FIXED 2026-04-14** (round 3) — route + `src/lib/quote-exporter.ts` deleted. (`src/app/api/quotes/export/route.ts`) — helper exists, no UI button calls it. Either wire it up or delete.
 
-**23. `/api/dibbs/scrape` + `src/lib/dibbs-scraper.ts` are dead (legacy Playwright)** — grep confirms no caller. Keeping Playwright-touching code in the tree is a Railway-build risk if anything ever imports it transitively.
+**23. `/api/dibbs/scrape` + `src/lib/dibbs-scraper.ts` are dead (legacy Playwright)** — **FIXED 2026-04-14** (round 3) — both deleted. No more Playwright-adjacent code in the Railway-facing tree. — grep confirms no caller. Keeping Playwright-touching code in the tree is a Railway-build risk if anything ever imports it transitively.
 
-**24. `/purchase-orders` page is entirely mock data** (`src/app/purchase-orders/page.tsx:71`) — "Soon" buttons disabled. Either wire to `purchase_orders` table or remove from sidebar.
+**24. `/purchase-orders` page is entirely mock data** — **FIXED 2026-04-14** (round 3) — route + sidebar link deleted; /purchase-orders now returns 404. POs are managed under `/orders`. (`src/app/purchase-orders/page.tsx:71`) — "Soon" buttons disabled. Either wire to `purchase_orders` table or remove from sidebar.
 
-**25. Reprice has no UI trigger and doesn't auto-run after awards import** — prices stay stale until someone runs the script. Should auto-chain from `scripts/import-lamlinks-awards.ts` (or schedule weekly).
+**25. Reprice has no UI trigger and doesn't auto-run after awards import** — **FIXED 2026-04-14** (round 3) — `scripts/import-lamlinks-awards.ts` now POSTs `/api/dibbs/reprice` at the end of its run so newly-won NSNs feed back into sourceable pricing automatically. — prices stay stale until someone runs the script. Should auto-chain from `scripts/import-lamlinks-awards.ts` (or schedule weekly).
 
-**26. Client-side `isOpen` function is duplicated from `src/lib/solicitation-filters.ts`** — `src/app/solicitations/solicitations-list.tsx:420-431` re-implements what the shared lib already does. Not a bug but drift risk. Import and reuse.
+**26. Client-side `isOpen` function is duplicated from `src/lib/solicitation-filters.ts`** — **FIXED 2026-04-14** (round 3) — both the counts useMemo and the filter useMemo in `solicitations-list.tsx` now import `isOpenSolicitation` from the shared lib. One source of truth. — `src/app/solicitations/solicitations-list.tsx:420-431` re-implements what the shared lib already does. Not a bug but drift risk. Import and reuse.
 
-**27. Pricing bracket boundaries cause 17% price jumps on 1¢ cost changes** — cost $24.99 → 1.64×, cost $25.01 → 1.36×. Add hysteresis or lerp smoothing.
+**27. Pricing bracket boundaries cause 17% price jumps on 1¢ cost changes** — **FIXED 2026-04-14** (round 3) — added `interpolateMarkup()` to the enrichment route that linearly interpolates within ±$5 around each bracket boundary, smoothing the step function. — cost $24.99 → 1.64×, cost $25.01 → 1.36×. Add hysteresis or lerp smoothing.
 
-**28. USASpending job sends `psc_codes` with 4-digit FSC assumption not validated** (`src/app/api/jobs/process/route.ts:167`) — if `fsc` has >4 digits or leading zeros stripped, API silently returns 0.
+**28. USASpending job sends `psc_codes` with 4-digit FSC assumption not validated** — **FIXED 2026-04-14** (round 3) — processor normalizes FSC (strips whitespace, removes "FSC-" prefix, pads leading zeros to 4 digits) and throws a clear error on bad input instead of silently returning 0 results. (`src/app/api/jobs/process/route.ts:167`) — if `fsc` has >4 digits or leading zeros stripped, API silently returns 0.
 
 **29. Invoice number generation has no uniqueness check** (`src/app/invoicing/invoicing-dashboard.tsx:58-67`) — two sessions generating for the same contract+line get the same 7-char number. Downstream EDI conflict. — **FIXED 2026-04-14** (round 2) — `POST /api/invoices/generate-edi` now queries the new `invoices` table up front and rejects duplicate `gov_invoice_number` with HTTP 409 + list of collisions.
 
