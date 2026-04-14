@@ -167,14 +167,15 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
             </thead>
             <tbody>
               {timeline.map((ev, i) => {
-                const price = Number(ev?.price);
+                const rawPrice = Number(ev?.price);
+                const hasPrice = Number.isFinite(rawPrice) && rawPrice > 0;
                 const qty = Number(ev?.qty) || 1;
-                const total = (Number.isFinite(price) ? price : 0) * qty;
+                const total = hasPrice ? rawPrice * qty : 0;
                 const linked = ev.our_bid_for_this;
                 const linkedPrice = linked ? Number(linked.price) : NaN;
                 const delta =
-                  linked && Number.isFinite(linkedPrice) && Number.isFinite(price)
-                    ? (((linkedPrice - price) / price) * 100).toFixed(0)
+                  linked && Number.isFinite(linkedPrice) && hasPrice
+                    ? (((linkedPrice - rawPrice) / rawPrice) * 100).toFixed(0)
                     : null;
 
                 let bg = "";
@@ -221,11 +222,17 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
                       )}
                     </td>
                     <td className="px-2 py-1 text-right font-mono">
-                      {Number.isFinite(price) ? `$${price.toFixed(2)}` : "—"}
+                      {hasPrice ? (
+                        `$${rawPrice.toFixed(2)}`
+                      ) : (
+                        <span className="text-muted italic" title="LamLinks didn't capture a price for this award">
+                          n/a
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1 text-right">{ev.qty ?? "—"}</td>
                     <td className="px-2 py-1 text-right font-mono">
-                      ${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {hasPrice ? `$${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
                     </td>
                     <td className="px-2 py-1 text-[10px]">
                       {linked && Number.isFinite(linkedPrice) ? (
