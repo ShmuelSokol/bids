@@ -50,7 +50,7 @@ async function main() {
     JOIN k08_tab k08 ON k08.idnk08_k08 = k11.idnk08_k11
     LEFT JOIN k34_tab k34 ON k34.idnk11_k34 = k11.idnk11_k11
       AND k34.scage_k34 = '0AG09'
-    WHERE k10.closes_k10 >= DATEADD(day, -30, GETDATE())
+    WHERE k10.closes_k10 >= CAST(GETDATE() AS DATE)
       AND k10.sol_no_k10 IS NOT NULL
       AND k08.fsc_k08 IS NOT NULL
       AND k08.niin_k08 IS NOT NULL
@@ -182,6 +182,27 @@ async function main() {
   console.log(`\nDone! ${saved} saved, ${skipped} errors`);
   console.log(`Active LamLinks FSCs: ${llFscs.join(", ")}`);
   console.log(`Competitor intel on ${competitorsByNsn.size} NSNs`);
+
+  // Auto-trigger enrichment so the new rows actually get NSN-matched
+  // and priced. Without this, every imported solicitation lands as
+  // is_sourceable=false and never appears on the dashboard until
+  // someone manually hits /api/dibbs/enrich.
+  const RAILWAY_URL = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : "https://dibs-gov-production.up.railway.app";
+  console.log(`\nTriggering enrichment at ${RAILWAY_URL}/api/dibbs/enrich ...`);
+  try {
+    const resp = await fetch(`${RAILWAY_URL}/api/dibbs/enrich`, { method: "POST" });
+    const body: any = await resp.json().catch(() => ({}));
+    if (resp.ok) {
+      console.log(`  Enrich: ${body.sourceable || 0} sourceable, ${body.with_cost_data || 0} with cost, ${body.already_bid || 0} already bid (of ${body.total_checked || 0} checked)`);
+      if (body.warnings?.length) console.warn(`  Warnings: ${body.warnings.join(", ")}`);
+    } else {
+      console.warn(`  Enrich HTTP ${resp.status}: ${JSON.stringify(body).slice(0, 200)}`);
+    }
+  } catch (e: any) {
+    console.warn(`  Enrich failed: ${e?.message || "unknown"}`);
+  }
 }
 
 main().catch(console.error);
