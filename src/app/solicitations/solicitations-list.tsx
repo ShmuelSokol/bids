@@ -627,7 +627,12 @@ export function SolicitationsList({
       let dt: Date;
       if (parts.length === 3 && parts[2].length === 4) dt = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
       else dt = new Date(d);
-      return Math.ceil((dt.getTime() - Date.now()) / 86400000);
+      // Compare against today's UTC midnight (stable across server/client)
+      // instead of Date.now() — Date.now() returns slightly different values
+      // on server SSR vs client hydration, which would change the rendered
+      // score/badge text and trip React #418 (text content mismatch).
+      const todayMs = new Date(new Date().toISOString().split("T")[0]).getTime();
+      return Math.ceil((dt.getTime() - todayMs) / 86400000);
     };
 
     // Count bids per FSC for win probability proxy
