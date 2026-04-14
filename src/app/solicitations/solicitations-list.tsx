@@ -129,6 +129,10 @@ export function SolicitationsList({
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [qtyFilter, setQtyFilter] = useState<string>("all");
   const [valueFilter, setValueFilter] = useState<string>("all");
+  const [valueMin, setValueMin] = useState<string>(""); // custom range, blank = no limit
+  const [valueMax, setValueMax] = useState<string>("");
+  const [selectedSourceable, setSelectedSourceable] = useState<Set<number>>(new Set());
+  const [bulkQuoting, setBulkQuoting] = useState(false);
   const [supplierSearchId, setSupplierSearchId] = useState<number | null>(null);
   const [supplierResults, setSupplierResults] = useState<any>(null);
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
@@ -421,6 +425,56 @@ export function SolicitationsList({
     } catch {} finally { setSaving(false); }
   }
 
+  async function handleQuoteSelectedAtSuggested() {
+    if (selectedSourceable.size === 0) return;
+    setBulkQuoting(true);
+    try {
+      const toQuote = solicitations.filter(
+        (s) => selectedSourceable.has(s.id) && s.is_sourceable && !s.bid_status && !s.already_bid
+      );
+      if (toQuote.length === 0) {
+        setMessage("Nothing eligible to quote in the current selection");
+        return;
+      }
+      const pairs = toQuote.map((s) => ({
+        solicitation_number: s.solicitation_number,
+        nsn: s.nsn,
+        // No final_price → server uses each row's suggested_price
+      }));
+      const res = await fetch("/api/bids/quote-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pairs }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      }
+      const result = await res.json();
+      const skippedKeys = new Set(
+        (result.skipped || []).map((s: any) => `${s.solicitation_number}__${s.nsn}`)
+      );
+      // Mark locally
+      setSolicitations((prev) =>
+        prev.map((s) => {
+          if (!selectedSourceable.has(s.id)) return s;
+          const key = `${s.solicitation_number}__${s.nsn}`;
+          if (skippedKeys.has(key)) return s;
+          return { ...s, bid_status: "quoted", final_price: s.suggested_price };
+        })
+      );
+      setSelectedSourceable(new Set());
+      const parts = [`${result.quoted_count} quoted at suggested price`];
+      if (result.skipped_count > 0) parts.push(`${result.skipped_count} skipped`);
+      setMessage(parts.join(" · "));
+    } catch (err: any) {
+      console.error("Quote batch failed:", err);
+      setMessage(`Quote failed: ${err?.message || "unknown error"}`);
+    } finally {
+      setBulkQuoting(false);
+    }
+  }
+
   async function handleSubmitAll() {
     if (selectedQuoted.size === 0) return;
     setSubmitting(true);
@@ -556,6 +610,15 @@ export function SolicitationsList({
     else if (valueFilter === "1k+") items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) >= 1000);
     else if (valueFilter === "500+") items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) >= 500);
     else if (valueFilter === "<500") items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) < 500);
+    // Custom range overlays the preset (both apply)
+    const minVal = parseFloat(valueMin);
+    const maxVal = parseFloat(valueMax);
+    if (!isNaN(minVal) && minVal > 0) {
+      items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) >= minVal);
+    }
+    if (!isNaN(maxVal) && maxVal > 0) {
+      items = items.filter((s) => (s.est_value || (s.suggested_price || 0) * (s.quantity || 1)) <= maxVal);
+    }
 
     // Add potential_value + bid score
     const parseDaysUntilDue = (d: string | null) => {
@@ -616,7 +679,7 @@ export function SolicitationsList({
     });
 
     return items;
-  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter, fscFilter, scoreFilter, fobFilter, marginFilter, sourceFilter, qtyFilter, valueFilter]);
+  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter, fscFilter, scoreFilter, fobFilter, marginFilter, sourceFilter, qtyFilter, valueFilter, valueMin, valueMax]);
 
   const filteredTotalValue = useMemo(() => {
     return filtered.reduce((sum, s) => sum + ((s as any)._potentialValue || s.est_value || 0), 0);
@@ -725,6 +788,33 @@ export function SolicitationsList({
                 >
                   {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
                   Submit {selectedQuoted.size} Bids
+                </button>
+              )}
+            </>
+          )}
+          {filter === "sourceable" && filtered.length > 0 && (
+            <>
+              <button
+                onClick={() => {
+                  const ids = filtered
+                    .filter((s) => s.is_sourceable && !s.bid_status && !s.already_bid && (s.suggested_price ?? 0) > 0)
+                    .map((s) => s.id);
+                  setSelectedSourceable(
+                    selectedSourceable.size === ids.length ? new Set() : new Set(ids)
+                  );
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-card-border bg-card-bg"
+              >
+                {selectedSourceable.size > 0 ? `Deselect (${selectedSourceable.size})` : "Select All"}
+              </button>
+              {selectedSourceable.size > 0 && (
+                <button
+                  onClick={handleQuoteSelectedAtSuggested}
+                  disabled={bulkQuoting}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white disabled:opacity-50"
+                >
+                  {bulkQuoting ? <Loader2 className="h-3 w-3 animate-spin" /> : <DollarSign className="h-3 w-3" />}
+                  Quote {selectedSourceable.size} at Suggested
                 </button>
               )}
             </>
@@ -848,11 +938,32 @@ export function SolicitationsList({
           <option value="500+">$500+</option>
           <option value="<500">&lt;$500</option>
         </select>
-        {(searchQuery || dateFilter !== "all" || fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all") && (
+        <div className="flex items-center gap-1 rounded border border-card-border px-2 py-0.5 bg-white text-[10px]">
+          <span className="text-muted">$</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            placeholder="min"
+            value={valueMin}
+            onChange={(e) => setValueMin(e.target.value)}
+            className="w-14 outline-none bg-transparent text-[10px]"
+          />
+          <span className="text-muted">–</span>
+          <span className="text-muted">$</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            placeholder="max"
+            value={valueMax}
+            onChange={(e) => setValueMax(e.target.value)}
+            className="w-14 outline-none bg-transparent text-[10px]"
+          />
+        </div>
+        {(searchQuery || dateFilter !== "all" || fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all" || valueMin || valueMax) && (
           <span className="text-xs text-muted">{filtered.length} results</span>
         )}
-        {(fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all") && (
-          <button onClick={() => { setFscFilter("all"); setScoreFilter("all"); setFobFilter("all"); setMarginFilter("all"); setSourceFilter("all"); setQtyFilter("all"); setValueFilter("all"); }}
+        {(fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all" || valueMin || valueMax) && (
+          <button onClick={() => { setFscFilter("all"); setScoreFilter("all"); setFobFilter("all"); setMarginFilter("all"); setSourceFilter("all"); setQtyFilter("all"); setValueFilter("all"); setValueMin(""); setValueMax(""); }}
             className="text-[10px] text-red-500 hover:text-red-700 font-medium">Clear all</button>
         )}
       </div>
@@ -879,7 +990,7 @@ export function SolicitationsList({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-muted bg-gray-50/50">
-                {filter === "quoted" && <th className="px-3 py-2 w-8"></th>}
+                {(filter === "quoted" || filter === "sourceable") && <th className="px-3 py-2 w-8"></th>}
                 <th className="px-3 py-2 font-medium">NSN / Item</th>
                 <th className="px-3 py-2 font-medium">Sol #</th>
                 <th className="px-3 py-2 text-right"><SortHeader field="quantity">Qty</SortHeader></th>
@@ -920,13 +1031,29 @@ export function SolicitationsList({
                       }`}
                     >
                       {filter === "quoted" && (
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" checked={selectedQuoted.has(s.id)}
                             onChange={(e) => {
                               const next = new Set(selectedQuoted);
                               if (e.target.checked) next.add(s.id); else next.delete(s.id);
                               setSelectedQuoted(next);
                             }} className="rounded" />
+                        </td>
+                      )}
+                      {filter === "sourceable" && (
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedSourceable.has(s.id)}
+                            disabled={!s.is_sourceable || !!s.bid_status || !!s.already_bid || !s.suggested_price}
+                            title={!s.suggested_price ? "No suggested price — can't auto-quote" : ""}
+                            onChange={(e) => {
+                              const next = new Set(selectedSourceable);
+                              if (e.target.checked) next.add(s.id); else next.delete(s.id);
+                              setSelectedSourceable(next);
+                            }}
+                            className="rounded"
+                          />
                         </td>
                       )}
                       <td className="px-3 py-2">
