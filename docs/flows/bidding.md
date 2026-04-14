@@ -201,6 +201,18 @@ Takes `{ quotes, format: "lamlinks"|"dibbs", download?: boolean }` and returns a
 7. **Decided_by is populated from `profile.full_name` or email.** Set by `/api/bids/decide` — not nullable in practice but not enforced by DB.
 8. **Default lead time = 45 days.** Hardcoded in `/api/bids/decide:42`.
 
+## History on detail panel
+
+When a row is clicked, the detail panel opens and `loadNsnHistory()` lazy-fetches `/api/awards/search?nsn=X` to populate three tables side-by-side:
+
+- **Our Awards** — historical wins for this NSN from the `awards` table (LamLinks k81 import)
+- **Our Bids** — historical bids on this NSN from `abe_bids`
+- **Item spec** — best-known title + UoM + manufacturer part number from PUB LOG (`publog_nsns` table)
+
+The cache (`historyCache: Map<nsn, ...>`) is per-session and persists across row toggles. If the API returns 5xx the cache is populated with an empty result so we don't spin retrying.
+
+If a freshly-imported NSN shows "No awards / No bids on record" — that's truthful, not a bug. We may simply have never bid on or won that item before.
+
 ## Known gaps / TODOs
 
 - **Submission to LamLinks is not automated.** "Submit" just writes `status=submitted` to `bid_decisions`. Abe still copy-pastes to LamLinks. Blocker: Yosef verification of `k33/k34/k35` chain.

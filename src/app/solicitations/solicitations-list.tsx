@@ -158,19 +158,40 @@ export function SolicitationsList({
     return map;
   }, [abeBidHistory]);
 
-  // Fetch history when detail panel opens
+  // Fetch award + bid history for an NSN. Lazy-loaded on row click,
+  // memoized in historyCache so reopening the same row is instant.
+  // Logs failures to console so empty results aren't ambiguous.
   async function loadNsnHistory(nsn: string) {
     if (historyCache.has(nsn)) return;
     setLoadingHistory(nsn);
     try {
       const res = await fetch(`/api/awards/search?nsn=${encodeURIComponent(nsn)}`);
+      if (!res.ok) {
+        console.warn(`History fetch failed for ${nsn}: HTTP ${res.status}`);
+        // Cache an empty result so we don't refetch forever
+        setHistoryCache(prev => {
+          const next = new Map(prev);
+          next.set(nsn, { awards: [], bids: [], itemSpec: null, matches: [] });
+          return next;
+        });
+        return;
+      }
       const data = await res.json();
       setHistoryCache(prev => {
         const next = new Map(prev);
-        next.set(nsn, { awards: data.awards || [], bids: data.bids || [], itemSpec: data.itemSpec || null, matches: data.matches || [] });
+        next.set(nsn, {
+          awards: data.awards || [],
+          bids: data.bids || [],
+          itemSpec: data.itemSpec || null,
+          matches: data.matches || [],
+        });
         return next;
       });
-    } catch {} finally { setLoadingHistory(null); }
+    } catch (err) {
+      console.warn(`History fetch error for ${nsn}:`, err);
+    } finally {
+      setLoadingHistory(null);
+    }
   }
 
   // Compute counts client-side — uses the shared isOpenSolicitation() so

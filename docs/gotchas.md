@@ -2,6 +2,26 @@
 
 Things that broke, how we noticed, and what we learned. If you're about to touch one of these areas, read the relevant section first or you'll repeat our mistakes.
 
+## "Two parallel range queries" lies — pagination must actually loop
+
+> Symptom: dashboard showed 253 sourceable, /solicitations showed 46. Same shared filter logic, same data — but two different counts.
+
+The dashboard loader paginated `is_sourceable=true` rows in a `while` loop until empty (catches everything). The solicitations page used a "fast" pattern: two parallel `.range(0, 999)` + `.range(1000, 1999)` calls, capped at 2K rows. With 5,510 sourceable rows in the DB, the solicitations page was silently missing 3,510 of them — and the open ones happened to cluster in pages 2-5.
+
+**Rule:** if a Supabase table can ever exceed 2K rows for a query, the loader must loop until the page comes back empty. Hardcoding "2 parallel ranges" as a perf optimization is a future bug. The cost of one extra round-trip when the table grows is much smaller than the cost of silently mis-counting.
+
+Fixed via a shared `loadAllByFlag()` helper inside `solicitations/page.tsx`. Every Supabase load that could exceed 1K rows should look like:
+
+```ts
+const items: any[] = [];
+for (let page = 0; page < SAFETY_MAX_PAGES; page++) {
+  const { data, error } = await supabase.from(t).select(c).eq(...).range(page*1000, (page+1)*1000-1);
+  if (error || !data || data.length === 0) break;
+  items.push(...data);
+  if (data.length < 1000) break;
+}
+```
+
 ## Imports without enrich = silent zero
 
 > Symptom: 13K rows imported from LamLinks, dashboard "sourceable" count barely moved. Every NSN Abe was actually bidding on existed in `nsn_catalog` but DIBS marked all 624 of his bids as "unsourced."

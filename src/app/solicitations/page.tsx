@@ -22,24 +22,33 @@ async function getData() {
 
   const cols = "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, data_source, competitor_cage, award_count";
 
-  // Two fast queries instead of paginating 14K rows
+  // Helper: load all rows matching an is_sourceable filter, paginated.
+  // Two hard-coded range calls (0-999 + 1000-1999) silently capped at 2K
+  // rows — with 5,510 sourceable items in the DB the dashboard saw 253
+  // open while this page only saw 46. Loop until empty, with a safety cap.
+  async function loadAllByFlag(flag: boolean, maxPages = 25) {
+    const items: any[] = [];
+    for (let page = 0; page < maxPages; page++) {
+      const { data, error } = await supabase
+        .from("dibbs_solicitations")
+        .select(cols)
+        .eq("is_sourceable", flag)
+        .range(page * 1000, (page + 1) * 1000 - 1);
+      if (error) {
+        console.error(`Supabase ${flag ? "sourceable" : "unsourced"} page ${page} error:`, error.message);
+        break;
+      }
+      if (!data || data.length === 0) break;
+      items.push(...data);
+      if (data.length < 1000) break;
+    }
+    return items;
+  }
+
   const [sourceableItems, recentItems, decisions, liveBids, lastSync, nsnMatches] = await Promise.all([
-    // Sourceable items — 2 parallel range queries
-    Promise.all([
-      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(0, 999),
-      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", true).range(1000, 1999),
-    ]).then(([a, b]) => {
-      const items = [...(a.data || []), ...(b.data || [])];
-      if (a.error) console.error("Supabase sourceable p1 error:", a.error.message);
-      if (b.error) console.error("Supabase sourceable p2 error:", b.error.message);
-      console.log(`Loaded ${items.length} sourceable items`);
-      return items;
-    }),
-    // Unsourceable — load in parallel range queries (same pattern as sourceable)
-    Promise.all([
-      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", false).range(0, 999),
-      supabase.from("dibbs_solicitations").select(cols).eq("is_sourceable", false).range(1000, 1999),
-    ]).then(([a, b]) => [...(a.data || []), ...(b.data || [])]),
+    loadAllByFlag(true),
+    loadAllByFlag(false, 8), // cap unsourced at 8K — UI doesn't need them all
+
     supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
     supabase.from("abe_bids_live").select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").order("bid_time", { ascending: false }).gte("bid_time", new Date().toISOString().split("T")[0]).then((r: any) => r.data || []),
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),

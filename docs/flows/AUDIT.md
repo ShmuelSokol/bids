@@ -6,6 +6,8 @@
 > **Scope:** All flows in `docs/flows/*.md` — bidding, scraping, enrichment, awards-to-pos, invoicing, shipping, auth, background-jobs, analytics
 > **Total findings:** 32 (10 CRITICAL · 11 HIGH · 8 MEDIUM · 3 LOW)
 > **Fixed so far:** 27 — **all 10 CRITICALs** + **all 11 HIGHs** + 6 MEDIUM. Commits `3967521`, `3337454`, `b4e8fb0`, `cedef01`.
+>
+> **Plus regression caught + fixed 2026-04-14:** the solicitations page server loader was using two hard-coded `.range()` calls (cap at 2K rows). After today's data import grew the sourceable set to 5,510 rows, the page silently lost 3,510 of them — dashboard showed 253, solicitations showed 46. Replaced with a `loadAllByFlag()` helper that loops until empty. New gotcha entry in `docs/gotchas.md`. Same failure mode as previous bugs we already fixed; lesson is **never hardcode pagination**.
 
 ## Status legend
 
