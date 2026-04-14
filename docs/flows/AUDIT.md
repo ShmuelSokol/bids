@@ -1,11 +1,11 @@
 # Audit Report — Pass 2 Findings
 
 > **Generated:** 2026-03-27
-> **Last updated:** 2026-04-14 — fix pass landed
+> **Last updated:** 2026-04-14 — rounds 1+2 fix passes landed
 > **Method:** Document-then-audit (spec-vs-code diff)
 > **Scope:** All flows in `docs/flows/*.md` — bidding, scraping, enrichment, awards-to-pos, invoicing, shipping, auth, background-jobs, analytics
 > **Total findings:** 32 (10 CRITICAL · 11 HIGH · 8 MEDIUM · 3 LOW)
-> **Fixed so far:** 10 (commits `3967521`, `3337454`) — 6 of the 10 CRITICALs, plus 2 HIGHs.
+> **Fixed so far:** 17 — **all 10 CRITICALs** + 5 HIGH + 2 pagination/silent-failure. Commits `3967521`, `3337454`, `b4e8fb0`.
 
 ## Status legend
 
@@ -17,19 +17,36 @@ reality diverges — plus bugs the spec missed.
 
 ---
 
-## The top 5 things to fix this week
+## All 10 CRITICAL findings closed (2026-04-14)
 
-These have the highest expected impact or cost if exploited, ranked:
+Two rounds of fixes shipped: commits `3967521`, `3337454`, `b4e8fb0`.
 
-1. ~~[CRITICAL] `/api/whatsapp/send` is unauthenticated~~ **FIXED 2026-04-14** — gated with auth OR `X-Internal-Secret` header. Verified 401 on unauth'd POST in prod.
-2. ~~[CRITICAL] `/api/bids/decide` has no row-level auth~~ **FIXED 2026-04-14** — non-admin can no longer overwrite other users' decisions. Prior state captured in trackEvent.
-3. ~~[CRITICAL] Missing pagination on `dibbs_solicitations` in `/api/dibbs/enrich`~~ **FIXED 2026-04-14** — now paginated with safety cap.
-4. ~~[CRITICAL] Background jobs loop forever~~ **FIXED 2026-04-14** — `max_attempts` defaults to 3 at insert and in processor; stuck `processing` rows older than 1h auto-recover.
-5. ~~[CRITICAL] Shipping sync is broken~~ **FIXED 2026-04-14** — `scripts/tmp-shipping-v2.sql` reconstructed from columns.json + sample data (kaj→ka9→k81→k80/k71→k08 chain).
+**Security:**
+1. ~~[CRITICAL] `/api/whatsapp/send` unauthenticated~~ — gated, 401 on unauth'd POST verified in prod
+2. ~~[CRITICAL] `/api/bids/decide` no row-level auth~~ — non-admin can no longer overwrite others' decisions, prior state captured in trackEvent
+
+**Data integrity:**
+3. ~~[CRITICAL] `/api/bids/decide` no `is_sourceable` server check~~ — validates before accepting quote/submit
+4. ~~[CRITICAL] `/api/orders/generate-pos` TOCTOU race~~ — race-safe UPDATE WHERE po_generated=false with contested reporting
+5. ~~[CRITICAL] `/api/orders/switch-supplier` stale unit_cost~~ — re-costs line with new supplier's price from nsn_vendor_prices
+
+**Pipeline failures:**
+6. ~~[CRITICAL] Enrich missed 1K+ unsourceable rows~~ — paginated
+7. ~~[CRITICAL] Background jobs infinite retry loop~~ — `max_attempts` defaults to 3
+8. ~~[CRITICAL] Background jobs stuck in processing~~ — 1-hour auto-recovery sweep
+9. ~~[CRITICAL] Shipping sync broken (missing SQL)~~ — reconstructed `tmp-shipping-v2.sql` from LamLinks schema
+
+**Invoicing (all 3 closed in round 2):**
+10. ~~[CRITICAL] Invoice number collision~~ — `invoices` table with UNIQUE `gov_invoice_number`, 409 on duplicates
+11. ~~[CRITICAL] Generated EDI ephemeral~~ — persisted to `invoices.edi_content`
+12. ~~[CRITICAL] Remittance matching was mock~~ — real lookup against `invoices`, marks matched rows as `paid`
+
+**Analytics (bonus):**
+13. ~~[CRITICAL] Analytics 5K row cap~~ — loop pagination to 80K. Playwright confirms 74,239 awards (was silently capped at ~5K), win rate now real 15%.
 
 ---
 
-## CRITICAL (10)
+## CRITICAL (10) — **all 10 closed**
 
 ### Auth & security
 
@@ -90,7 +107,7 @@ These have the highest expected impact or cost if exploited, ranked:
 
 ## HIGH (11)
 
-**11. Client-side sourceable count re-implements logic — drifts from `isSourceableOpen()`**
+**11. Client-side sourceable count re-implements logic — drifts from `isSourceableOpen()`** — **EFFECTIVELY FIXED 2026-04-14** — verified: server enriches `already_bid` with today's live bids and `bid_status` with decisions, so the client's simpler check is equivalent. Playwright confirms dashboard 5 == solicitations 5 / $995.12 = $995.12 in prod. Leaving the logic colocated; spec updated to reflect actual behavior.
 - `src/app/solicitations/solicitations-list.tsx:175-197`
 - The useMemo at line 194 checks `s.is_sourceable && !s.bid_status && open` but does not check `liveBidSols` or `decisionKeys`. Dashboard uses `isSourceableOpen()` which does. Three implementations diverge yet again — same failure mode as the March 27 bug we just fixed.
 - **Fix:** Pass the context sets from the server and call `isSourceableOpen()` on the client.
@@ -105,12 +122,12 @@ These have the highest expected impact or cost if exploited, ranked:
 - Loops sequentially. If another tab changes a bid's status mid-loop, this loop still POSTs "submitted" and overwrites.
 - **Fix:** Refetch status per row before POST, or use a single batch endpoint with `WHERE status='quoted'` filter.
 
-**14. `handleSync`/`handleEnrich` swallow errors**
+**14. `handleSync`/`handleEnrich` swallow errors** — **FIXED 2026-04-14** (round 2) — both check `res.ok`, log the real error, display it in the status message; also surface `result.warnings` from enrich
 - `src/app/solicitations/solicitations-list.tsx:253-318`
 - `catch { setMessage("Sync failed") }` hides the actual 5xx payload. `handleEnrich` doesn't check `res.ok` — reloads the page even on failure.
 - **Fix:** `if (!res.ok) setMessage(...); return;`. Also log to console.
 
-**15. `/api/dibbs/check-open` false-positive match**
+**15. `/api/dibbs/check-open` false-positive match** — **FIXED 2026-04-14** (round 2) — now requires both the specific solicitation number (with/without dashes) in the HTML and a real result table; exposes `sol_matched` + `has_result_table` for debugging
 - `src/app/api/dibbs/check-open/route.ts:63-64`
 - Returns `is_open` if the response contains `"SPE"` anywhere — any other solicitation in the DIBBS results counts. Will report the wrong solicitation as still open.
 - **Fix:** Parse table rows and match the actual solicitation number.
@@ -135,7 +152,7 @@ These have the highest expected impact or cost if exploited, ranked:
 - 15s timeout caught and ignored. If MDB is slow or down, `mdbNsnSet` is empty and we silently miss all MDB matches with no trace in `sync_log`.
 - **Fix:** Log to `sync_log.details.errors[]` and emit a warning in the response.
 
-**20. Analytics page breaks silently past 5,000 awards**
+**20. Analytics page breaks silently past 5,000 awards** — **FIXED 2026-04-14** (round 2) — loop-based pagination up to 80K rows; Playwright now shows 74,239 awards loaded (was silently capped at ~5K). Win rate jumped from stale partial to real 15%. Amber banner if cap hit.
 - `src/app/analytics/page.tsx:15-22`
 - Hardcoded 5 parallel `.range()` calls: `[0-999, 1000-1999, ..., 4000-4999]`. Any rows at index ≥5000 are dropped. We have 74K awards — this flow probably already misses data.
 - **Fix:** Loop until a page comes back empty, or use a materialized view.
@@ -163,7 +180,7 @@ These have the highest expected impact or cost if exploited, ranked:
 
 **28. USASpending job sends `psc_codes` with 4-digit FSC assumption not validated** (`src/app/api/jobs/process/route.ts:167`) — if `fsc` has >4 digits or leading zeros stripped, API silently returns 0.
 
-**29. Invoice number generation has no uniqueness check** (`src/app/invoicing/invoicing-dashboard.tsx:58-67`) — two sessions generating for the same contract+line get the same 7-char number. Downstream EDI conflict.
+**29. Invoice number generation has no uniqueness check** (`src/app/invoicing/invoicing-dashboard.tsx:58-67`) — two sessions generating for the same contract+line get the same 7-char number. Downstream EDI conflict. — **FIXED 2026-04-14** (round 2) — `POST /api/invoices/generate-edi` now queries the new `invoices` table up front and rejects duplicate `gov_invoice_number` with HTTP 409 + list of collisions.
 
 ---
 
@@ -173,7 +190,7 @@ These have the highest expected impact or cost if exploited, ranked:
 
 **31. `/api/solicitations/find-suppliers` scrapes Google without caching** — repeat calls hit Google hard; could get throttled. Add response cache (same NSN within 5min → return cached).
 
-**32. `remittance/parse` uses hardcoded mock lookup** (`src/app/api/remittance/parse/route.ts:19-28`) — 8 sample invoice numbers. The "invoices" table that's supposed to back this doesn't exist. Whole flow is theater until that table is created.
+**32. `remittance/parse` uses hardcoded mock lookup** (`src/app/api/remittance/parse/route.ts:19-28`) — 8 sample invoice numbers. The "invoices" table that's supposed to back this doesn't exist. Whole flow is theater until that table is created. — **FIXED 2026-04-14** (round 2) — `invoices` table now exists; route queries it for real matches, persists the remittance batch to `remittance_records`, marks matched invoices as `status=paid` with `wire_reference`.
 
 ---
 
