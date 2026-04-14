@@ -198,7 +198,7 @@ export async function POST() {
   // Railway's ~30s request timeout. With 17K+ rows we'd hit a 502; this
   // way each call processes up to MAX_PAGES * 1000 rows and the caller
   // can chain calls until `remaining` hits 0.
-  const MAX_PAGES = 5; // process up to 5,000 unsourced rows per call
+  const MAX_PAGES = 2; // process up to 2,000 unsourced rows per call (Railway 30s budget)
   const solicitations: Array<{
     id: number;
     nsn: string;

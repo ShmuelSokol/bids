@@ -194,25 +194,42 @@ async function main() {
   let totalSourceable = 0;
   let totalChecked = 0;
   let totalCost = 0;
-  for (let i = 0; i < 8; i++) {
-    try {
-      const resp = await fetch(`${RAILWAY_URL}/api/dibbs/enrich`, { method: "POST" });
-      const body: any = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        console.warn(`  Enrich HTTP ${resp.status}: ${JSON.stringify(body).slice(0, 200)}`);
+  // Allow up to 30 calls (60K rows of headroom). Each call processes up
+  // to 2K rows in <30s. Tiny delay between calls so Railway doesn't see
+  // them as a thundering herd.
+  for (let i = 0; i < 30; i++) {
+    let body: any = {};
+    let succeeded = false;
+    // Single retry on 502/504 — usually Railway cold-start or transient
+    for (let attempt = 0; attempt < 2 && !succeeded; attempt++) {
+      try {
+        const resp = await fetch(`${RAILWAY_URL}/api/dibbs/enrich`, { method: "POST" });
+        body = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          if (attempt === 0 && (resp.status === 502 || resp.status === 504)) {
+            console.warn(`  call ${i + 1} attempt 1: HTTP ${resp.status}, retrying in 5s ...`);
+            await new Promise((r) => setTimeout(r, 5000));
+            continue;
+          }
+          console.warn(`  call ${i + 1}: HTTP ${resp.status}: ${JSON.stringify(body).slice(0, 200)}`);
+          break;
+        }
+        succeeded = true;
+      } catch (e: any) {
+        console.warn(`  call ${i + 1} fetch error: ${e?.message || "unknown"}`);
         break;
       }
-      totalSourceable += body.sourceable || 0;
-      totalChecked += body.total_checked || 0;
-      totalCost += body.with_cost_data || 0;
-      const remaining = body.remaining_unsourced || 0;
-      console.log(`  call ${i + 1}: ${body.sourceable || 0} new sourceable (of ${body.total_checked || 0} checked), ${remaining} still unsourced`);
-      if (body.warnings?.length) console.warn(`    warnings: ${body.warnings.join(", ")}`);
-      if (remaining === 0 || (body.total_checked || 0) === 0) break;
-    } catch (e: any) {
-      console.warn(`  Enrich failed: ${e?.message || "unknown"}`);
-      break;
     }
+    if (!succeeded) break;
+    totalSourceable += body.sourceable || 0;
+    totalChecked += body.total_checked || 0;
+    totalCost += body.with_cost_data || 0;
+    const remaining = body.remaining_unsourced || 0;
+    console.log(`  call ${i + 1}: ${body.sourceable || 0} new sourceable of ${body.total_checked || 0} checked, ${remaining} unsourced left`);
+    if (body.warnings?.length) console.warn(`    warnings: ${body.warnings.join(", ")}`);
+    if (remaining === 0 || (body.total_checked || 0) === 0) break;
+    // pause briefly so Railway has room to breathe between calls
+    await new Promise((r) => setTimeout(r, 1500));
   }
   console.log(`Enrich totals: ${totalSourceable} marked sourceable across ${totalChecked} rows checked (${totalCost} got cost data)`);
 }
