@@ -57,7 +57,9 @@ The tradeoff: we can't run the app on a CDN (no static export), and Railway serv
              └──────────┘
 ```
 
-The key thing to internalize: **Railway has no access to LamLinks SQL Server**. It's a local network resource, Windows Auth, accessible only from the office box. That's why every LamLinks-touching script (`sync-abe-bids-live`, `import-lamlinks-solicitations`, `import-lamlinks-awards`) runs locally and writes into Supabase. Railway only reads the Supabase copy.
+The key thing to internalize: **Railway has no access to LamLinks SQL Server**. It's a local network resource, Windows Auth, accessible only from the office box. That's why every LamLinks-touching script (`sync-abe-bids-live`, `import-lamlinks-solicitations`, `import-lamlinks-awards`, `sync-shipping`) runs locally and writes into Supabase. Railway only reads the Supabase copy.
+
+These scripts are scheduled via Windows Task Scheduler on the office Windows box — see `scripts/windows/README.md` for install and verification. The scheduled jobs are the only way fresh data flows into DIBS; if the office box goes offline for more than a few hours, the whole pipeline visibly stales (we saw this from 2026-03-27 through 2026-04-14: dashboard sourceable count was correct, but the underlying inventory had expired because nothing was syncing).
 
 This constraint drove several design decisions:
 
