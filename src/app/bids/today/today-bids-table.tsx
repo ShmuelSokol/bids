@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, ArrowUpDown } from "lucide-react";
+import { Search, ArrowUpDown, ChevronDown, ChevronRight } from "lucide-react";
 import { formatTime } from "@/lib/dates";
+import { NsnHistoryDetail } from "@/components/nsn-history-detail";
 
 type Bid = {
   id: number;
@@ -26,6 +27,7 @@ export function TodayBidsTable({ bids }: { bids: Bid[] }) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("bid_time");
   const [sortAsc, setSortAsc] = useState(false);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -157,41 +159,64 @@ export function TodayBidsTable({ bids }: { bids: Bid[] }) {
           <tbody>
             {filtered.map((b) => {
               const value = (b.bid_price || 0) * (b.bid_qty || 1);
+              const expanded = expandedId === b.id;
               return (
-                <tr key={b.id} className="border-b border-card-border/50 hover:bg-gray-50">
-                  <td className="px-4 py-1.5 text-xs text-muted whitespace-nowrap">
-                    {formatTime(b.bid_time)}
-                  </td>
-                  <td className="px-4 py-1.5 font-mono text-xs text-accent whitespace-nowrap">
-                    {b.nsn || "—"}
-                  </td>
-                  <td className="px-4 py-1.5 text-xs truncate max-w-[260px]" title={b.item_desc || ""}>
-                    {b.item_desc || "—"}
-                  </td>
-                  <td className="px-4 py-1.5 font-mono text-[10px] text-muted whitespace-nowrap">
-                    {b.solicitation_number?.trim() || "—"}
-                  </td>
-                  <td className="px-4 py-1.5 text-right font-mono text-xs">
-                    ${(b.bid_price || 0).toFixed(2)}
-                  </td>
-                  <td className="px-4 py-1.5 text-right text-xs">{b.bid_qty || 0}</td>
-                  <td className="px-4 py-1.5 text-right font-mono text-xs font-medium text-blue-700">
-                    ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </td>
-                  <td className="px-4 py-1.5 text-xs text-muted">{b.lead_days ?? "—"}d</td>
-                  <td className="px-4 py-1.5 text-xs text-muted">{b.fob || "—"}</td>
-                  <td className="px-4 py-1.5">
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                        b.bid_status === "submitted"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-yellow-100 text-yellow-700"
-                      }`}
-                    >
-                      {b.bid_status || "pending"}
-                    </span>
-                  </td>
-                </tr>
+                <>
+                  <tr
+                    key={b.id}
+                    onClick={() => setExpandedId(expanded ? null : b.id)}
+                    className={`border-b border-card-border/50 cursor-pointer ${
+                      expanded ? "bg-blue-50/40" : "hover:bg-gray-50"
+                    }`}
+                  >
+                    <td className="px-4 py-1.5 text-xs text-muted whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        {expanded ? (
+                          <ChevronDown className="h-3 w-3 text-accent" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 text-muted/60" />
+                        )}
+                        {formatTime(b.bid_time)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-1.5 font-mono text-xs text-accent whitespace-nowrap">
+                      {b.nsn || "—"}
+                    </td>
+                    <td className="px-4 py-1.5 text-xs truncate max-w-[260px]" title={b.item_desc || ""}>
+                      {b.item_desc || "—"}
+                    </td>
+                    <td className="px-4 py-1.5 font-mono text-[10px] text-muted whitespace-nowrap">
+                      {b.solicitation_number?.trim() || "—"}
+                    </td>
+                    <td className="px-4 py-1.5 text-right font-mono text-xs">
+                      ${(b.bid_price || 0).toFixed(2)}
+                    </td>
+                    <td className="px-4 py-1.5 text-right text-xs">{b.bid_qty || 0}</td>
+                    <td className="px-4 py-1.5 text-right font-mono text-xs font-medium text-blue-700">
+                      ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </td>
+                    <td className="px-4 py-1.5 text-xs text-muted">{b.lead_days ?? "—"}d</td>
+                    <td className="px-4 py-1.5 text-xs text-muted">{b.fob || "—"}</td>
+                    <td className="px-4 py-1.5">
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          b.bid_status === "submitted"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-yellow-100 text-yellow-700"
+                        }`}
+                      >
+                        {b.bid_status || "pending"}
+                      </span>
+                    </td>
+                  </tr>
+                  {expanded && b.nsn && (
+                    <tr className="bg-blue-50/20">
+                      <td colSpan={10} className="px-4 py-3 border-b border-card-border">
+                        <NsnHistoryDetail nsn={b.nsn} />
+                      </td>
+                    </tr>
+                  )}
+                </>
               );
             })}
           </tbody>
