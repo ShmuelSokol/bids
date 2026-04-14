@@ -50,7 +50,7 @@ REM Abe's live bids — every 5 min, 6am-6pm all week (Abe bids on weekends too)
 REM This is the closest-to-real-time task, feeds the dashboard.
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - Abe Bids Sync" ^
-    /tr "\"%DISPATCHER%\" sync-abe-bids-live" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" sync-abe-bids-live\"" ^
     /sc minute /mo 5 ^
     /st 06:00 /et 18:00 ^
     /f
@@ -62,13 +62,13 @@ REM DIBBS publishes overnight; 5:30am grabs those before Abe arrives.
 REM 1:00pm catches same-day postings.
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - LamLinks Sol Import AM" ^
-    /tr "\"%DISPATCHER%\" import-lamlinks-solicitations" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" import-lamlinks-solicitations\"" ^
     /sc weekly /d MON,TUE,WED,THU,FRI /st 05:30 ^
     /f
 echo.
 
 schtasks /create /tn "DIBS - LamLinks Sol Import PM" ^
-    /tr "\"%DISPATCHER%\" import-lamlinks-solicitations" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" import-lamlinks-solicitations\"" ^
     /sc weekly /d MON,TUE,WED,THU,FRI /st 13:00 ^
     /f
 echo.
@@ -79,7 +79,7 @@ REM overnight. Script triggers /api/dibbs/reprice at the end so suggested
 REM prices refresh with new wins before Abe starts bidding.
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - Awards Import" ^
-    /tr "\"%DISPATCHER%\" import-lamlinks-awards" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" import-lamlinks-awards\"" ^
     /sc daily /st 04:30 ^
     /f
 echo.
@@ -89,7 +89,7 @@ REM Shipping sync — every 15 min, 6am-6pm weekdays. Warehouse updates
 REM tracking numbers throughout the day; we want them visible on /shipping.
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - Shipping Sync" ^
-    /tr "\"%DISPATCHER%\" sync-shipping" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" sync-shipping\"" ^
     /sc minute /mo 15 ^
     /st 06:00 /et 18:00 ^
     /f
@@ -100,7 +100,7 @@ REM Daily briefing — 7:00am ET weekdays, after the morning imports land.
 REM Sends WhatsApp summary + PDF.
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - Daily Briefing" ^
-    /tr "\"%DISPATCHER%\" send-daily-briefing" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" send-daily-briefing\"" ^
     /sc weekly /d MON,TUE,WED,THU,FRI /st 07:00 ^
     /f
 echo.
