@@ -78,7 +78,7 @@ async function main() {
     const batch = awards.slice(i, i + 100);
     const { error } = await sb
       .from("awards")
-      .upsert(batch, { onConflict: "contract_number,fsc,niin", ignoreDuplicates: false });
+      .upsert(batch, { onConflict: "contract_number,fsc,niin,cage", ignoreDuplicates: false });
     if (error) {
       // If unique constraint doesn't exist, just insert
       const { error: insertErr } = await sb.from("awards").insert(batch);

@@ -107,12 +107,23 @@ async function main() {
   let errors = 0;
   for (let i = 0; i < rows.length; i += 200) {
     const batch = rows.slice(i, i + 200);
+    // Conflict key matches the awards_contract_fsc_niin_cage_unique
+    // constraint we added on the awards table — different CAGEs winning
+    // the same contract+NSN are different rows (rare but possible with
+    // contract mods).
     const { error } = await sb
       .from("awards")
-      .upsert(batch, { onConflict: "contract_number,fsc,niin", ignoreDuplicates: false });
+      .upsert(batch, { onConflict: "contract_number,fsc,niin,cage", ignoreDuplicates: false });
     if (error) {
-      console.warn(`  batch ${i / 200 + 1} error:`, error.message);
-      errors += batch.length;
+      // Fallback: if the constraint isn't there yet, try plain insert
+      // (will skip rows that violate any existing PK / unique).
+      const { error: insertErr } = await sb.from("awards").insert(batch);
+      if (insertErr) {
+        console.warn(`  batch ${i / 200 + 1} error:`, error.message);
+        errors += batch.length;
+      } else {
+        saved += batch.length;
+      }
     } else {
       saved += batch.length;
     }
