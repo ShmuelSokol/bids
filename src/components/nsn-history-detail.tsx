@@ -2,22 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatDateShort } from "@/lib/dates";
-
-type Award = {
-  unit_price: number | null;
-  quantity: number | null;
-  award_date: string | null;
-  contract_number: string | null;
-  cage: string | null;
-};
-
-type Bid = {
-  bid_price: number | null;
-  bid_qty: number | null;
-  bid_date: string | null;
-  lead_time_days: number | null;
-  fob: string | null;
-};
+import { Trophy, X, Clock } from "lucide-react";
 
 type ItemSpec = {
   item_name: string | null;
@@ -35,10 +20,31 @@ type Match = {
   matched_source: string | null;
 };
 
+type LinkedBid = {
+  price: number | null;
+  date: string | null;
+  lead_days: number | null;
+  sol_no: string | null;
+};
+
+type TimelineEvent = {
+  date: string | null;
+  kind: "our_win" | "competitor_win" | "our_bid";
+  identifier: string;
+  cage: string | null;
+  price: number | null;
+  qty: number | null;
+  fob: string | null;
+  lead_days: number | null;
+  description: string | null;
+  our_bid_for_this?: LinkedBid | null;
+};
+
 type ApiResponse = {
-  awards: Award[];
-  competitor_awards?: Award[];
-  bids: Bid[];
+  awards: any[];
+  competitor_awards?: any[];
+  bids: any[];
+  timeline?: TimelineEvent[];
   itemSpec: ItemSpec;
   matches: Match[];
 };
@@ -53,18 +59,17 @@ function fetchHistory(nsn: string): Promise<ApiResponse> {
     try {
       const res = await fetch(`/api/awards/search?nsn=${encodeURIComponent(nsn)}`);
       if (!res.ok) {
-        console.warn(`History fetch failed for ${nsn}: HTTP ${res.status}`);
-        const empty: ApiResponse = { awards: [], competitor_awards: [], bids: [], itemSpec: null, matches: [] };
+        const empty: ApiResponse = { awards: [], competitor_awards: [], bids: [], timeline: [], itemSpec: null, matches: [] };
         cache.set(nsn, empty);
         return empty;
       }
       const data: ApiResponse = await res.json();
       data.competitor_awards = data.competitor_awards || [];
+      data.timeline = data.timeline || [];
       cache.set(nsn, data);
       return data;
-    } catch (err) {
-      console.warn(`History fetch error for ${nsn}:`, err);
-      const empty: ApiResponse = { awards: [], competitor_awards: [], bids: [], itemSpec: null, matches: [] };
+    } catch {
+      const empty: ApiResponse = { awards: [], competitor_awards: [], bids: [], timeline: [], itemSpec: null, matches: [] };
       cache.set(nsn, empty);
       return empty;
     } finally {
@@ -76,11 +81,12 @@ function fetchHistory(nsn: string): Promise<ApiResponse> {
 }
 
 /**
- * Shared NSN history panel. Lazy-fetches `/api/awards/search?nsn=...`,
- * shows our awards + our bids side by side, plus any P/N matches.
+ * Unified per-NSN history. One row per event (our win, competitor win,
+ * or our bid), sorted by date desc. Where we bid on the same NSN before
+ * a competitor won, the competitor row shows our prior bid inline so
+ * you can see "we bid $X, they got it for $Y".
  *
- * Used in both /solicitations (detail panel) and /bids/today (expand
- * a bid row to see what we know about that NSN).
+ * Used in /solicitations and /bids/today detail panels.
  */
 export function NsnHistoryDetail({ nsn }: { nsn: string }) {
   const [data, setData] = useState<ApiResponse | null>(cache.get(nsn) || null);
@@ -110,25 +116,10 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
   }
   if (!data) return null;
 
-  // Defensive: filter null rows and coerce numeric fields. Old data
-  // can have null unit_price / quantity / cage which would crash render.
-  const awardsSafe = (data.awards || []).filter(Boolean);
-  const seenAw = new Set<string>();
-  const awards = awardsSafe.filter((a) => {
-    const k = `${a?.contract_number || ""}_${a?.award_date || ""}`;
-    if (seenAw.has(k)) return false;
-    seenAw.add(k);
-    return true;
-  });
-  const bidsSafe = (data.bids || []).filter(Boolean);
-  const totalAwardValue = awards.reduce(
-    (s, a) => s + (Number(a?.unit_price) || 0) * (Number(a?.quantity) || 1),
-    0
-  );
-  const totalBidValue = bidsSafe.reduce(
-    (s, b) => s + (Number(b?.bid_price) || 0) * (Number(b?.bid_qty) || 1),
-    0
-  );
+  const timeline = data.timeline || [];
+  const wins = (data.awards || []).length;
+  const losses = (data.competitor_awards || []).length;
+  const totalBids = (data.bids || []).length;
 
   return (
     <div className="space-y-3">
@@ -136,169 +127,140 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
         <div className="rounded-md bg-gray-50 px-3 py-2 text-xs text-muted">
           <span className="font-medium text-foreground">{data.itemSpec.item_name || "Item"}</span>
           {data.itemSpec.unit_of_issue && <span> · UoM {data.itemSpec.unit_of_issue}</span>}
-          {data.itemSpec.part_number && <span> · P/N <code className="text-[10px]">{data.itemSpec.part_number}</code></span>}
+          {data.itemSpec.part_number && (
+            <span> · P/N <code className="text-[10px]">{data.itemSpec.part_number}</code></span>
+          )}
           {data.itemSpec.cage_code && <span> · CAGE {data.itemSpec.cage_code}</span>}
           {data.itemSpec.unit_price != null && <span> · ref ${data.itemSpec.unit_price.toFixed(2)}</span>}
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-3">
-        {/* Our Awards */}
-        <div>
-          <div className="flex items-center justify-between text-xs font-bold text-green-700 mb-1">
-            <span>Our Awards ({awards.length})</span>
-            {totalAwardValue > 0 && (
-              <span className="font-mono">${totalAwardValue.toLocaleString()}</span>
-            )}
-          </div>
-          {awards.length === 0 ? (
-            <p className="text-xs text-muted py-2">No awards on record for this NSN.</p>
-          ) : (
-            <div className="max-h-48 overflow-auto rounded border border-card-border">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-muted bg-gray-50">
-                    <th className="text-left px-2 py-1">Date</th>
-                    <th className="text-right px-2 py-1">Price</th>
-                    <th className="text-right px-2 py-1">Qty</th>
-                    <th className="text-right px-2 py-1">Total</th>
-                    <th className="text-left px-2 py-1">Contract</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {awards.slice(0, 30).map((a, i) => (
-                    <tr key={i} className="border-t border-card-border/30">
-                      <td className="px-2 py-0.5 text-muted">{formatDateShort(a.award_date)}</td>
-                      <td className="px-2 py-0.5 text-right font-mono text-green-700">${a.unit_price?.toFixed(2)}</td>
-                      <td className="px-2 py-0.5 text-right">{a.quantity}</td>
-                      <td className="px-2 py-0.5 text-right font-mono">
-                        ${((a.unit_price || 0) * (a.quantity || 1)).toLocaleString()}
-                      </td>
-                      <td className="px-2 py-0.5 font-mono text-[9px] text-muted truncate max-w-[100px]">
-                        {a.contract_number?.trim() || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Our Bids */}
-        <div>
-          <div className="flex items-center justify-between text-xs font-bold text-blue-700 mb-1">
-            <span>Our Bids ({data.bids.length})</span>
-            {totalBidValue > 0 && (
-              <span className="font-mono">${totalBidValue.toLocaleString()}</span>
-            )}
-          </div>
-          {data.bids.length === 0 ? (
-            <p className="text-xs text-muted py-2">No bids on record for this NSN.</p>
-          ) : (
-            <div className="max-h-48 overflow-auto rounded border border-card-border">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-muted bg-gray-50">
-                    <th className="text-left px-2 py-1">Date</th>
-                    <th className="text-right px-2 py-1">Price</th>
-                    <th className="text-right px-2 py-1">Qty</th>
-                    <th className="text-right px-2 py-1">Total</th>
-                    <th className="text-right px-2 py-1">Lead</th>
-                    <th className="text-left px-2 py-1">FOB</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.bids.slice(0, 30).map((b, i) => (
-                    <tr key={i} className="border-t border-card-border/30">
-                      <td className="px-2 py-0.5 text-muted">{formatDateShort(b.bid_date)}</td>
-                      <td className="px-2 py-0.5 text-right font-mono text-blue-700">${b.bid_price?.toFixed(2)}</td>
-                      <td className="px-2 py-0.5 text-right">{b.bid_qty}</td>
-                      <td className="px-2 py-0.5 text-right font-mono">
-                        ${((b.bid_price || 0) * (b.bid_qty || 1)).toLocaleString()}
-                      </td>
-                      <td className="px-2 py-0.5 text-right text-muted">{b.lead_time_days}d</td>
-                      <td className="px-2 py-0.5 text-muted">{b.fob || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      {/* Stat strip — quick read on the win/loss/bid counts */}
+      <div className="flex gap-2 text-xs">
+        <span className="rounded px-2 py-1 bg-green-50 text-green-700 border border-green-200 inline-flex items-center gap-1">
+          <Trophy className="h-3 w-3" /> {wins} won
+        </span>
+        <span className="rounded px-2 py-1 bg-orange-50 text-orange-700 border border-orange-200 inline-flex items-center gap-1">
+          <X className="h-3 w-3" /> {losses} lost (competitor)
+        </span>
+        <span className="rounded px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1">
+          <Clock className="h-3 w-3" /> {totalBids} bids on record
+        </span>
       </div>
 
-      {/* Competitor awards (other CAGE codes who won this NSN) */}
-      {(() => {
-        const comps = (data.competitor_awards || []).filter(Boolean);
-        // dedupe by contract_number+date+cage
-        const seen = new Set<string>();
-        const dedupComps = comps.filter((a) => {
-          const k = `${a?.contract_number || ""}_${a?.award_date || ""}_${a?.cage || ""}`;
-          if (seen.has(k)) return false;
-          seen.add(k);
-          return true;
-        });
-        const compTotal = dedupComps.reduce(
-          (s, a) => s + (Number(a?.unit_price) || 0) * (Number(a?.quantity) || 1),
-          0
-        );
-        return (
-          <div>
-            <div className="flex items-center justify-between text-xs font-bold text-orange-700 mb-1">
-              <span>Competitor Awards ({dedupComps.length})</span>
-              {compTotal > 0 && (
-                <span className="font-mono">${compTotal.toLocaleString()}</span>
-              )}
-            </div>
-            {dedupComps.length === 0 ? (
-              <p className="text-xs text-muted py-2">
-                No competitor awards on record. Run the DIBBS awards
-                scrape for this NSN to populate (
-                <code className="text-[10px]">/api/dibbs/awards</code>).
-              </p>
-            ) : (
-              <div className="max-h-48 overflow-auto rounded border border-orange-200">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-muted bg-orange-50/40">
-                      <th className="text-left px-2 py-1">Date</th>
-                      <th className="text-left px-2 py-1">Winner CAGE</th>
-                      <th className="text-right px-2 py-1">Price</th>
-                      <th className="text-right px-2 py-1">Qty</th>
-                      <th className="text-right px-2 py-1">Total</th>
-                      <th className="text-left px-2 py-1">Contract</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dedupComps.slice(0, 30).map((a, i) => {
-                      const price = Number(a?.unit_price);
-                      const qty = Number(a?.quantity) || 1;
-                      const total = (Number.isFinite(price) ? price : 0) * qty;
-                      return (
-                        <tr key={i} className="border-t border-card-border/30">
-                          <td className="px-2 py-0.5 text-muted">{formatDateShort(a?.award_date)}</td>
-                          <td className="px-2 py-0.5 font-mono text-[10px] text-orange-700">{a?.cage?.trim() || "—"}</td>
-                          <td className="px-2 py-0.5 text-right font-mono">
-                            {Number.isFinite(price) ? `$${price.toFixed(2)}` : "—"}
-                          </td>
-                          <td className="px-2 py-0.5 text-right">{a?.quantity ?? "—"}</td>
-                          <td className="px-2 py-0.5 text-right font-mono">
-                            ${total.toLocaleString()}
-                          </td>
-                          <td className="px-2 py-0.5 font-mono text-[9px] text-muted truncate max-w-[100px]">
-                            {a?.contract_number?.trim() || "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {timeline.length === 0 ? (
+        <p className="text-xs text-muted py-3">No history on record for this NSN yet.</p>
+      ) : (
+        <div className="rounded border border-card-border max-h-96 overflow-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-gray-50">
+              <tr className="text-muted text-left">
+                <th className="px-2 py-1 font-medium">Date</th>
+                <th className="px-2 py-1 font-medium">Event</th>
+                <th className="px-2 py-1 font-medium">Sol / Contract</th>
+                <th className="px-2 py-1 font-medium">Winner</th>
+                <th className="px-2 py-1 text-right font-medium">Price</th>
+                <th className="px-2 py-1 text-right font-medium">Qty</th>
+                <th className="px-2 py-1 text-right font-medium">Total</th>
+                <th className="px-2 py-1 font-medium">Our bid (vs winner)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {timeline.map((ev, i) => {
+                const price = Number(ev?.price);
+                const qty = Number(ev?.qty) || 1;
+                const total = (Number.isFinite(price) ? price : 0) * qty;
+                const linked = ev.our_bid_for_this;
+                const linkedPrice = linked ? Number(linked.price) : NaN;
+                const delta =
+                  linked && Number.isFinite(linkedPrice) && Number.isFinite(price)
+                    ? (((linkedPrice - price) / price) * 100).toFixed(0)
+                    : null;
+
+                let bg = "";
+                let badge = null;
+                if (ev.kind === "our_win") {
+                  bg = "bg-green-50/50";
+                  badge = (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-100 text-green-700 inline-flex items-center gap-0.5">
+                      <Trophy className="h-2.5 w-2.5" /> We won
+                    </span>
+                  );
+                } else if (ev.kind === "competitor_win") {
+                  bg = "bg-orange-50/40";
+                  badge = (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">
+                      Comp won
+                    </span>
+                  );
+                } else {
+                  bg = "bg-blue-50/30";
+                  badge = (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-blue-100 text-blue-700">
+                      Our bid (no award yet)
+                    </span>
+                  );
+                }
+
+                return (
+                  <tr key={i} className={`border-t border-card-border/40 ${bg}`}>
+                    <td className="px-2 py-1 text-muted whitespace-nowrap">
+                      {formatDateShort(ev.date)}
+                    </td>
+                    <td className="px-2 py-1">{badge}</td>
+                    <td className="px-2 py-1 font-mono text-[10px] text-muted">
+                      {ev.identifier?.trim() || "—"}
+                    </td>
+                    <td className="px-2 py-1 font-mono text-[10px]">
+                      {ev.kind === "our_win" ? (
+                        <span className="text-green-700">0AG09 (us)</span>
+                      ) : ev.kind === "competitor_win" ? (
+                        <span className="text-orange-700">{ev.cage?.trim() || "—"}</span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono">
+                      {Number.isFinite(price) ? `$${price.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="px-2 py-1 text-right">{ev.qty ?? "—"}</td>
+                    <td className="px-2 py-1 text-right font-mono">
+                      ${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </td>
+                    <td className="px-2 py-1 text-[10px]">
+                      {linked && Number.isFinite(linkedPrice) ? (
+                        <span className="text-muted">
+                          We bid <span className="font-mono text-foreground">${linkedPrice.toFixed(2)}</span>
+                          {delta !== null && (
+                            <span
+                              className={`ml-1 ${
+                                Number(delta) > 0 ? "text-red-600" : "text-green-600"
+                              }`}
+                            >
+                              ({Number(delta) > 0 ? "+" : ""}
+                              {delta}%)
+                            </span>
+                          )}
+                          {linked.date && (
+                            <span className="text-muted/70"> on {formatDateShort(linked.date)}</span>
+                          )}
+                        </span>
+                      ) : ev.kind === "our_bid" ? (
+                        <span className="text-muted">
+                          {ev.lead_days ? `${ev.lead_days}d lead` : ""}
+                          {ev.fob ? ` · FOB ${ev.fob}` : ""}
+                        </span>
+                      ) : (
+                        ""
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {data.matches.length > 0 && (
         <div>
@@ -321,9 +283,11 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
                     <td className="px-2 py-0.5">
                       <span
                         className={`text-[9px] px-1 rounded font-medium ${
-                          m.confidence === "HIGH" ? "bg-green-100 text-green-700" :
-                          m.confidence === "MEDIUM" ? "bg-yellow-100 text-yellow-700" :
-                          "bg-gray-100 text-gray-600"
+                          m.confidence === "HIGH"
+                            ? "bg-green-100 text-green-700"
+                            : m.confidence === "MEDIUM"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : "bg-gray-100 text-gray-600"
                         }`}
                       >
                         {m.confidence}
