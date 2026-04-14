@@ -26,7 +26,7 @@ export default async function WikiPage({
   const prev = idx > 0 ? WIKI_PAGES[idx - 1] : null;
   const next = idx < WIKI_PAGES.length - 1 ? WIKI_PAGES[idx + 1] : null;
 
-  const filePath = path.join(process.cwd(), "src", "content", "wiki", `${slug}.md`);
+  const filePath = path.join(process.cwd(), "docs", `${slug}.md`);
   if (!existsSync(filePath)) {
     return (
       <WikiLayout pages={WIKI_PAGES}>

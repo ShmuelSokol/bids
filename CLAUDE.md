@@ -4,6 +4,19 @@
 
 Intelligence layer on top of LamLinks for Ever Ready First Aid (CAGE 0AG09). ~$8-9M/year government business, ~500 orders/week.
 
+## KNOWLEDGE BASE — read before non-trivial work
+
+Narrative, long-form context lives in `docs/`. This file has the critical rules and quick reference. `docs/` has the *why*.
+
+- `docs/overview.md` — what DIBS is and who uses it. Read first.
+- `docs/architecture.md` — stack, deployment, data flow. Read before adding integrations or API routes.
+- `docs/data-sources.md` — LamLinks, AX, DIBBS, PUB LOG, Master DB field guide. Read before touching scrapers or importers.
+- `docs/pricing-logic.md` — empirical markup brackets and cost waterfall. Read before changing pricing.
+- `docs/bidding-workflow.md` — Abe's daily flow and bid states. Read before changing the solicitations UI.
+- `docs/gotchas.md` — **read this first when something breaks inexplicably**. Supabase 1K limit, DIBBS consent cookies, timezone bugs, etc.
+
+When you learn something new that future sessions would benefit from, add it to the appropriate `docs/` page. Gotchas go in `gotchas.md` with symptom → cause → fix structure.
+
 ## CRITICAL DEPLOYMENT RULES
 - **NEVER add msnodesqlv8, mssql, playwright, or dotenv to package.json** (deps OR devDeps). They crash Railway builds (native compilation fails on Linux). Install locally with `npm install --no-save` only.
 - **Railway auto-deploys from GitHub** — do NOT use `railway up`. Just `git push`.
