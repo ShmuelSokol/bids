@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/auth", "/api/dibbs", "/api/track", "/api/bug-report", "/api/notifications", "/api/jobs", "/api/bugs/respond", "/api/awards", "/api/setup-github-secrets"];
+// Public paths skip the session-cookie redirect. Routes that cost money or
+// mutate data MUST gate themselves internally (auth check OR shared secret),
+// e.g. /api/whatsapp verifies X-Internal-Secret or a logged-in user.
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/dibbs", "/api/track", "/api/bug-report", "/api/notifications", "/api/jobs", "/api/bugs/respond", "/api/awards", "/api/setup-github-secrets", "/api/whatsapp"];
 
 // Pass pathname to layout via header for must_reset_password check
 
