@@ -27,30 +27,16 @@ if not exist "%DISPATCHER%" (
 REM -----------------------------------------------------------------------
 REM Pick the user the tasks will run as.
 REM
-REM We use /it (interactive only) so the task runs in this user's
-REM already-active session — that gives us the user's Windows Auth
-REM token for LamLinks SQL access without having to store a password.
+REM /it (interactive only) means the task runs inside this user's
+REM already-active session — gives us the Windows Auth token for
+REM LamLinks SQL access without having to store a password.
 REM
-REM If the install script is launched from an elevated "Run as
-REM Administrator" shell, %USERNAME% will be "Administrator" — but the
-REM person actually logged in via RDP/console may be someone else
-REM (typically ssokol). Detect that interactive user with `query user`
-REM so the tasks bind to the right session. Override with:
-REM    set DIBS_TASK_USER=ERG\someone-else && install-tasks.bat
+REM Defaults to ERG\ssokol. Override at install time with:
+REM    set DIBS_TASK_USER=ERG\someone-else
+REM    install-tasks.bat
 REM -----------------------------------------------------------------------
-if defined DIBS_TASK_USER (
-    set RUN_AS_USER=%DIBS_TASK_USER%
-) else (
-    set RUN_AS_USER=
-    for /f "tokens=1" %%U in ('query user 2^>nul ^| findstr /R "^>"') do (
-        if "%%U"==">" (rem skip) else set RUN_AS_USER=%%U
-    )
-    REM Strip leading > if present
-    if "%RUN_AS_USER:~0,1%"==">" set RUN_AS_USER=%RUN_AS_USER:~1%
-    if "%RUN_AS_USER%"=="" set RUN_AS_USER=%USERNAME%
-    REM Prepend domain if not qualified
-    echo %RUN_AS_USER% | findstr "\\" >nul || set RUN_AS_USER=ERG\%RUN_AS_USER%
-)
+if not defined DIBS_TASK_USER set DIBS_TASK_USER=ERG\ssokol
+set RUN_AS_USER=%DIBS_TASK_USER%
 echo Tasks will run as: %RUN_AS_USER%  (interactive-only, /it)
 echo.
 
