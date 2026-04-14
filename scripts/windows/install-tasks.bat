@@ -24,6 +24,22 @@ if not exist "%DISPATCHER%" (
     exit /b 1
 )
 
+REM -----------------------------------------------------------------------
+REM One-time native-package install. These can NEVER live in package.json
+REM (they'd crash the Railway Linux build), so we install them with
+REM --no-save here. Idempotent: if they're already in node_modules npm
+REM will be a no-op.
+REM -----------------------------------------------------------------------
+echo.
+echo Ensuring native packages installed (mssql, msnodesqlv8)...
+pushd C:\tmp\dibs-init\dibs
+call npm install --no-save mssql msnodesqlv8
+if errorlevel 1 (
+    echo WARNING: native package install failed. Tasks will still register
+    echo          but LamLinks scripts won't run until you fix this manually.
+)
+popd
+
 echo.
 echo Registering DIBS scheduled tasks...
 echo Dispatcher: %DISPATCHER%

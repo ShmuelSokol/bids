@@ -22,9 +22,17 @@ Windows machine so they run automatically.
    (the paths in these scripts are absolute).
 2. Make sure the `.env` file is present with `SUPABASE_SERVICE_ROLE_KEY`,
    `TWILIO_*`, `MASTERDB_API_KEY`, etc.
-3. Make sure `npx tsx` works:
+3. Make sure the native SQL Server driver is installed (one-time):
    ```cmd
    cd C:\tmp\dibs-init\dibs
+   npm install --no-save mssql msnodesqlv8
+   ```
+   These packages can never live in `package.json` (they'd crash the
+   Railway Linux build), so they're installed with `--no-save` here.
+   `install-tasks.bat` does this for you, but if you ever wipe
+   `node_modules` you'll need to rerun the line above.
+4. Make sure `npx tsx` works:
+   ```cmd
    npx tsx scripts\sync-abe-bids-live.ts
    ```
    If that succeeds and writes a row to `abe_bids_live`, you're good.
