@@ -32,7 +32,9 @@ What happens after we win a bid. Award arrives, gets grouped into draft POs by s
   POST /api/orders/generate-pos
        │
        ▼
-[Group by supplier (CAGE)]
+[For each NSN in selection: look up cheapest vendor in nsn_vendor_prices]
+[Group awards by cheapest vendor (NOT by award.cage which is us, 0AG09)]
+[Awards with no vendor price → "UNASSIGNED" PO for manual assignment]
 [For each group:]
   - Create purchase_orders row:
     po_number = "PO-{YYYYMMDD}-{timestamp}-{i}"
@@ -130,7 +132,7 @@ What happens after we win a bid. Award arrives, gets grouped into draft POs by s
 
 1. **Our CAGE is always `0AG09`** — hardcoded in `/orders/page.tsx:11` as the awards filter.
 2. **Government customer is `DD219`** — documented, NOT enforced in code. The `awards` table has no `customer_code` column.
-3. **Grouping key is supplier CAGE** — one CAGE = one PO per generation run.
+3. **Grouping key is the CHEAPEST VENDOR per NSN** from `nsn_vendor_prices` — one vendor = one PO. NSNs with no vendor price land on a single `UNASSIGNED` PO that Abe can split via the supplier-switch flow. Note: the previous behavior grouped by `award.cage` which always equals our CAGE (`0AG09`) — that produced one giant PO for everything and was a bug.
 4. **Cost waterfall uses pre-computed `nsn_costs`** — not re-run at PO generation.
 5. **Margin = `(unit_price - our_cost) / unit_price * 100`** — shipping not subtracted here (only in enrichment).
 6. **PO status lifecycle**: `draft` → `submitted` → `confirmed` → `received`. Currently only `draft` is reachable.

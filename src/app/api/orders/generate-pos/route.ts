@@ -6,15 +6,22 @@ import { computeMarginPct } from "@/lib/margin";
 /**
  * POST /api/orders/generate-pos
  *
- * Group submitted awards by supplier CAGE and create one draft PO per supplier
- * with child po_lines. Marks each award.po_generated=true so it drops out of
- * the "New only (no PO yet)" filter.
+ * For each selected award, look up the cheapest supplier for that NSN
+ * from `nsn_vendor_prices`. Group awards by that supplier and create
+ * one draft PO per supplier — so 12 items cheapest from Vendor A all
+ * land on Vendor A's PO, 5 items from Vendor B on Vendor B's PO, etc.
  *
- * Race-condition defense: the request body comes from the browser and can be
- * stale. Before creating any PO we re-fetch the awards from the database
- * filtered on `po_generated=false`. Anything already claimed by another
- * session (or a prior run) is dropped from this batch and reported back to
- * the caller so they can refresh their view.
+ * Awards with no vendor price lookup land on a single "UNASSIGNED"
+ * PO that Abe can re-assign per-line via the supplier-switch flow.
+ *
+ * `unit_cost` on each po_line uses the vendor's price (not the
+ * historical award.our_cost), so margin reflects the actual cost
+ * we'd pay this supplier today.
+ *
+ * Race-condition defense: the request body comes from the browser and
+ * can be stale. Before creating any PO we re-fetch the awards from the
+ * database filtered on `po_generated=false`. Anything already claimed
+ * by another session is dropped from this batch and reported back.
  */
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -70,10 +77,40 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Group by supplier (CAGE code)
+  // For each NSN in the eligible awards, look up the cheapest vendor
+  // from nsn_vendor_prices. Sort ascending by price so the FIRST row
+  // per NSN wins (we keep only one cheapest per NSN below).
+  const nsns = [...new Set(eligible.map((a) => a.nsn).filter(Boolean))];
+  const cheapestByNsn = new Map<
+    string,
+    { vendor: string; price: number; source: string | null; itemNumber: string | null }
+  >();
+  if (nsns.length > 0) {
+    const { data: vendorPrices } = await supabase
+      .from("nsn_vendor_prices")
+      .select("nsn, vendor, price, price_source, item_number")
+      .in("nsn", nsns)
+      .gt("price", 0)
+      .order("price", { ascending: true });
+    for (const vp of vendorPrices || []) {
+      if (!cheapestByNsn.has(vp.nsn)) {
+        cheapestByNsn.set(vp.nsn, {
+          vendor: vp.vendor,
+          price: vp.price,
+          source: vp.price_source,
+          itemNumber: vp.item_number,
+        });
+      }
+    }
+  }
+
+  // Group by cheapest vendor (NOT by award.cage which is the awardee = us).
+  // Awards with no vendor price land on UNASSIGNED — Abe can switch them
+  // per-line afterward via the supplier-switch flow.
   const bySupplier = new Map<string, any[]>();
   for (const award of eligible) {
-    const supplier = award.cage?.trim() || "UNKNOWN";
+    const cheapest = cheapestByNsn.get(award.nsn);
+    const supplier = cheapest?.vendor?.trim() || "UNASSIGNED";
     if (!bySupplier.has(supplier)) bySupplier.set(supplier, []);
     bySupplier.get(supplier)!.push(award);
   }
@@ -86,10 +123,21 @@ export async function POST(req: NextRequest) {
     poIndex++;
     const poNumber = `PO-${new Date().toISOString().split("T")[0].replace(/-/g, "")}-${timestamp}-${poIndex}`;
 
-    const totalCost = supplierAwards.reduce(
-      (s: number, a: any) => s + (a.our_cost || 0) * (a.quantity || 1),
-      0
-    );
+    // Per-line unit_cost = vendor's price for this NSN if known, else
+    // fall back to the historical award.our_cost.
+    const lineDrafts = supplierAwards.map((a: any) => {
+      const cheapest = cheapestByNsn.get(a.nsn);
+      const unitCost = cheapest?.price ?? a.our_cost ?? 0;
+      const qty = a.quantity || 1;
+      return {
+        award: a,
+        unit_cost: unitCost,
+        total_cost: unitCost * qty,
+        cost_source: cheapest?.source || (a.our_cost ? "historical_po" : null),
+        vendor_item_number: cheapest?.itemNumber || null,
+      };
+    });
+    const totalCost = lineDrafts.reduce((s, l) => s + l.total_cost, 0);
 
     const { data: po, error: poError } = await supabase
       .from("purchase_orders")
@@ -106,21 +154,21 @@ export async function POST(req: NextRequest) {
 
     if (poError || !po) continue;
 
-    const lines = supplierAwards.map((a: any) => ({
+    const lines = lineDrafts.map((l) => ({
       po_id: po.id,
-      award_id: a.id,
-      nsn: a.nsn,
-      description: a.description,
-      quantity: a.quantity,
-      unit_cost: a.our_cost,
-      total_cost: (a.our_cost || 0) * (a.quantity || 1),
-      sell_price: a.unit_price,
-      margin_pct: computeMarginPct(a.unit_price, a.our_cost),
+      award_id: l.award.id,
+      nsn: l.award.nsn,
+      description: l.award.description,
+      quantity: l.award.quantity,
+      unit_cost: l.unit_cost,
+      total_cost: l.total_cost,
+      sell_price: l.award.unit_price,
+      margin_pct: computeMarginPct(l.award.unit_price, l.unit_cost),
       supplier,
-      contract_number: a.contract_number,
-      order_number: a.order_number,
-      fob: a.fob,
-      required_delivery: a.required_delivery,
+      contract_number: l.award.contract_number,
+      order_number: l.award.order_number,
+      fob: l.award.fob,
+      required_delivery: l.award.required_delivery,
     }));
 
     await supabase.from("po_lines").insert(lines);
@@ -178,10 +226,18 @@ export async function POST(req: NextRequest) {
     userAgent,
   });
 
+  // Surface how many lines couldn't be auto-assigned (no vendor price)
+  // so the UI can prompt Abe to use the supplier-switch on the
+  // UNASSIGNED PO.
+  const unassignedCount = bySupplier.get("UNASSIGNED")?.length || 0;
+  const supplierCount = createdPOs.length - (unassignedCount > 0 ? 1 : 0);
+
   return NextResponse.json({
     success: true,
     po_count: createdPOs.length,
     line_count: eligible.length,
+    supplier_count: supplierCount,
+    unassigned_line_count: unassignedCount,
     skipped_already_claimed: alreadyClaimed.length,
     pos: createdPOs,
   });
