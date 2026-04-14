@@ -1,9 +1,16 @@
 # Audit Report — Pass 2 Findings
 
 > **Generated:** 2026-03-27
+> **Last updated:** 2026-04-14 — fix pass landed
 > **Method:** Document-then-audit (spec-vs-code diff)
 > **Scope:** All flows in `docs/flows/*.md` — bidding, scraping, enrichment, awards-to-pos, invoicing, shipping, auth, background-jobs, analytics
 > **Total findings:** 32 (10 CRITICAL · 11 HIGH · 8 MEDIUM · 3 LOW)
+> **Fixed so far:** 10 (commits `3967521`, `3337454`) — 6 of the 10 CRITICALs, plus 2 HIGHs.
+
+## Status legend
+
+- **FIXED 2026-04-14** — patched, build passing, Playwright-verified in production
+- **OPEN** — still pending
 
 Pass 1 wrote the spec. This pass reads actual code with spec in hand and flags where
 reality diverges — plus bugs the spec missed.
@@ -14,11 +21,11 @@ reality diverges — plus bugs the spec missed.
 
 These have the highest expected impact or cost if exploited, ranked:
 
-1. **[CRITICAL] `/api/whatsapp/send` is unauthenticated** — anyone on the internet can send paid Twilio messages to any phone number through our account. This is a billing attack vector. **Fix today.**
-2. **[CRITICAL] `/api/bids/decide` has no row-level auth** — any authenticated user can overwrite any other user's quoted/skipped bids silently. No audit trail.
-3. **[CRITICAL] Missing pagination on `dibbs_solicitations` in `/api/dibbs/enrich`** — only the first 1,000 unsourceable rows are ever enriched. If we have >1K unsourced rows, we silently leave items unmatched.
-4. **[CRITICAL] Background jobs loop forever** — `max_attempts` is never set on job insert. Failed jobs retry indefinitely. This is why 203 `award_lookup` jobs are stuck.
-5. **[CRITICAL] Shipping sync is broken** — `scripts/tmp-shipping-v2.sql` is referenced but not in the repo. Whole flow doesn't work.
+1. ~~[CRITICAL] `/api/whatsapp/send` is unauthenticated~~ **FIXED 2026-04-14** — gated with auth OR `X-Internal-Secret` header. Verified 401 on unauth'd POST in prod.
+2. ~~[CRITICAL] `/api/bids/decide` has no row-level auth~~ **FIXED 2026-04-14** — non-admin can no longer overwrite other users' decisions. Prior state captured in trackEvent.
+3. ~~[CRITICAL] Missing pagination on `dibbs_solicitations` in `/api/dibbs/enrich`~~ **FIXED 2026-04-14** — now paginated with safety cap.
+4. ~~[CRITICAL] Background jobs loop forever~~ **FIXED 2026-04-14** — `max_attempts` defaults to 3 at insert and in processor; stuck `processing` rows older than 1h auto-recover.
+5. ~~[CRITICAL] Shipping sync is broken~~ **FIXED 2026-04-14** — `scripts/tmp-shipping-v2.sql` reconstructed from columns.json + sample data (kaj→ka9→k81→k80/k71→k08 chain).
 
 ---
 
@@ -26,56 +33,56 @@ These have the highest expected impact or cost if exploited, ranked:
 
 ### Auth & security
 
-**1. `/api/whatsapp/send` is unauthenticated + no rate limit**
+**1. `/api/whatsapp/send` is unauthenticated + no rate limit** — **FIXED 2026-04-14**
 - `src/app/api/whatsapp/send/route.ts:12-76`; public via `src/middleware.ts:3` (`/api/whatsapp` in `PUBLIC_PATHS`)
 - Anyone can POST `{ to, message, mediaUrl }` and send a paid Twilio message. No auth, no origin check, no rate limit.
 - **Fix:** Require auth OR add a shared-secret header. Move out of `PUBLIC_PATHS` or gate inside the route.
 
-**2. `/api/bids/decide` has no row-level authorization**
+**2. `/api/bids/decide` has no row-level authorization** — **FIXED 2026-04-14**
 - `src/app/api/bids/decide/route.ts:6-53`
 - `getCurrentUser()` checks *that* a user is authenticated but not *which* user owns the row. Upsert on `(solicitation_number, nsn)` allows any user to overwrite any other user's decision silently.
 - **Fix:** Add `decided_by` to the upsert conflict key OR enforce RLS on `bid_decisions` with `decided_by = auth.uid()`.
 
-**3. `must_reset_password` check bypassable on API routes**
+**3. `must_reset_password` check bypassable on API routes** — **PARTIAL 2026-04-14** — added to `/api/bids/decide`; other mutating endpoints still need it
 - `src/app/layout.tsx:49-56` (the only enforcement point)
 - A user with `profile.must_reset_password=true` can directly call `/api/bids/decide` — the layout-level redirect doesn't run for API endpoints.
 - **Fix:** Move the check into `getCurrentUser()` (src/lib/supabase-server.ts) or middleware so all routes inherit it.
 
 ### Data integrity
 
-**4. `/api/bids/decide` doesn't validate `is_sourceable` server-side**
+**4. `/api/bids/decide` doesn't validate `is_sourceable` server-side** — **FIXED 2026-04-14**
 - `src/app/api/bids/decide/route.ts:26-53`
 - UI hides the "Quote" button on non-sourceable rows, but the API accepts `status=quoted` regardless. A stale tab or DevTools call can quote an unsourceable item. Downstream PO generation will hit an item with no vendor.
 - **Fix:** Fetch the solicitation before upsert; reject if `!is_sourceable && status === "quoted"`.
 
-**5. `/api/orders/generate-pos` has a TOCTOU race on `awards.po_generated`**
+**5. `/api/orders/generate-pos` has a TOCTOU race on `awards.po_generated`** — **FIXED 2026-04-14** — race-safe `UPDATE ... WHERE po_generated=false` with contested-count reporting
 - `src/app/api/orders/generate-pos/route.ts:84-90`
 - No transaction. If two users click "Generate POs" with overlapping award selections, both loops read `po_generated=false`, both succeed, both update. Result: same award on two POs.
 - **Fix:** Wrap in a Supabase transaction OR add `UNIQUE(award_id, po_id)` on `po_lines`.
 
-**6. `/api/orders/switch-supplier` never updates `unit_cost`**
+**6. `/api/orders/switch-supplier` never updates `unit_cost`** — **FIXED 2026-04-14** — looks up new supplier's `nsn_vendor_prices`, re-costs line, re-computes margin
 - `src/app/api/orders/switch-supplier/route.ts:64-68`
 - Moves the line to the new supplier's PO but keeps the old cost. The displayed margin becomes a lie.
 - **Fix:** Look up the new supplier's cost from `nsn_vendor_prices` and update `unit_cost` + `margin_pct` on the line before committing.
 
 ### Broken pipelines
 
-**7. Missing pagination on `dibbs_solicitations` in `/api/dibbs/enrich`**
+**7. Missing pagination on `dibbs_solicitations` in `/api/dibbs/enrich`** — **FIXED 2026-04-14**
 - `src/app/api/dibbs/enrich/route.ts:138-141`
 - The main target table load is a single `.eq("is_sourceable", false)` with no `.range()`. Silently capped at 1,000 rows. Spec explicitly said "all paginated" — this one isn't.
 - **Fix:** Wrap in a while-loop with `.range(page*1000, (page+1)*1000-1)` like the other loads.
 
-**8. Background jobs have no `max_attempts` on insert → infinite retry loops**
+**8. Background jobs have no `max_attempts` on insert → infinite retry loops** — **FIXED 2026-04-14**
 - `src/app/api/jobs/seed/route.ts:49-58`, `src/app/api/jobs/seed-awards/route.ts:50-55`
 - Seed endpoints insert jobs without setting `max_attempts`. The processor at `src/app/api/jobs/process/route.ts:297` compares `attempts >= job.max_attempts`, but `max_attempts` is null. Failed jobs retry forever. This is likely why 203 `award_lookup` jobs are stuck in a re-pending loop.
 - **Fix:** Default `max_attempts: 3` at insert time or at column default in Supabase.
 
-**9. Background jobs stuck in `processing` forever if worker dies**
+**9. Background jobs stuck in `processing` forever if worker dies** — **FIXED 2026-04-14** — 1-hour auto-recovery sweep
 - `src/app/api/jobs/process/route.ts:253-301`
 - Job marked `status=processing` at start; no timeout recovery. If Railway crashes mid-job, the row stays `processing` and is never retried.
 - **Fix:** Scheduled sweep: `UPDATE job_queue SET status='pending' WHERE status='processing' AND started_at < NOW() - interval '1 hour'`.
 
-**10. `scripts/tmp-shipping-v2.sql` is referenced but not in the repo**
+**10. `scripts/tmp-shipping-v2.sql` is referenced but not in the repo** — **FIXED 2026-04-14** — reconstructed from LamLinks schema
 - `scripts/sync-shipping.ts:26` does `readFileSync(join(__dirname, "tmp-shipping-v2.sql"))`. File doesn't exist. Grep confirms zero `.sql` files in `scripts/`.
 - **Fix:** Restore the SQL (reconstruct from `data-sources.md` + the `ka8/kaj/kad/k81` chain) or remove the script.
 
@@ -88,7 +95,7 @@ These have the highest expected impact or cost if exploited, ranked:
 - The useMemo at line 194 checks `s.is_sourceable && !s.bid_status && open` but does not check `liveBidSols` or `decisionKeys`. Dashboard uses `isSourceableOpen()` which does. Three implementations diverge yet again — same failure mode as the March 27 bug we just fixed.
 - **Fix:** Pass the context sets from the server and call `isSourceableOpen()` on the client.
 
-**12. `/api/bids/decide` doesn't require `final_price` when `status="quoted"`**
+**12. `/api/bids/decide` doesn't require `final_price` when `status="quoted"`** — **FIXED 2026-04-14** — rejects null/≤0 prices on quoted/submitted
 - `src/app/api/bids/decide/route.ts:35-49`
 - `final_price` is allowed null on quotes. Downstream consumers of "quoted" bids expect a price.
 - **Fix:** Reject request if `(status==="quoted" || status==="submitted") && !final_price`.
@@ -113,17 +120,17 @@ These have the highest expected impact or cost if exploited, ranked:
 - If `nsn_costs` changed between page load and PO generation, the margin stored in `po_lines` differs from what the user approved.
 - **Fix:** Store the cost used with the line at PO creation time (`cost_snapshot_at`) or lock cost during the generate call.
 
-**17. `awards.po_generated` isn't reset when a PO is deleted (empty after switch)**
+**17. `awards.po_generated` isn't reset when a PO is deleted (empty after switch)** — **FIXED 2026-04-14**
 - `src/app/api/orders/switch-supplier/route.ts:94-96`
 - Deletes the empty PO but doesn't update the awards that were linked to it back to `po_generated=false`. Orphaned awards are hidden from "New only" filter.
 - **Fix:** Update `awards.po_generated=false, po_id=null` for awards linked to the deleted PO.
 
-**18. Missing pagination on `fsc_heatmap.in("bucket", ...)` in enrich**
+**18. Missing pagination on `fsc_heatmap.in("bucket", ...)` in enrich** — **FIXED 2026-04-14**
 - `src/app/api/dibbs/enrich/route.ts:97-101`
 - Same 1K silent cap as #7.
 - **Fix:** Paginate.
 
-**19. Master DB timeout in enrichment is silently swallowed**
+**19. Master DB timeout in enrichment is silently swallowed** — **FIXED 2026-04-14** — failures surface in response `warnings[]`
 - `src/app/api/dibbs/enrich/route.ts:63-80`
 - 15s timeout caught and ignored. If MDB is slow or down, `mdbNsnSet` is empty and we silently miss all MDB matches with no trace in `sync_log`.
 - **Fix:** Log to `sync_log.details.errors[]` and emit a warning in the response.
