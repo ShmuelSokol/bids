@@ -256,9 +256,14 @@ export function SolicitationsList({
     trackAction("sync", "scrape_started");
     try {
       // Mark sync as started (persists across refresh)
-      await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "start" }), headers: { "Content-Type": "application/json" } });
+      await fetch("/api/dibbs/sync-status", {
+        method: "POST",
+        body: JSON.stringify({ action: "start" }),
+        headers: { "Content-Type": "application/json" },
+      });
 
-      // Scrape in batches — API does 30 FSCs at a time, auto-continues
+      // Scrape in batches — API does 30 FSCs at a time, auto-continues.
+      // Surface real HTTP failures so a silent 500 doesn't look like success.
       let totalScraped = 0;
       let batchNum = 0;
       let remaining = 999;
@@ -267,6 +272,10 @@ export function SolicitationsList({
         batchNum++;
         setMessage(`Step 1/3: Scraping DIBBS expansion FSCs (batch ${batchNum})...`);
         const scrapeRes = await fetch("/api/dibbs/scrape-now", { method: "POST" });
+        if (!scrapeRes.ok) {
+          const errText = await scrapeRes.text().catch(() => "");
+          throw new Error(`Scrape HTTP ${scrapeRes.status}: ${errText.slice(0, 200)}`);
+        }
         const scrapeData = await scrapeRes.json();
         totalScraped += scrapeData.count || 0;
         remaining = scrapeData.fscs_remaining || 0;
@@ -279,23 +288,36 @@ export function SolicitationsList({
       setMessage(`Step 2/3: Found ${totalScraped} from ${batchNum} batches. Matching NSNs + pricing...`);
       setEnriching(true);
       const enrichRes = await fetch("/api/dibbs/enrich", { method: "POST" });
+      if (!enrichRes.ok) {
+        const errText = await enrichRes.text().catch(() => "");
+        throw new Error(`Enrich HTTP ${enrichRes.status}: ${errText.slice(0, 200)}`);
+      }
       const enrichData = await enrichRes.json();
       setEnriching(false);
 
       // Mark sync as done
-      await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "done" }), headers: { "Content-Type": "application/json" } });
+      await fetch("/api/dibbs/sync-status", {
+        method: "POST",
+        body: JSON.stringify({ action: "done" }),
+        headers: { "Content-Type": "application/json" },
+      });
 
       const parts = [`${totalScraped} scraped from ${batchNum} batches`];
       if (enrichData.sourceable) parts.push(`${enrichData.sourceable} sourceable`);
       if (enrichData.with_cost_data) parts.push(`${enrichData.with_cost_data} with costs`);
       if (enrichData.already_bid) parts.push(`${enrichData.already_bid} already bid`);
+      if (enrichData.warnings?.length) parts.push(`WARN: ${enrichData.warnings.join(", ")}`);
 
       setMessage(`Step 3/3: Sync complete! ${parts.join(" · ")}. Refreshing...`);
       setTimeout(() => window.location.reload(), 2000);
-    } catch {
-      // Mark sync as done on failure too
-      await fetch("/api/dibbs/sync-status", { method: "POST", body: JSON.stringify({ action: "done" }), headers: { "Content-Type": "application/json" } }).catch(() => {});
-      setMessage("Sync failed — check connection");
+    } catch (err: any) {
+      console.error("Sync failed:", err);
+      await fetch("/api/dibbs/sync-status", {
+        method: "POST",
+        body: JSON.stringify({ action: "done" }),
+        headers: { "Content-Type": "application/json" },
+      }).catch(() => {});
+      setMessage(`Sync failed: ${err?.message || "unknown error"}`);
     } finally {
       setScraping(false);
       setEnriching(false);
@@ -306,13 +328,19 @@ export function SolicitationsList({
     setEnriching(true);
     try {
       const res = await fetch("/api/dibbs/enrich", { method: "POST" });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      }
       const data = await res.json();
-      setMessage(
-        `Found ${data.sourceable} sourceable (${data.with_cost_data || 0} with cost data)`
-      );
+      const parts = [`${data.sourceable || 0} sourceable`];
+      if (data.with_cost_data) parts.push(`${data.with_cost_data} with cost data`);
+      if (data.warnings?.length) parts.push(`WARN: ${data.warnings.join(", ")}`);
+      setMessage(`Found ${parts.join(" · ")}`);
       window.location.reload();
-    } catch {
-      setMessage("Enrichment failed");
+    } catch (err: any) {
+      console.error("Enrichment failed:", err);
+      setMessage(`Enrichment failed: ${err?.message || "unknown error"}`);
     } finally {
       setEnriching(false);
     }

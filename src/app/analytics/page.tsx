@@ -11,15 +11,28 @@ async function getData() {
     .order("total_bids", { ascending: false })
     .limit(500);
 
-  // Get award counts by FSC — parallel range queries for more coverage
-  const [aw1, aw2, aw3, aw4, aw5] = await Promise.all([
-    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(0, 999),
-    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(1000, 1999),
-    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(2000, 2999),
-    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(3000, 3999),
-    supabase.from("awards").select("fsc").eq("cage", "0AG09").range(4000, 4999),
-  ]);
-  const awardCounts = [...(aw1.data||[]), ...(aw2.data||[]), ...(aw3.data||[]), ...(aw4.data||[]), ...(aw5.data||[])];
+  // Get award counts by FSC. The previous implementation used 5 hardcoded
+  // parallel range calls, which silently truncated at 5,000 rows — with
+  // 74K+ awards in production that meant analytics was missing >90% of
+  // the data. Loop until the page comes back empty, cap at 80K rows so
+  // we don't blow the Railway 30s budget, and surface if we hit the cap.
+  const MAX_PAGES = 80;
+  const awardRows: { fsc: string }[] = [];
+  let awardPage = 0;
+  let capped = false;
+  while (awardPage < MAX_PAGES) {
+    const { data } = await supabase
+      .from("awards")
+      .select("fsc")
+      .eq("cage", "0AG09")
+      .range(awardPage * 1000, (awardPage + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    awardRows.push(...data);
+    if (data.length < 1000) break;
+    awardPage++;
+    if (awardPage === MAX_PAGES) capped = true;
+  }
+  const awardCounts = awardRows;
 
   const awardsByFsc: Record<string, number> = {};
   for (const a of awardCounts || []) {
@@ -38,11 +51,11 @@ async function getData() {
   const overallWinRate = totalBids > 0 ? Math.round((totalAwards / totalBids) * 100) : 0;
   const dlaSpend = enriched.reduce((s, h) => s + (h.dla_spend_6mo || 0), 0);
 
-  return { fscs: enriched, totalBids, totalAwards, overallWinRate, dlaSpend };
+  return { fscs: enriched, totalBids, totalAwards, overallWinRate, dlaSpend, capped };
 }
 
 export default async function AnalyticsPage() {
-  const { fscs, totalBids, totalAwards, overallWinRate, dlaSpend } = await getData();
+  const { fscs, totalBids, totalAwards, overallWinRate, dlaSpend, capped } = await getData();
 
   const hot = fscs.filter((f: any) => f.bucket === "hot");
   const warm = fscs.filter((f: any) => f.bucket === "warm");
@@ -60,6 +73,12 @@ export default async function AnalyticsPage() {
 
       <h1 className="text-2xl font-bold mb-1">Win/Loss Analytics</h1>
       <p className="text-muted text-sm mb-6">Bid performance by FSC category — based on LamLinks historical data</p>
+
+      {capped && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Award pagination hit the 80,000-row safety cap. Win rates may be low-biased.
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

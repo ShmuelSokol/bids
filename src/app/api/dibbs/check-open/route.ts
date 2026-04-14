@@ -60,12 +60,26 @@ export async function GET(req: NextRequest) {
       );
       const html = await resp.text();
 
-      const isOpen = html.includes(sol) || html.includes(cleanSol) || html.includes("SPE");
-      const hasResults = html.includes("<tr") && html.includes("SPE");
+      // Build match candidates for THIS solicitation. DIBBS doesn't always
+      // preserve dashes in rendered tables (e.g. SPE2DS26T7639 and
+      // SPE2DS-26-T-7639 both appear). Previous code used html.includes("SPE")
+      // as a proxy, which returned true whenever the search results contained
+      // any SPE-prefixed solicitation — a false positive for every lookup.
+      const normalized = sol.replace(/\s+/g, "").toUpperCase();
+      const normalizedNoDash = normalized.replace(/-/g, "");
+      const solMatched =
+        html.toUpperCase().includes(normalized) ||
+        html.toUpperCase().includes(normalizedNoDash);
+
+      // Require both: (a) THIS specific solicitation appears in the HTML,
+      // and (b) the page actually has table rows (not a consent redirect).
+      const hasResultTable = html.includes("<tr") && html.includes("RfqRecs");
 
       return NextResponse.json({
         solicitation: sol,
-        is_open: hasResults,
+        is_open: solMatched && hasResultTable,
+        sol_matched: solMatched,
+        has_result_table: hasResultTable,
         checked_at: new Date().toISOString(),
       });
     } finally {
