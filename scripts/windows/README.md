@@ -28,12 +28,20 @@ Windows machine so they run automatically.
    npx tsx scripts\sync-abe-bids-live.ts
    ```
    If that succeeds and writes a row to `abe_bids_live`, you're good.
-4. Open an **Administrator** cmd prompt.
+4. Open an **Administrator** cmd prompt (right-click cmd → Run as administrator).
 5. Run the installer:
    ```cmd
    cd C:\tmp\dibs-init\dibs\scripts\windows
    install-tasks.bat
    ```
+
+   **If you're in PowerShell instead of cmd**, prefix with `.\`:
+   ```powershell
+   cd C:\tmp\dibs-init\dibs\scripts\windows
+   .\install-tasks.bat
+   ```
+   PowerShell won't run scripts from the current directory without `.\`.
+   The same applies to `check-status.bat` and `uninstall-tasks.bat`.
 
 All tasks run under the currently logged-in user, which is the only
 identity with Windows Auth access to the LamLinks SQL Server.
