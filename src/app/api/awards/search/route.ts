@@ -33,6 +33,9 @@ export async function GET(req: NextRequest) {
     itemSpec: specRes.data?.[0] || null,
     matches: matchRes.data || [],
   });
-  response.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+  // Short cache so freshly-imported competitor awards show up quickly
+  // for users who already had the page open. 60s is enough to survive
+  // a row-toggle storm but won't keep a stale shape around for long.
+  response.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=120");
   return response;
 }
