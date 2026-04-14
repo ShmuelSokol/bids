@@ -110,16 +110,25 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
   }
   if (!data) return null;
 
-  // Dedupe awards (same contract+date can appear twice)
+  // Defensive: filter null rows and coerce numeric fields. Old data
+  // can have null unit_price / quantity / cage which would crash render.
+  const awardsSafe = (data.awards || []).filter(Boolean);
   const seenAw = new Set<string>();
-  const awards = data.awards.filter((a) => {
-    const k = `${a.contract_number}_${a.award_date}`;
+  const awards = awardsSafe.filter((a) => {
+    const k = `${a?.contract_number || ""}_${a?.award_date || ""}`;
     if (seenAw.has(k)) return false;
     seenAw.add(k);
     return true;
   });
-  const totalAwardValue = awards.reduce((s, a) => s + (a.unit_price || 0) * (a.quantity || 1), 0);
-  const totalBidValue = data.bids.reduce((s, b) => s + (b.bid_price || 0) * (b.bid_qty || 1), 0);
+  const bidsSafe = (data.bids || []).filter(Boolean);
+  const totalAwardValue = awards.reduce(
+    (s, a) => s + (Number(a?.unit_price) || 0) * (Number(a?.quantity) || 1),
+    0
+  );
+  const totalBidValue = bidsSafe.reduce(
+    (s, b) => s + (Number(b?.bid_price) || 0) * (Number(b?.bid_qty) || 1),
+    0
+  );
 
   return (
     <div className="space-y-3">
@@ -221,17 +230,17 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
 
       {/* Competitor awards (other CAGE codes who won this NSN) */}
       {(() => {
-        const comps = data.competitor_awards || [];
+        const comps = (data.competitor_awards || []).filter(Boolean);
         // dedupe by contract_number+date+cage
         const seen = new Set<string>();
         const dedupComps = comps.filter((a) => {
-          const k = `${a.contract_number}_${a.award_date}_${a.cage}`;
+          const k = `${a?.contract_number || ""}_${a?.award_date || ""}_${a?.cage || ""}`;
           if (seen.has(k)) return false;
           seen.add(k);
           return true;
         });
         const compTotal = dedupComps.reduce(
-          (s, a) => s + (a.unit_price || 0) * (a.quantity || 1),
+          (s, a) => s + (Number(a?.unit_price) || 0) * (Number(a?.quantity) || 1),
           0
         );
         return (
@@ -262,20 +271,27 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {dedupComps.slice(0, 30).map((a, i) => (
-                      <tr key={i} className="border-t border-card-border/30">
-                        <td className="px-2 py-0.5 text-muted">{formatDateShort(a.award_date)}</td>
-                        <td className="px-2 py-0.5 font-mono text-[10px] text-orange-700">{a.cage?.trim()}</td>
-                        <td className="px-2 py-0.5 text-right font-mono">${a.unit_price?.toFixed(2)}</td>
-                        <td className="px-2 py-0.5 text-right">{a.quantity}</td>
-                        <td className="px-2 py-0.5 text-right font-mono">
-                          ${((a.unit_price || 0) * (a.quantity || 1)).toLocaleString()}
-                        </td>
-                        <td className="px-2 py-0.5 font-mono text-[9px] text-muted truncate max-w-[100px]">
-                          {a.contract_number?.trim() || "—"}
-                        </td>
-                      </tr>
-                    ))}
+                    {dedupComps.slice(0, 30).map((a, i) => {
+                      const price = Number(a?.unit_price);
+                      const qty = Number(a?.quantity) || 1;
+                      const total = (Number.isFinite(price) ? price : 0) * qty;
+                      return (
+                        <tr key={i} className="border-t border-card-border/30">
+                          <td className="px-2 py-0.5 text-muted">{formatDateShort(a?.award_date)}</td>
+                          <td className="px-2 py-0.5 font-mono text-[10px] text-orange-700">{a?.cage?.trim() || "—"}</td>
+                          <td className="px-2 py-0.5 text-right font-mono">
+                            {Number.isFinite(price) ? `$${price.toFixed(2)}` : "—"}
+                          </td>
+                          <td className="px-2 py-0.5 text-right">{a?.quantity ?? "—"}</td>
+                          <td className="px-2 py-0.5 text-right font-mono">
+                            ${total.toLocaleString()}
+                          </td>
+                          <td className="px-2 py-0.5 font-mono text-[9px] text-muted truncate max-w-[100px]">
+                            {a?.contract_number?.trim() || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
