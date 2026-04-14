@@ -12,6 +12,7 @@ for %%T in (
     "DIBS - Shipping Sync"
     "DIBS - Daily Briefing"
     "DIBS - Competitor Awards Scrape"
+    "DIBS - Competitor Awards Import"
 ) do (
     schtasks /delete /tn %%T /f
 )

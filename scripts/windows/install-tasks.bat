@@ -122,14 +122,13 @@ schtasks /create /tn "DIBS - Daily Briefing" ^
 echo.
 
 REM -----------------------------------------------------------------------
-REM Competitor awards scrape — 6:00am daily. Loops over every active
-REM sourceable NSN and scrapes DIBBS' Awards page to populate competitor
-REM CAGEs in the awards table. Skips NSNs we already scraped in the
-REM last 7 days. Runs locally because Railway can't reach DIBBS.
+REM Competitor awards import — 5:00am daily. Pulls kc4_tab from LamLinks
+REM (one SQL query, much faster than scraping DIBBS). Includes both our
+REM own wins and competitor wins; data_source tags which is which.
 REM -----------------------------------------------------------------------
-schtasks /create /tn "DIBS - Competitor Awards Scrape" ^
-    /tr "cmd /c \"\"%DISPATCHER%\" scrape-competitor-awards\"" ^
-    /sc daily /st 06:00 ^
+schtasks /create /tn "DIBS - Competitor Awards Import" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" import-lamlinks-competitor-awards\"" ^
+    /sc daily /st 05:00 ^
     /ru "%RUN_AS_USER%" /it /f
 echo.
 
