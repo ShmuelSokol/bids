@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase-server";
 
+const DEFAULT_MAX_ATTEMPTS = 3;
+
 /**
  * POST /api/jobs/seed?type=supplier_discovery
  *
@@ -116,10 +118,15 @@ export async function POST(req: NextRequest) {
       }));
   }
 
-  // Insert jobs in batches
+  // Insert jobs in batches. Default max_attempts to prevent infinite retry
+  // loops if the column is not set — the processor uses this to stop retrying
+  // a job after N failures. Without this default, failed jobs retry forever.
   let inserted = 0;
   for (let i = 0; i < jobs.length; i += 100) {
-    const batch = jobs.slice(i, i + 100);
+    const batch = jobs.slice(i, i + 100).map((j) => ({
+      ...j,
+      max_attempts: j.max_attempts ?? DEFAULT_MAX_ATTEMPTS,
+    }));
     const { error } = await supabase.from("job_queue").insert(batch);
     if (!error) inserted += batch.length;
   }

@@ -31,7 +31,11 @@ async function main() {
 
   await pool.close();
 
-  // Transform and save to Supabase
+  // Transform and save to Supabase.
+  // Note on upsert key (ship_number, contract_number, clin): Supabase (Postgres)
+  // treats NULLs as distinct in unique constraints, which would silently
+  // duplicate any shipment with a missing CLIN. Coerce missing values to
+  // empty strings so the dedup actually catches repeat syncs.
   const shipments = result.recordset.map((r: any) => ({
     ship_number: r.ship_number?.trim() || "",
     ship_status: r.ship_status?.trim() || "",
@@ -44,7 +48,7 @@ async function main() {
     quantity: r.qty || 0,
     sell_value: r.value || 0,
     job_status: r.job_status?.trim() || "",
-    clin: r.clin?.trim() || "",
+    clin: r.clin?.trim() || "", // empty string, not null — keeps upsert dedup sane
     fob: r.fob?.trim() || "",
     required_delivery: r.required_delivery,
     contract_number: r.contract?.trim() || "",

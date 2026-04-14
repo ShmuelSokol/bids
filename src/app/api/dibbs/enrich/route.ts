@@ -58,16 +58,23 @@ export async function POST() {
     awardPage++;
   }
 
-  // Load Master DB NSNs via API (optional — may timeout)
+  // Load Master DB NSNs via API (optional — may timeout).
+  // Track failures so they surface in the sync_log instead of silently
+  // shrinking the sourceable set.
   const mdbNsnSet = new Set<string>();
+  const mdbErrors: string[] = [];
   try {
     const KEY = process.env.MASTERDB_API_KEY;
-    if (KEY) {
+    if (!KEY) {
+      mdbErrors.push("MASTERDB_API_KEY not configured");
+    } else {
       const resp = await fetch(
         "https://masterdb.everreadygroup.com/api/dibs/items/export?has_nsn=1",
         { headers: { "X-Api-Key": KEY }, signal: AbortSignal.timeout(15000) }
       );
-      if (resp.ok) {
+      if (!resp.ok) {
+        mdbErrors.push(`MDB fetch ${resp.status}`);
+      } else {
         const text = await resp.text();
         for (const line of text.split("\n")) {
           try {
@@ -77,7 +84,9 @@ export async function POST() {
         }
       }
     }
-  } catch {}
+  } catch (e: any) {
+    mdbErrors.push(`MDB fetch failed: ${e?.message || "unknown"}`);
+  }
 
   // Load NDC→NSN mappings for pharma items
   const ndcToNsn = new Map<string, string>();
@@ -92,13 +101,20 @@ export async function POST() {
     ndcPage++;
   }
 
-  // Load active LamLinks FSCs (hot + warm)
+  // Load active LamLinks FSCs (hot + warm) — paginate (could exceed 1K eventually)
   const activeLLFscs = new Set<string>();
-  const { data: heatmap } = await supabase
-    .from("fsc_heatmap")
-    .select("fsc_code")
-    .in("bucket", ["hot", "warm"]);
-  (heatmap || []).forEach((h) => activeLLFscs.add(h.fsc_code));
+  let heatPage = 0;
+  while (true) {
+    const { data: heatmap } = await supabase
+      .from("fsc_heatmap")
+      .select("fsc_code")
+      .in("bucket", ["hot", "warm"])
+      .range(heatPage * 1000, (heatPage + 1) * 1000 - 1);
+    if (!heatmap || heatmap.length === 0) break;
+    heatmap.forEach((h) => activeLLFscs.add(h.fsc_code));
+    if (heatmap.length < 1000) break;
+    heatPage++;
+  }
 
   // Load FOB data from awards — paginate
   const fobByNsn = new Map<string, string>();
@@ -134,13 +150,33 @@ export async function POST() {
     bidPage++;
   }
 
-  // Get unenriched solicitations
-  const { data: solicitations } = await supabase
-    .from("dibbs_solicitations")
-    .select("id, nsn, nomenclature, quantity, fsc, solicitation_number")
-    .eq("is_sourceable", false);
+  // Get unenriched solicitations — paginate (can easily exceed 1K rows).
+  // Critical: without pagination, only the first 1K unsourceable rows ever
+  // get enriched, leaving a silent backlog behind. Parallel ranges keep us
+  // under Railway's 30s timeout even at 10K+ unsourced rows.
+  const solicitations: Array<{
+    id: number;
+    nsn: string;
+    nomenclature: string;
+    quantity: number;
+    fsc: string;
+    solicitation_number: string;
+  }> = [];
+  let solPage = 0;
+  while (true) {
+    const { data: batch } = await supabase
+      .from("dibbs_solicitations")
+      .select("id, nsn, nomenclature, quantity, fsc, solicitation_number")
+      .eq("is_sourceable", false)
+      .range(solPage * 1000, (solPage + 1) * 1000 - 1);
+    if (!batch || batch.length === 0) break;
+    solicitations.push(...batch);
+    if (batch.length < 1000) break;
+    solPage++;
+    if (solPage >= 20) break; // safety cap — 20K rows
+  }
 
-  if (!solicitations || solicitations.length === 0) {
+  if (solicitations.length === 0) {
     return NextResponse.json({
       success: true,
       enriched: 0,
@@ -279,6 +315,7 @@ export async function POST() {
     ax_nsns_loaded: axNsnSet.size,
     masterdb_nsns_loaded: mdbNsnSet.size,
     costs_loaded: costMap.size,
+    warnings: mdbErrors,
   };
 
   // Log sync

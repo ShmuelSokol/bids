@@ -50,6 +50,7 @@ export async function POST() {
       jobs.push({
         job_type: "usaspending_awards",
         payload: { fsc, start: month.start, end: month.end },
+        max_attempts: 3,
       });
     }
   }

@@ -231,6 +231,18 @@ export async function POST() {
   const supabase = createServiceClient();
   const startTime = Date.now();
 
+  // Recover stuck jobs: anything in "processing" for >1 hour is abandoned
+  // (worker crashed mid-job or the process was killed). Flip back to pending
+  // so the retry counter can eventually exhaust max_attempts.
+  const stuckCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { data: stuck } = await supabase
+    .from("job_queue")
+    .update({ status: "pending", error_message: "Recovered from stuck processing" })
+    .eq("status", "processing")
+    .lt("started_at", stuckCutoff)
+    .select("id");
+  const recoveredStuck = stuck?.length || 0;
+
   // Claim jobs with fair rotation across types — 1 of each type per batch
   const jobTypes = ["supplier_discovery", "usaspending_awards", "nsn_crawl", "award_lookup"];
   const allJobs: any[] = [];
@@ -247,7 +259,11 @@ export async function POST() {
   const jobs = allJobs.slice(0, BATCH_SIZE);
 
   if (!jobs || jobs.length === 0) {
-    return NextResponse.json({ processed: 0, message: "No pending jobs" });
+    return NextResponse.json({
+      processed: 0,
+      recovered_stuck: recoveredStuck,
+      message: "No pending jobs",
+    });
   }
 
   // Mark as processing
@@ -291,10 +307,14 @@ export async function POST() {
       results.push({ id: job.id, status: "done", result });
     } catch (err: any) {
       const attempts = (job.attempts || 0) + 1;
+      // Default max_attempts to 3 if the column is null — prevents infinite
+      // retry loops on legacy rows inserted before the seed route set the
+      // default. Legitimate jobs get 3 chances, then land in "failed".
+      const maxAttempts = job.max_attempts ?? 3;
       await supabase
         .from("job_queue")
         .update({
-          status: attempts >= job.max_attempts ? "failed" : "pending",
+          status: attempts >= maxAttempts ? "failed" : "pending",
           attempts,
           error_message: err.message,
         })
@@ -312,6 +332,7 @@ export async function POST() {
     processed: results.length,
     done: results.filter((r) => r.status === "done").length,
     errors: results.filter((r) => r.status === "error").length,
+    recovered_stuck: recoveredStuck,
     elapsed_seconds: parseFloat(elapsed),
   });
 }
