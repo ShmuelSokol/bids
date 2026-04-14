@@ -5,7 +5,7 @@
  * Run locally every 5 min via Windows Task Scheduler:
  *   npx tsx scripts/sync-abe-bids-live.ts
  */
-import "dotenv/config";
+import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
 

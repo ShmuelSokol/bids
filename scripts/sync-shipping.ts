@@ -2,7 +2,7 @@
  * Sync shipment data from LamLinks → Supabase for the shipping page.
  * Run locally: npx tsx scripts/sync-shipping.ts
  */
-import "dotenv/config";
+import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "fs";

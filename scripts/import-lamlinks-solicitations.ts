@@ -7,7 +7,7 @@
  * Run locally (requires Windows Auth to NYEVRVSQL001):
  *   npx tsx scripts/import-lamlinks-solicitations.ts
  */
-import "dotenv/config";
+import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
 

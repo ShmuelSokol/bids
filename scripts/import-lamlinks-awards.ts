@@ -4,7 +4,7 @@
  *
  * Run locally: npx tsx scripts/import-lamlinks-awards.ts
  */
-import "dotenv/config";
+import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
 
