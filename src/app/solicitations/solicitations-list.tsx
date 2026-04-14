@@ -20,6 +20,7 @@ import { trackAction } from "@/components/activity-tracker";
 import { calculateBidScore, type BidScore } from "@/lib/bid-score";
 import { formatDateShort, formatDateTime, formatTime } from "@/lib/dates";
 import { isOpenSolicitation } from "@/lib/solicitation-filters";
+import { NsnHistoryDetail } from "@/components/nsn-history-detail";
 
 interface Solicitation {
   id: number;
@@ -1480,85 +1481,10 @@ export function SolicitationsList({
                               );
                             })()}
 
-                            {/* Award History + Our Bids — two clean tables side by side */}
-                            {loadingHistory === s.nsn ? (
-                              <div className="text-center py-4 text-muted text-xs">Loading history...</div>
-                            ) : (
-                            <div className="grid md:grid-cols-2 gap-3">
-                              {/* Our Awards (won contracts) — sortable */}
-                              {(() => {
-                                const seen = new Set<string>();
-                                const deduped = history.filter(h => { const k = `${h.contract_number}_${h.award_date}`; if (seen.has(k)) return false; seen.add(k); return true; });
-                                const totalAwardValue = deduped.reduce((s, h) => s + (h.unit_price || 0) * (h.quantity || 1), 0);
-                                return (
-                              <div>
-                                <div className="text-xs font-bold text-green-700 mb-1 flex items-center justify-between">
-                                  <span>Our Awards ({deduped.length})</span>
-                                  {totalAwardValue > 0 && <span className="font-mono">${totalAwardValue.toLocaleString()}</span>}
-                                </div>
-                                <div className="max-h-48 overflow-auto">
-                                  <table className="w-full text-xs">
-                                    <thead><tr className="text-muted">
-                                      <th className="text-left py-0.5 cursor-pointer hover:text-accent">Date</th>
-                                      <th className="text-right py-0.5 cursor-pointer hover:text-accent">Price</th>
-                                      <th className="text-right py-0.5 cursor-pointer hover:text-accent">Qty</th>
-                                      <th className="text-right py-0.5">Total</th>
-                                      <th className="text-left py-0.5">Contract</th>
-                                    </tr></thead>
-                                    <tbody>
-                                      {deduped.slice(0, 30).map((h, i) => (
-                                          <tr key={`aw-${i}`} className="border-t border-card-border/30">
-                                            <td className="py-0.5 text-muted">{formatDateShort(h.award_date)}</td>
-                                            <td className="py-0.5 text-right font-mono text-green-700">${h.unit_price?.toFixed(2)}</td>
-                                            <td className="py-0.5 text-right">{h.quantity}</td>
-                                            <td className="py-0.5 text-right font-mono font-medium">${((h.unit_price || 0) * (h.quantity || 1)).toLocaleString()}</td>
-                                            <td className="py-0.5 font-mono text-[9px] text-muted truncate max-w-[100px]">{h.contract_number?.trim() || "—"}</td>
-                                          </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                                {history.length === 0 && <p className="text-xs text-muted">No awards on record</p>}
-                              </div>
-                                );
-                              })()}
-                              {/* Our Bids */}
-                              {(() => {
-                                const totalBidValue = abeBids.reduce((s, b) => s + (b.bid_price || 0) * (b.bid_qty || 1), 0);
-                                return (
-                              <div>
-                                <div className="text-xs font-bold text-blue-700 mb-1 flex items-center justify-between">
-                                  <span>Our Bids ({abeBids.length})</span>
-                                  {totalBidValue > 0 && <span className="font-mono">${totalBidValue.toLocaleString()}</span>}
-                                </div>
-                                <div className="max-h-48 overflow-auto">
-                                  <table className="w-full text-xs">
-                                    <thead><tr className="text-muted">
-                                      <th className="text-left py-0.5">Date</th>
-                                      <th className="text-right py-0.5">Price</th>
-                                      <th className="text-right py-0.5">Qty</th>
-                                      <th className="text-right py-0.5">Total</th>
-                                      <th className="text-right py-0.5">Lead</th>
-                                    </tr></thead>
-                                    <tbody>
-                                      {abeBids.slice(0, 20).map((b, i) => (
-                                        <tr key={`bid-${i}`} className="border-t border-card-border/30">
-                                          <td className="py-0.5 text-muted">{formatDateShort(b.bid_date)}</td>
-                                          <td className="py-0.5 text-right font-mono text-blue-700">${b.bid_price?.toFixed(2)}</td>
-                                          <td className="py-0.5 text-right">{b.bid_qty}</td>
-                                          <td className="py-0.5 text-right font-mono">${((b.bid_price || 0) * (b.bid_qty || 1)).toLocaleString()}</td>
-                                          <td className="py-0.5 text-right text-muted">{b.lead_time_days}d</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                                {abeBids.length === 0 && <p className="text-xs text-muted">No bids on record</p>}
-                              </div>
-                                );
-                              })()}
-                            </div>
-                            )}
+                            {/* History (Our Awards / Competitor Awards / Our Bids / P/N matches)
+                                — same shared component used on /bids/today so both
+                                pages always render the same data layout. */}
+                            <NsnHistoryDetail nsn={s.nsn} />
                           </div>
                         </td>
                       </tr>
