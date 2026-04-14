@@ -252,6 +252,12 @@ export default async function Dashboard() {
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{data.todayBids.length} bids</span>
               <span className="text-xs text-blue-600">${data.todayBidValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} total value</span>
             </div>
+            <Link
+              href="/bids/today"
+              className="text-sm text-accent hover:text-accent-hover font-medium"
+            >
+              View All →
+            </Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -288,9 +294,12 @@ export default async function Dashboard() {
             </table>
           </div>
           {data.todayBids.length > 20 && (
-            <div className="px-4 py-2 border-t border-blue-200 text-xs text-blue-600">
-              Showing 20 of {data.todayBids.length} bids
-            </div>
+            <Link
+              href="/bids/today"
+              className="block px-4 py-2 border-t border-blue-200 text-xs text-blue-600 hover:bg-blue-50 text-center font-medium"
+            >
+              Showing 20 of {data.todayBids.length} bids · View all →
+            </Link>
           )}
         </div>
       )}

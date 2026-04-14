@@ -184,25 +184,37 @@ async function main() {
   console.log(`Competitor intel on ${competitorsByNsn.size} NSNs`);
 
   // Auto-trigger enrichment so the new rows actually get NSN-matched
-  // and priced. Without this, every imported solicitation lands as
-  // is_sourceable=false and never appears on the dashboard until
-  // someone manually hits /api/dibbs/enrich.
+  // and priced. Each enrich call processes up to 5K unsourced rows
+  // (Railway 30s timeout). Loop until the backlog drains, max 8 calls
+  // (40K rows) so the script doesn't spin forever.
   const RAILWAY_URL = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : "https://dibs-gov-production.up.railway.app";
-  console.log(`\nTriggering enrichment at ${RAILWAY_URL}/api/dibbs/enrich ...`);
-  try {
-    const resp = await fetch(`${RAILWAY_URL}/api/dibbs/enrich`, { method: "POST" });
-    const body: any = await resp.json().catch(() => ({}));
-    if (resp.ok) {
-      console.log(`  Enrich: ${body.sourceable || 0} sourceable, ${body.with_cost_data || 0} with cost, ${body.already_bid || 0} already bid (of ${body.total_checked || 0} checked)`);
-      if (body.warnings?.length) console.warn(`  Warnings: ${body.warnings.join(", ")}`);
-    } else {
-      console.warn(`  Enrich HTTP ${resp.status}: ${JSON.stringify(body).slice(0, 200)}`);
+  console.log(`\nChaining enrichment at ${RAILWAY_URL}/api/dibbs/enrich until backlog drains ...`);
+  let totalSourceable = 0;
+  let totalChecked = 0;
+  let totalCost = 0;
+  for (let i = 0; i < 8; i++) {
+    try {
+      const resp = await fetch(`${RAILWAY_URL}/api/dibbs/enrich`, { method: "POST" });
+      const body: any = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        console.warn(`  Enrich HTTP ${resp.status}: ${JSON.stringify(body).slice(0, 200)}`);
+        break;
+      }
+      totalSourceable += body.sourceable || 0;
+      totalChecked += body.total_checked || 0;
+      totalCost += body.with_cost_data || 0;
+      const remaining = body.remaining_unsourced || 0;
+      console.log(`  call ${i + 1}: ${body.sourceable || 0} new sourceable (of ${body.total_checked || 0} checked), ${remaining} still unsourced`);
+      if (body.warnings?.length) console.warn(`    warnings: ${body.warnings.join(", ")}`);
+      if (remaining === 0 || (body.total_checked || 0) === 0) break;
+    } catch (e: any) {
+      console.warn(`  Enrich failed: ${e?.message || "unknown"}`);
+      break;
     }
-  } catch (e: any) {
-    console.warn(`  Enrich failed: ${e?.message || "unknown"}`);
   }
+  console.log(`Enrich totals: ${totalSourceable} marked sourceable across ${totalChecked} rows checked (${totalCost} got cost data)`);
 }
 
 main().catch(console.error);

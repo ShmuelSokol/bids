@@ -6,7 +6,8 @@ Abe's daily loop. Solicitations arrive, get reviewed, priced, and submitted.
 
 | Path | Who | Purpose |
 |------|-----|---------|
-| `/` (dashboard) | Abe | Overview + "Top Sourceable by Value" + Abe's bids today. Links to `/solicitations?filter=sourceable`. |
+| `/` (dashboard) | Abe | Overview + "Top Sourceable by Value" + Abe's bids today (top 20). Links to `/solicitations?filter=sourceable` and `/bids/today`. |
+| `/bids/today` | Abe | Full sortable, filterable view of all of Abe's live bids from LamLinks today (often 600+). Loads from `abe_bids_live` filtered to today. |
 | `/solicitations` | Abe | Main working list. Default filter = `sourceable`. |
 | `/solicitations?filter=<X>` | Abe | Filters by state: `sourceable`, `quoted`, `submitted`, `skipped`, `already_bid`, `all_unsourced`, `ll_active`, `dibbs_only`, `expired`, `all`. |
 | `/solicitations?sort=<X>` | Abe | Sorts: `score`, `value`, `margin`, `qty`, `due`. |

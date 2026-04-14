@@ -2,6 +2,40 @@
 
 Things that broke, how we noticed, and what we learned. If you're about to touch one of these areas, read the relevant section first or you'll repeat our mistakes.
 
+## Imports without enrich = silent zero
+
+> Symptom: 13K rows imported from LamLinks, dashboard "sourceable" count barely moved. Every NSN Abe was actually bidding on existed in `nsn_catalog` but DIBS marked all 624 of his bids as "unsourced."
+
+The LamLinks import script wrote rows with the default `is_sourceable=false`. The NSN matching that flips the flag lives in `/api/dibbs/enrich`. The DIBBS Railway scraper auto-chains to enrich when it finishes; the LamLinks import did NOT. So new rows landed in the database invisible until someone manually triggered enrichment.
+
+We figured this out by cross-referencing Abe's `abe_bids_live` rows against `dibbs_solicitations` and finding 100% of his real bids matched a row but 0% had `is_sourceable=true`.
+
+**Rule:** every script that adds rows to `dibbs_solicitations` must call `/api/dibbs/enrich` afterwards. Otherwise its work is invisible to users. Same pattern as `import-lamlinks-awards.ts` calling `/api/dibbs/reprice` at the end — chain mutations to their downstream side effects, don't rely on a separate cron to clean up.
+
+## LamLinks import was pulling expired solicitations
+
+> Symptom: After the import landed, the dashboard had 4,159 sourceable but only 11 open. 99% expired.
+
+The script's WHERE clause was `closes_k10 >= DATEADD(day, -30, GETDATE())` — i.e., anything that closed in the last 30 days OR the future. Most LamLinks rows have short bid windows (3-7 days), so by the time we imported them most were already past due.
+
+**Fix:** changed to `closes_k10 >= CAST(GETDATE() AS DATE)` — only future-closing solicitations. Reduced import volume by ~10x and made sourceable counts meaningful.
+
+## The Windows scheduler / RDP session trap
+
+> Symptom: `schtasks /create` showed SUCCESS for 6 tasks. Manual runs worked. Cron fired. Logs showed exit code 1 with no log file written.
+
+Three problems compounded:
+
+1. `schtasks /create` without `/ru` registers the task to run as the current logged-on user. The current user was an elevated `Administrator` shell, but the actual interactive desktop session belonged to `ssokol` (RDP'd in). Tasks were configured to run as Administrator who had no live session, so they queued forever.
+2. `schtasks` invokes `.bat` files DIRECTLY (not through `cmd.exe`). The dispatcher's `setlocal`/`set` lines fail in that context. Wrap with `cmd /c "..."` to force cmd parsing.
+3. The `dotenv` and `mssql/msnodesqlv8` packages that scripts import can never live in `package.json` (they crash Railway). They have to be installed locally with `npm install --no-save`. A fresh node_modules on the office Windows box doesn't have them.
+
+**Final pattern** (all enforced by `scripts/windows/install-tasks.bat`):
+- `cmd /c "...dispatcher.bat" arg` — proper cmd wrapping
+- `/ru ERG\ssokol /it` — interactive-only tasks bound to the RDP user
+- Auto-runs `npm install --no-save mssql msnodesqlv8` before registering tasks
+- Custom `scripts/env.ts` replaces `dotenv/config` so the npm install isn't strictly required for env loading
+
 ## The DIBBS consent saga
 
 > Symptom: Every DIBBS scrape returned 0 items for days. The `count` field in `sync_log.details` was 0 across dozens of runs.

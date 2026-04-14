@@ -194,10 +194,11 @@ export async function POST() {
     bidPage++;
   }
 
-  // Get unenriched solicitations — paginate (can easily exceed 1K rows).
-  // Critical: without pagination, only the first 1K unsourceable rows ever
-  // get enriched, leaving a silent backlog behind. Parallel ranges keep us
-  // under Railway's 30s timeout even at 10K+ unsourced rows.
+  // Get unenriched solicitations. Cap the batch size to stay well under
+  // Railway's ~30s request timeout. With 17K+ rows we'd hit a 502; this
+  // way each call processes up to MAX_PAGES * 1000 rows and the caller
+  // can chain calls until `remaining` hits 0.
+  const MAX_PAGES = 5; // process up to 5,000 unsourced rows per call
   const solicitations: Array<{
     id: number;
     nsn: string;
@@ -207,7 +208,7 @@ export async function POST() {
     solicitation_number: string;
   }> = [];
   let solPage = 0;
-  while (true) {
+  while (solPage < MAX_PAGES) {
     const { data: batch } = await supabase
       .from("dibbs_solicitations")
       .select("id, nsn, nomenclature, quantity, fsc, solicitation_number")
@@ -217,8 +218,14 @@ export async function POST() {
     solicitations.push(...batch);
     if (batch.length < 1000) break;
     solPage++;
-    if (solPage >= 20) break; // safety cap — 20K rows
   }
+  // Quick count of how many unsourced rows still exist after this batch
+  // so the caller knows whether to call again.
+  const { count: stillUnsourced } = await supabase
+    .from("dibbs_solicitations")
+    .select("id", { count: "exact", head: true })
+    .eq("is_sourceable", false);
+  const remainingAfterThisCall = Math.max(0, (stillUnsourced || 0) - solicitations.length);
 
   if (solicitations.length === 0) {
     return NextResponse.json({
@@ -368,6 +375,7 @@ export async function POST() {
     ax_nsns_loaded: axNsnSet.size,
     masterdb_nsns_loaded: mdbNsnSet.size,
     costs_loaded: costMap.size,
+    remaining_unsourced: remainingAfterThisCall,
     warnings: mdbErrors,
   };
 
