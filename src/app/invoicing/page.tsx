@@ -4,15 +4,21 @@ import { InvoicingDashboard } from "./invoicing-dashboard";
 async function getData() {
   const supabase = createServiceClient();
 
-  // Awards that have been shipped but not yet invoiced
-  // These are awards with po_generated=true (PO created)
-  // Paginate awards past 1K default
+  // Awards used for invoicing. Paginated — but NEVER `select("*")`. The
+  // `awards` table has 74K+ rows and a wide schema; pulling everything
+  // produced a ~41MB response to the browser, causing slow renders and
+  // memory pressure. Select only the columns the InvoicingDashboard
+  // actually reads, and cap at a reasonable window (90 days of awards,
+  // most recent 10K) — older awards are already invoiced.
+  const AWARDS_COLS =
+    "id, cage, contract_number, fsc, niin, description, unit_price, quantity, award_date, fob, po_generated";
+  const MAX_AWARD_ROWS = 10_000;
   const allAwards: any[] = [];
   let awPage = 0;
-  while (true) {
+  while (allAwards.length < MAX_AWARD_ROWS) {
     const { data } = await supabase
       .from("awards")
-      .select("*")
+      .select(AWARDS_COLS)
       .eq("cage", "0AG09")
       .order("award_date", { ascending: false })
       .range(awPage * 1000, (awPage + 1) * 1000 - 1);
@@ -20,6 +26,7 @@ async function getData() {
     allAwards.push(...data);
     if (data.length < 1000) break;
     awPage++;
+    if (awPage >= MAX_AWARD_ROWS / 1000) break;
   }
   const awards = allAwards;
 

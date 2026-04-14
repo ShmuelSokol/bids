@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase-server";
+import { computeMarginPct } from "@/lib/margin";
 
 /**
  * POST /api/orders/switch-supplier
@@ -62,9 +63,7 @@ export async function POST(req: NextRequest) {
   const quantity = line.quantity || 0;
   const sellPrice = line.sell_price || 0;
   const newTotalCost = newUnitCost * quantity;
-  const newMarginPct = sellPrice > 0
-    ? Math.round(((sellPrice - newUnitCost) / sellPrice) * 100)
-    : 0;
+  const newMarginPct = computeMarginPct(sellPrice, newUnitCost) ?? 0;
 
   // Find or create PO for new supplier
   let { data: targetPo } = await supabase

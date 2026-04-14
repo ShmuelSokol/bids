@@ -18,6 +18,8 @@ import {
 import Link from "next/link";
 import { trackAction } from "@/components/activity-tracker";
 import { calculateBidScore, type BidScore } from "@/lib/bid-score";
+import { formatDateShort, formatDateTime, formatTime } from "@/lib/dates";
+import { isOpenSolicitation } from "@/lib/solicitation-filters";
 
 interface Solicitation {
   id: number;
@@ -171,21 +173,12 @@ export function SolicitationsList({
     } catch {} finally { setLoadingHistory(null); }
   }
 
-  // Compute counts client-side — MUST match isSourceableOpen() in lib/solicitation-filters.ts
+  // Compute counts client-side — uses the shared isOpenSolicitation() so
+  // dashboard, server-side counts, and this client all agree on dates.
   const counts = useMemo(() => {
-    const isOpen = (returnByDate: string | null | undefined) => {
-      if (!returnByDate) return true;
-      const todayStr = new Date().toISOString().split("T")[0];
-      const parts = returnByDate.split("-");
-      if (parts.length === 3 && parts[2].length === 4) {
-        const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
-        return isoDate >= todayStr;
-      }
-      return returnByDate >= todayStr;
-    };
     let sourceable = 0, quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0, llActive = 0, dibbsOnly = 0;
     for (const s of solicitations) {
-      const open = isOpen(s.return_by_date);
+      const open = isOpenSolicitation(s.return_by_date);
       if (s.data_source === "lamlinks" && open) llActive++;
       if (s.data_source !== "lamlinks" && open) dibbsOnly++;
       if (s.bid_status === "quoted") { quoted++; continue; }
@@ -224,7 +217,7 @@ export function SolicitationsList({
         const data = await res.json();
         if (data.running && !cancelled) {
           setScraping(true);
-          setMessage(`Sync in progress (started ${new Date(data.started_at).toLocaleTimeString()})... Waiting for completion.`);
+          setMessage(`Sync in progress (started ${formatTime(data.started_at)})... Waiting for completion.`);
           pollId = setInterval(async () => {
             try {
               const r = await fetch("/api/dibbs/sync-status");
@@ -414,28 +407,42 @@ export function SolicitationsList({
       const toSubmit = solicitations.filter(
         (s) => s.bid_status === "quoted" && selectedQuoted.has(s.id)
       );
-      for (const sol of toSubmit) {
-        await fetch("/api/bids/decide", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            solicitation_number: sol.solicitation_number,
-            nsn: sol.nsn,
-            status: "submitted",
-            final_price: sol.final_price,
-          }),
-        });
+      const pairs = toSubmit.map((s) => ({
+        solicitation_number: s.solicitation_number,
+        nsn: s.nsn,
+      }));
+      const res = await fetch("/api/bids/submit-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pairs }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${errText.slice(0, 200)}`);
       }
+      const result = await res.json();
+      const submittedKeys = new Set(
+        (result.skipped || []).map((s: any) => `${s.solicitation_number}__${s.nsn}`)
+      );
+      // Mark locally only rows that weren't skipped
       setSolicitations((prev) =>
-        prev.map((s) =>
-          selectedQuoted.has(s.id) && s.bid_status === "quoted"
-            ? { ...s, bid_status: "submitted" }
-            : s
-        )
+        prev.map((s) => {
+          if (!selectedQuoted.has(s.id) || s.bid_status !== "quoted") return s;
+          const key = `${s.solicitation_number}__${s.nsn}`;
+          if (submittedKeys.has(key)) return s; // skipped by server
+          return { ...s, bid_status: "submitted" };
+        })
       );
       setSelectedQuoted(new Set());
-      setMessage(`${toSubmit.length} bids submitted!`);
-    } catch {} finally { setSubmitting(false); }
+      const parts = [`${result.updated_count} bids submitted`];
+      if (result.skipped_count > 0) parts.push(`${result.skipped_count} skipped`);
+      setMessage(parts.join(" · "));
+    } catch (err: any) {
+      console.error("Submit batch failed:", err);
+      setMessage(`Submit failed: ${err?.message || "unknown error"}`);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function handleSort(field: SortField) {
@@ -445,18 +452,9 @@ export function SolicitationsList({
 
   const filtered = useMemo(() => {
     let items = solicitations.filter((s) => {
-      // Parse return_by_date — use string comparison to avoid timezone issues
-      const isOpen = (() => {
-        if (!s.return_by_date) return true;
-        const todayStr = new Date().toISOString().split("T")[0];
-        const parts = s.return_by_date.split("-");
-        if (parts.length === 3 && parts[2].length === 4) {
-          // MM-DD-YYYY → YYYY-MM-DD
-          const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
-          return isoDate >= todayStr;
-        }
-        return s.return_by_date >= todayStr;
-      })();
+      // Single source of truth for "is this sol still open" — same helper
+      // the dashboard and server-side counts use. Don't re-implement.
+      const isOpen = isOpenSolicitation(s.return_by_date);
 
       if (filter === "sourceable") return s.is_sourceable && !s.bid_status && !s.already_bid && isOpen;
       if (filter === "new_only") return s.is_sourceable && !s.bid_status && !s.already_bid && isOpen;
@@ -715,7 +713,7 @@ export function SolicitationsList({
           <div className="text-[10px] text-muted text-right">
             {lastSync && (
               <>
-                <div>Last sync: {new Date(lastSync.created_at).toLocaleString()}</div>
+                <div>Last sync: {formatDateTime(lastSync.created_at)}</div>
                 <div>
                   {lastSync.details?.sourceable && `${lastSync.details.sourceable} sourceable`}
                   {lastSync.details?.already_bid && ` · ${lastSync.details.already_bid} already bid`}
@@ -930,7 +928,7 @@ export function SolicitationsList({
                             )}
                             <div className="text-xs truncate max-w-[180px]">{s.nomenclature || "—"}</div>
                             {s.already_bid && (
-                              <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium" title={`Last bid: $${s.last_bid_price?.toFixed(2)} on ${s.last_bid_date ? new Date(s.last_bid_date).toLocaleDateString() : '?'}`}>
+                              <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium" title={`Last bid: $${s.last_bid_price?.toFixed(2)} on ${formatDateShort(s.last_bid_date)}`}>
                                 Bid in LL ${s.last_bid_price ? `@$${s.last_bid_price.toFixed(2)}` : ''}
                               </span>
                             )}
@@ -1115,7 +1113,7 @@ export function SolicitationsList({
                                   <tbody>
                                     {abeBids.slice(0, 8).map((b, i) => (
                                       <tr key={i} className="border-t border-card-border/50">
-                                        <td className="py-1 text-muted">{b.bid_date ? new Date(b.bid_date).toLocaleDateString() : "—"}</td>
+                                        <td className="py-1 text-muted">{formatDateShort(b.bid_date)}</td>
                                         <td className="py-1 text-right font-mono font-medium text-green-700">${b.bid_price?.toFixed(2)}</td>
                                         <td className="py-1 text-right">{b.lead_time_days}d</td>
                                         <td className="py-1 text-right">{b.bid_qty}</td>
@@ -1147,7 +1145,7 @@ export function SolicitationsList({
                                   <tbody>
                                     {history.slice(0, 8).map((h, i) => (
                                       <tr key={i} className="border-t border-card-border/50">
-                                        <td className="py-1 text-muted">{h.award_date ? new Date(h.award_date).toLocaleDateString() : "—"}</td>
+                                        <td className="py-1 text-muted">{formatDateShort(h.award_date)}</td>
                                         <td className="py-1 text-right font-mono font-medium text-blue-700">${h.unit_price?.toFixed(2)}</td>
                                         <td className="py-1 text-right">{h.quantity}</td>
                                         <td className="py-1 font-mono text-xs">{h.cage?.trim() || "—"}</td>
@@ -1357,7 +1355,7 @@ export function SolicitationsList({
                                     <tbody>
                                       {deduped.slice(0, 30).map((h, i) => (
                                           <tr key={`aw-${i}`} className="border-t border-card-border/30">
-                                            <td className="py-0.5 text-muted">{h.award_date ? new Date(h.award_date).toLocaleDateString() : "—"}</td>
+                                            <td className="py-0.5 text-muted">{formatDateShort(h.award_date)}</td>
                                             <td className="py-0.5 text-right font-mono text-green-700">${h.unit_price?.toFixed(2)}</td>
                                             <td className="py-0.5 text-right">{h.quantity}</td>
                                             <td className="py-0.5 text-right font-mono font-medium">${((h.unit_price || 0) * (h.quantity || 1)).toLocaleString()}</td>
@@ -1392,7 +1390,7 @@ export function SolicitationsList({
                                     <tbody>
                                       {abeBids.slice(0, 20).map((b, i) => (
                                         <tr key={`bid-${i}`} className="border-t border-card-border/30">
-                                          <td className="py-0.5 text-muted">{b.bid_date ? new Date(b.bid_date).toLocaleDateString() : "—"}</td>
+                                          <td className="py-0.5 text-muted">{formatDateShort(b.bid_date)}</td>
                                           <td className="py-0.5 text-right font-mono text-blue-700">${b.bid_price?.toFixed(2)}</td>
                                           <td className="py-0.5 text-right">{b.bid_qty}</td>
                                           <td className="py-0.5 text-right font-mono">${((b.bid_price || 0) * (b.bid_qty || 1)).toLocaleString()}</td>

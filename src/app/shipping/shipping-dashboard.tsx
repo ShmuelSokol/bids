@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { Truck, Package, MapPin, Clock, ChevronLeft, Search } from "lucide-react";
 import Link from "next/link";
+import { formatDateShort, formatDateTime } from "@/lib/dates";
 
 interface Shipment {
   id: number;
@@ -112,7 +113,7 @@ export function ShippingDashboard({
           <h1 className="text-2xl font-bold">Shipping</h1>
           <p className="text-muted mt-1 text-sm">
             {shipments.length} shipments loaded from LamLinks
-            {lastSync && <span className="ml-2 text-[10px]">Last sync: {new Date(lastSync).toLocaleString()}</span>}
+            {lastSync && <span className="ml-2 text-[10px]">Last sync: {formatDateTime(lastSync)}</span>}
           </p>
         </div>
       </div>
@@ -232,7 +233,7 @@ export function ShippingDashboard({
                   <td className="px-3 py-2 text-muted">{s.weight_lbs} lbs</td>
                   <td className="px-3 py-2 text-muted text-[10px]">{s.transport_mode || "—"}</td>
                   <td className="px-3 py-2 font-mono text-[10px]">{s.tracking_number || "—"}</td>
-                  <td className="px-3 py-2 text-muted">{s.ship_date ? new Date(s.ship_date).toLocaleDateString() : "—"}</td>
+                  <td className="px-3 py-2 text-muted">{formatDateShort(s.ship_date)}</td>
                   <td className="px-3 py-2">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${getStatusColor(s.ship_status)}`}>
                       {s.ship_status}

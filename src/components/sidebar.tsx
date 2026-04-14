@@ -22,7 +22,6 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Solicitations", href: "/solicitations", icon: FileSearch },
   { name: "Orders", href: "/orders", icon: ShoppingCart },
-  { name: "Purchase Orders", href: "/purchase-orders", icon: Package },
   { name: "Shipping", href: "/shipping", icon: Truck },
   { name: "Invoicing", href: "/invoicing", icon: Receipt },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },

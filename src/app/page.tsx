@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase-server";
 import { isSourceableOpen, buildFilterContext } from "@/lib/solicitation-filters";
+import { formatTime } from "@/lib/dates";
 import Link from "next/link";
 import {
   Zap,
@@ -269,7 +270,7 @@ export default async function Dashboard() {
               <tbody>
                 {data.todayBids.slice(0, 20).map((b: any, i: number) => (
                   <tr key={i} className="border-b border-blue-100 last:border-0 hover:bg-blue-50">
-                    <td className="px-4 py-1.5 text-xs text-muted">{b.bid_time ? new Date(b.bid_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}</td>
+                    <td className="px-4 py-1.5 text-xs text-muted">{formatTime(b.bid_time)}</td>
                     <td className="px-4 py-1.5 font-mono text-xs text-accent">{b.nsn || "—"}</td>
                     <td className="px-4 py-1.5 text-xs truncate max-w-[200px]">{b.item_desc || "—"}</td>
                     <td className="px-4 py-1.5 text-right font-mono text-xs">${(b.bid_price || 0).toFixed(2)}</td>

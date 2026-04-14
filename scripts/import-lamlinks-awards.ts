@@ -100,6 +100,25 @@ async function main() {
     action: "lamlinks_awards_import",
     details: { total_raw: rawAwards.length, saved },
   });
+
+  // Auto-trigger reprice: newly imported wins become the "last winning bid"
+  // for their NSN. Without this the sourceable-item prices stay stale until
+  // someone manually hits the reprice endpoint.
+  const RAILWAY_URL = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : "https://dibs-gov-production.up.railway.app";
+  console.log(`\nTriggering reprice at ${RAILWAY_URL}/api/dibbs/reprice ...`);
+  try {
+    const resp = await fetch(`${RAILWAY_URL}/api/dibbs/reprice`, { method: "POST" });
+    const body: any = await resp.json().catch(() => ({}));
+    if (resp.ok) {
+      console.log(`  Reprice: ${body.updated || 0} updated, ${body.skipped || 0} skipped`);
+    } else {
+      console.warn(`  Reprice HTTP ${resp.status}: ${JSON.stringify(body).slice(0, 200)}`);
+    }
+  } catch (e: any) {
+    console.warn(`  Reprice failed: ${e?.message || "unknown"}`);
+  }
 }
 
 main().catch(console.error);

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { trackAction } from "@/components/activity-tracker";
+import { formatDateShort, formatDateTime } from "@/lib/dates";
 
 interface Award {
   id: number;
@@ -423,7 +424,7 @@ export function InvoicingDashboard({
                     <span className="font-mono font-bold text-accent">{a.govInvoice}</span>
                     {a.lineIdx > 0 && <span className="ml-1 text-[9px] text-orange-600">({String.fromCharCode(64 + a.lineIdx)})</span>}
                   </td>
-                  <td className="px-3 py-2 text-muted">{a.award_date ? new Date(a.award_date).toLocaleDateString() : "—"}</td>
+                  <td className="px-3 py-2 text-muted">{formatDateShort(a.award_date)}</td>
                   <td className="px-3 py-2 font-mono text-[10px]">{a.cage || "—"}</td>
                 </tr>
               ))}
@@ -471,7 +472,7 @@ export function InvoicingDashboard({
                       <td className="px-3 py-2 font-mono text-[10px]">{b.solicitation_number}</td>
                       <td className="px-3 py-2 font-mono text-[10px] text-accent">{b.nsn}</td>
                       <td className="px-3 py-2 text-right font-mono">${(b.final_price || 0).toFixed(2)}</td>
-                      <td className="px-3 py-2 text-muted">{b.updated_at ? new Date(b.updated_at).toLocaleDateString() : "—"}</td>
+                      <td className="px-3 py-2 text-muted">{formatDateShort(b.updated_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -522,7 +523,7 @@ export function InvoicingDashboard({
 
             {lastInvoiceSync && (
               <div className="text-[10px] text-muted">
-                Last EDI generated: {new Date(lastInvoiceSync.created_at).toLocaleString()}
+                Last EDI generated: {formatDateTime(lastInvoiceSync.created_at)}
               </div>
             )}
           </div>

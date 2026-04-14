@@ -158,13 +158,23 @@ async function handleUsaspendingAwards(payload: any, supabase: any): Promise<any
   const { fsc, start, end } = payload;
   if (!fsc || !start || !end) throw new Error("Missing fsc, start, or end");
 
+  // USASpending's PSC code filter expects an exact 4-digit Federal Supply
+  // Class string. If `fsc` comes in with whitespace, a prefix like "FSC-",
+  // or leading zeros stripped, the API returns 0 results silently. Normalize
+  // and validate here so the queue row fails loudly instead of marking
+  // itself "done, 0 awards" and hiding the problem.
+  const normalizedFsc = String(fsc).trim().replace(/^FSC[-: ]/i, "").padStart(4, "0");
+  if (!/^\d{4}$/.test(normalizedFsc)) {
+    throw new Error(`Invalid FSC for USASpending query: "${fsc}" (must be 4 digits)`);
+  }
+
   // Query USASpending API for DLA awards in this FSC + date range
   const body = {
     filters: {
       agencies: [{ type: "awarding", tier: "subtier", name: "Defense Logistics Agency" }],
       award_type_codes: ["A", "B", "C", "D"],
       time_period: [{ start_date: start, end_date: end }],
-      psc_codes: [fsc],
+      psc_codes: [normalizedFsc],
     },
     fields: [
       "Award ID", "Recipient Name", "Recipient DUNS", "Award Amount",

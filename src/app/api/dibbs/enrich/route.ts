@@ -9,6 +9,50 @@ import { createServiceClient } from "@/lib/supabase-server";
  * All data comes from Supabase — no local file reads. Works on Railway.
  */
 
+/**
+ * Empirical bracket markup with boundary hysteresis.
+ *
+ * The brackets were fit against 2,591 historical wins; a hard step between
+ * them caused discontinuities at the boundaries (a $0.02 cost change could
+ * swing suggested price by 17%). We linearly interpolate within a $BAND-wide
+ * window on each side of each boundary so nearby costs produce nearby prices.
+ */
+function interpolateMarkup(cost: number): number {
+  const brackets: [number, number][] = [
+    [0, 1.64],
+    [25, 1.36],
+    [100, 1.21],
+    [500, 1.16],
+  ];
+  const BAND = 5; // smooth over ±$5 around each boundary
+
+  // Find the bracket this cost is in
+  for (let i = 0; i < brackets.length - 1; i++) {
+    const [loCost, loMul] = brackets[i];
+    const [hiCost, hiMul] = brackets[i + 1];
+    if (cost < hiCost) {
+      // If we're near the upper boundary, blend toward the next bracket
+      const distToUpper = hiCost - cost;
+      if (distToUpper < BAND) {
+        const t = 1 - distToUpper / BAND; // 0 at boundary-BAND, 1 at boundary
+        return loMul + (hiMul - loMul) * (t / 2); // halfway blend at boundary
+      }
+      // If we're near the lower boundary (not applicable at i=0)
+      if (i > 0) {
+        const distToLower = cost - loCost;
+        if (distToLower < BAND) {
+          const [, prevMul] = brackets[i - 1];
+          const t = distToLower / BAND;
+          return prevMul + (loMul - prevMul) * (0.5 + t / 2);
+        }
+      }
+      return loMul;
+    }
+  }
+  // Over the top bracket
+  return brackets[brackets.length - 1][1];
+}
+
 export async function POST() {
   const supabase = createServiceClient();
 
@@ -226,14 +270,23 @@ export async function POST() {
       }
       withCostCount++;
     } else if (cost && cost > 0) {
-      // No winning history — use bracket markup
-      let markup: number;
-      if (cost < 25) markup = 1.64;
-      else if (cost < 100) markup = 1.36;
-      else if (cost < 500) markup = 1.21;
-      else markup = 1.16;
+      // No winning history — use bracket markup with linear interpolation
+      // between adjacent brackets instead of a hard step.
+      //
+      // Empirical brackets (fit against 2,591 historical wins):
+      //   cost $0-25   → 1.64x
+      //   cost $25-100 → 1.36x
+      //   cost $100-500 → 1.21x
+      //   cost $500+   → 1.16x
+      //
+      // A hard step produces ugly jumps: cost $24.99 → 1.64x = $40.98
+      // vs cost $25.01 → 1.36x = $34.01 (a 17% suggested-price drop
+      // from a 1¢ cost change). That's a real bug we hit in production.
+      // Interpolate within a $5 band on each side of the boundary so
+      // nearby costs produce nearby suggested prices.
+      const markup = interpolateMarkup(cost);
       suggestedPrice = Math.round(cost * markup * 100) / 100;
-      priceSource = `${costSource} × ${markup}x markup (no win history)`;
+      priceSource = `${costSource} × ${markup.toFixed(3)}x markup (no win history)`;
       withCostCount++;
     } else if (lastAward) {
       let increment: number;

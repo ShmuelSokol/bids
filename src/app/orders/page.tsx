@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase-server";
 import { AwardsList } from "./awards-list";
+import { computeMarginPct } from "@/lib/margin";
 
 async function getData() {
   const supabase = createServiceClient();
@@ -36,7 +37,7 @@ async function getData() {
       ...a,
       nsn,
       our_cost: cost || null,
-      margin_pct: cost && a.unit_price ? Math.round(((a.unit_price - cost) / a.unit_price) * 100) : null,
+      margin_pct: computeMarginPct(a.unit_price, cost),
     };
   });
 

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { formatDateShort } from "@/lib/dates";
 import {
   ChevronLeft,
   Package,
@@ -417,9 +418,7 @@ export function AwardsList({
                         )}
                       </td>
                       <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">
-                        {a.award_date
-                          ? new Date(a.award_date).toLocaleDateString()
-                          : "—"}
+                        {formatDateShort(a.award_date)}
                       </td>
                     </tr>
                   ))}
@@ -473,7 +472,7 @@ export function AwardsList({
                     </div>
                     <div className="text-sm text-muted mt-0.5">
                       {po.supplier} · {po.line_count} items ·{" "}
-                      {new Date(po.created_at).toLocaleDateString()}
+                      {formatDateShort(po.created_at)}
                     </div>
                   </div>
                   <div className="text-right">
@@ -602,7 +601,7 @@ export function AwardsList({
                           <span className="font-mono text-sm font-medium">{v.vendor}</span>
                           {v.lastPoDate && (
                             <span className="text-[10px] text-muted bg-gray-100 px-1 rounded">
-                              Last PO: {new Date(v.lastPoDate).toLocaleDateString()}
+                              Last PO: {formatDateShort(v.lastPoDate)}
                             </span>
                           )}
                         </div>

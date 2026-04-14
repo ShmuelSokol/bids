@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
 import { trackEvent, requestContext } from "@/lib/track";
+import { computeMarginPct } from "@/lib/margin";
 
 /**
  * POST /api/orders/generate-pos
@@ -114,10 +115,7 @@ export async function POST(req: NextRequest) {
       unit_cost: a.our_cost,
       total_cost: (a.our_cost || 0) * (a.quantity || 1),
       sell_price: a.unit_price,
-      margin_pct:
-        a.our_cost && a.unit_price
-          ? Math.round(((a.unit_price - a.our_cost) / a.unit_price) * 100)
-          : null,
+      margin_pct: computeMarginPct(a.unit_price, a.our_cost),
       supplier,
       contract_number: a.contract_number,
       order_number: a.order_number,
