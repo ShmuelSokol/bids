@@ -37,6 +37,7 @@ type Match = {
 
 type ApiResponse = {
   awards: Award[];
+  competitor_awards?: Award[];
   bids: Bid[];
   itemSpec: ItemSpec;
   matches: Match[];
@@ -53,16 +54,17 @@ function fetchHistory(nsn: string): Promise<ApiResponse> {
       const res = await fetch(`/api/awards/search?nsn=${encodeURIComponent(nsn)}`);
       if (!res.ok) {
         console.warn(`History fetch failed for ${nsn}: HTTP ${res.status}`);
-        const empty: ApiResponse = { awards: [], bids: [], itemSpec: null, matches: [] };
+        const empty: ApiResponse = { awards: [], competitor_awards: [], bids: [], itemSpec: null, matches: [] };
         cache.set(nsn, empty);
         return empty;
       }
       const data: ApiResponse = await res.json();
+      data.competitor_awards = data.competitor_awards || [];
       cache.set(nsn, data);
       return data;
     } catch (err) {
       console.warn(`History fetch error for ${nsn}:`, err);
-      const empty: ApiResponse = { awards: [], bids: [], itemSpec: null, matches: [] };
+      const empty: ApiResponse = { awards: [], competitor_awards: [], bids: [], itemSpec: null, matches: [] };
       cache.set(nsn, empty);
       return empty;
     } finally {
@@ -216,6 +218,71 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
           )}
         </div>
       </div>
+
+      {/* Competitor awards (other CAGE codes who won this NSN) */}
+      {(() => {
+        const comps = data.competitor_awards || [];
+        // dedupe by contract_number+date+cage
+        const seen = new Set<string>();
+        const dedupComps = comps.filter((a) => {
+          const k = `${a.contract_number}_${a.award_date}_${a.cage}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        const compTotal = dedupComps.reduce(
+          (s, a) => s + (a.unit_price || 0) * (a.quantity || 1),
+          0
+        );
+        return (
+          <div>
+            <div className="flex items-center justify-between text-xs font-bold text-orange-700 mb-1">
+              <span>Competitor Awards ({dedupComps.length})</span>
+              {compTotal > 0 && (
+                <span className="font-mono">${compTotal.toLocaleString()}</span>
+              )}
+            </div>
+            {dedupComps.length === 0 ? (
+              <p className="text-xs text-muted py-2">
+                No competitor awards on record. Run the DIBBS awards
+                scrape for this NSN to populate (
+                <code className="text-[10px]">/api/dibbs/awards</code>).
+              </p>
+            ) : (
+              <div className="max-h-48 overflow-auto rounded border border-orange-200">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-muted bg-orange-50/40">
+                      <th className="text-left px-2 py-1">Date</th>
+                      <th className="text-left px-2 py-1">Winner CAGE</th>
+                      <th className="text-right px-2 py-1">Price</th>
+                      <th className="text-right px-2 py-1">Qty</th>
+                      <th className="text-right px-2 py-1">Total</th>
+                      <th className="text-left px-2 py-1">Contract</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dedupComps.slice(0, 30).map((a, i) => (
+                      <tr key={i} className="border-t border-card-border/30">
+                        <td className="px-2 py-0.5 text-muted">{formatDateShort(a.award_date)}</td>
+                        <td className="px-2 py-0.5 font-mono text-[10px] text-orange-700">{a.cage?.trim()}</td>
+                        <td className="px-2 py-0.5 text-right font-mono">${a.unit_price?.toFixed(2)}</td>
+                        <td className="px-2 py-0.5 text-right">{a.quantity}</td>
+                        <td className="px-2 py-0.5 text-right font-mono">
+                          ${((a.unit_price || 0) * (a.quantity || 1)).toLocaleString()}
+                        </td>
+                        <td className="px-2 py-0.5 font-mono text-[9px] text-muted truncate max-w-[100px]">
+                          {a.contract_number?.trim() || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {data.matches.length > 0 && (
         <div>

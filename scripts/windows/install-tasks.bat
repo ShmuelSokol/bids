@@ -121,6 +121,18 @@ schtasks /create /tn "DIBS - Daily Briefing" ^
     /ru "%RUN_AS_USER%" /it /f
 echo.
 
+REM -----------------------------------------------------------------------
+REM Competitor awards scrape — 6:00am daily. Loops over every active
+REM sourceable NSN and scrapes DIBBS' Awards page to populate competitor
+REM CAGEs in the awards table. Skips NSNs we already scraped in the
+REM last 7 days. Runs locally because Railway can't reach DIBBS.
+REM -----------------------------------------------------------------------
+schtasks /create /tn "DIBS - Competitor Awards Scrape" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" scrape-competitor-awards\"" ^
+    /sc daily /st 06:00 ^
+    /ru "%RUN_AS_USER%" /it /f
+echo.
+
 echo =====================================================================
 echo All 6 tasks registered. Check:
 echo    schtasks /query /tn "DIBS*" /fo TABLE

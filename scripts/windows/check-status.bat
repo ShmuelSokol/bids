@@ -17,6 +17,8 @@ echo.
 schtasks /query /tn "DIBS - Shipping Sync" /v /fo LIST 2>nul | findstr /C:"TaskName" /C:"Last Run" /C:"Last Result" /C:"Next Run"
 echo.
 schtasks /query /tn "DIBS - Daily Briefing" /v /fo LIST 2>nul | findstr /C:"TaskName" /C:"Last Run" /C:"Last Result" /C:"Next Run"
+echo.
+schtasks /query /tn "DIBS - Competitor Awards Scrape" /v /fo LIST 2>nul | findstr /C:"TaskName" /C:"Last Run" /C:"Last Result" /C:"Next Run"
 
 echo.
 echo Log files in C:\tmp\dibs-logs\:

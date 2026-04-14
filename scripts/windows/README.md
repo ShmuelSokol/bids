@@ -15,6 +15,7 @@ Windows machine so they run automatically.
 | `DIBS - Awards Import` | `import-lamlinks-awards.ts` | 4:30am daily (also triggers `/api/dibbs/reprice`) |
 | `DIBS - Shipping Sync` | `sync-shipping.ts` | every 15 min, 6am-6pm weekdays |
 | `DIBS - Daily Briefing` | `send-daily-briefing.ts` | 7:00am Mon-Fri (after imports) |
+| `DIBS - Competitor Awards Scrape` | `scrape-competitor-awards.ts` | 6:00am daily — populates `awards` with competitor wins from DIBBS (Railway can't reach DIBBS, so this runs locally) |
 
 ## Install (one-time)
 
