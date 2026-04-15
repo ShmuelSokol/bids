@@ -11,6 +11,7 @@ import {
   Calendar,
   ArrowUpDown,
   ShoppingCart,
+  Clock,
 } from "lucide-react";
 
 interface Award {
@@ -280,11 +281,46 @@ export function AwardsList({
         <span className="text-foreground font-medium">Orders & POs</span>
       </div>
 
-      <h1 className="text-2xl font-bold mb-1">Orders & Purchase Orders</h1>
-      <p className="text-muted text-sm mb-4">
-        {awards.filter((a) => !a.po_generated).length} new awards,{" "}
-        {purchaseOrders.length} POs created
-      </p>
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">Orders & Purchase Orders</h1>
+          <p className="text-muted text-sm">
+            {awards.filter((a) => !a.po_generated).length} new awards,{" "}
+            {purchaseOrders.length} POs created
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Link
+            href="/orders/followups"
+            className="px-3 py-1.5 rounded border border-card-border bg-card-bg text-xs font-medium hover:bg-accent/5 inline-flex items-center gap-1"
+          >
+            <Clock className="h-3.5 w-3.5" /> Follow-ups
+          </Link>
+          <button
+            onClick={async () => {
+              const r = await fetch("/api/so/validate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+              });
+              const d = await r.json();
+              if (!r.ok) {
+                setMessage(`SO validate failed: ${d.error || r.status}`);
+                return;
+              }
+              const readyN = d.ready?.length || 0;
+              const nsnMissing = d.nsn_missing?.length || 0;
+              setMessage(
+                `Validated ${d.checked} awards. ${readyN} ready for MPI, ${nsnMissing} NSN(s) need creation in AX. ${d.dodaac_missing?.length || 0} DODAAC issue(s).`
+              );
+            }}
+            className="px-3 py-1.5 rounded border border-card-border bg-card-bg text-xs font-medium hover:bg-accent/5 inline-flex items-center gap-1"
+            title="Pre-validate awards against AX before you run the MPI Sales Order import"
+          >
+            Validate for AX
+          </button>
+        </div>
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-4">
