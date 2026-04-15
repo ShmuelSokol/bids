@@ -147,3 +147,7 @@ To tie it all together — here's what ends up in Supabase from each source:
 | USASpending | `usaspending_awards` |
 
 The whole point is that by the time a solicitation shows up on the dashboard, it's been enriched from all of these. No live lookups, no slow page loads.
+
+## Unit of measure (2026-04-15)
+
+UoM is now persisted on both the award side and the cost side so the PO generator can require a UoM match before multiplying cost × qty. Before this change, `nsn_vendor_prices` was 100% price-agreement data with no UoM, and `generate-pos` produced negative-margin POs on ~half of lines because it was multiplying pack-unit cost × each-unit award quantity. Columns added: `awards.unit_of_measure`, `nsn_costs.unit_of_measure`, `nsn_vendor_prices.unit_of_measure`, `bid_decisions.unit_of_measure`, `po_lines.unit_of_measure` (+ `po_lines.cost_source`, `po_lines.vendor_item_number`). `nsn_costs` also gained `vendor` so the PO generator can trust it as a single source of both cost and supplier. Use `scripts/populate-nsn-costs-from-ax.ts` to rebuild `nsn_costs` + `nsn_vendor_prices` from AX with UoM; `scripts/import-lamlinks-awards.ts` already persists `k81.cln_ui_k81` as `awards.unit_of_measure` on each run.

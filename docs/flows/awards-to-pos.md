@@ -32,15 +32,17 @@ What happens after we win a bid. Award arrives, gets grouped into draft POs by s
   POST /api/orders/generate-pos
        │
        ▼
-[For each NSN in selection: look up cheapest vendor in nsn_vendor_prices]
-[Group awards by cheapest vendor (NOT by award.cage which is us, 0AG09)]
-[Awards with no vendor price → "UNASSIGNED" PO for manual assignment]
+[For each NSN in selection: pull waterfall-winner cost from nsn_costs]
+  (source preference: Recent PO 2mo > 3mo > price_agreement > older PO)
+[Check UoM match between award.unit_of_measure and nsn_costs.unit_of_measure]
+[If UoM mismatch or no cost row → route to UNASSIGNED (Abe uses Switch)]
+[Group eligible awards by waterfall-winner vendor]
 [For each group:]
   - Create purchase_orders row:
     po_number = "PO-{YYYYMMDD}-{timestamp}-{i}"
     status = "draft"
-    total_cost = SUM(our_cost * qty)
-  - For each award in group: insert po_lines row
+    total_cost = SUM(unit_cost * qty)
+  - For each award in group: insert po_lines row (with UoM + cost_source)
   - Mark awards.po_generated=true, po_id={po.id}
        │
        ▼
