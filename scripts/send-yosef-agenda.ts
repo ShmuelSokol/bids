@@ -95,14 +95,15 @@ const HTML = `<!doctype html>
 </div>
 <div class="q"><strong>Q-ax-1 — Flow A or Flow B?</strong> A is one fewer manual step per PO; B is what you do for Amazon today.</div>
 <div class="q"><strong>Q-ax-2 — If Flow A:</strong> Share the PO headers template (entity + columns + sample), PO number pattern (DIBS range? <code>PO-DIBS-&lt;n&gt;</code>?), and whether DMF processes header-then-lines in one bundle correctly.</div>
-<div class="q"><strong>Q-ax-3 — Sales order template.</strong> Need your government-flow SO template + a recent sample to build the awards → SO generator.</div>
-<div class="q"><strong>Q-ax-4 — Vendor coverage.</strong> Our vendor codes (AMAZON, MCMAST, CHEMET, 000202, ~34K total) — all guaranteed to exist as AX <code>VendorAccountNumber</code>s?</div>
-<div class="q"><strong>Q-ax-5 — Product group for DIBS items.</strong> NPI sample uses <code>FG-NonRX</code>. Right for DLA/NSN, or different?</div>
-<div class="q"><strong>Q-ax-6 — NPI sheet ordering.</strong> Does DMF import the 7 NPI sheets in one click correctly, or separate imports per sheet?</div>
-<div class="q"><strong>Q-ax-7 — Polling cadence.</strong> After you Import, how long until rows appear via OData? Seconds? 1 min? 5 min?</div>
-<div class="q"><strong>Q-ax-8 — Partial-failure reporting.</strong> When DMF rejects rows, can DIBS read the rejection list via OData, or is it AX UI only?</div>
-<div class="q"><strong>Q-ax-9 — <code>BarCode</code> NSN vs UPC.</strong> Sample uses UPC. For DLA items should DIBS stamp NSN? Does warehouse receiving handle both?</div>
-<div class="q"><strong>Q-ax-10 — <code>EXTERNALITEMDESC</code> 4th column.</strong> Sheet has 3 headers but rows have 4 values (4th = barcode). Template bug or positional?</div>
+<div class="q"><strong>Q-ax-3 — If Flow B:</strong> After you create the header in AX, should DIBS prompt you to paste the PO number back in manually (simple box per pending PO), or should DIBS auto-detect by polling <code>PurchaseOrderHeadersV2</code> for new entries matching vendor + date + line count?</div>
+<div class="q"><strong>Q-ax-4 — Sales order template.</strong> Need your government-flow SO template + a recent sample to build the awards → SO generator.</div>
+<div class="q"><strong>Q-ax-5 — Vendor coverage.</strong> Our vendor codes (AMAZON, MCMAST, CHEMET, 000202, ~34K total) — all guaranteed to exist as AX <code>VendorAccountNumber</code>s?</div>
+<div class="q"><strong>Q-ax-6 — Product group for DIBS items.</strong> NPI sample uses <code>FG-NonRX</code>. Right for DLA/NSN, or different?</div>
+<div class="q"><strong>Q-ax-7 — NPI sheet ordering.</strong> Does DMF import the 7 NPI sheets in one click correctly, or separate imports per sheet?</div>
+<div class="q"><strong>Q-ax-8 — Polling cadence.</strong> After you Import, how long until rows appear via OData? Seconds? 1 min? 5 min?</div>
+<div class="q"><strong>Q-ax-9 — Partial-failure reporting.</strong> When DMF rejects rows, can DIBS read the rejection list via OData, or is it AX UI only?</div>
+<div class="q"><strong>Q-ax-10 — <code>BarCode</code> NSN vs UPC.</strong> Sample uses UPC. For DLA items should DIBS stamp NSN? Does warehouse receiving handle both?</div>
+<div class="q"><strong>Q-ax-11 — <code>EXTERNALITEMDESC</code> 4th column.</strong> Sheet has 3 headers but rows have 4 values (4th = barcode). Template bug or positional?</div>
 
 </body></html>`;
 
