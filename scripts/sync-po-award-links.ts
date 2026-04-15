@@ -66,26 +66,35 @@ async function main() {
   const token = await getToken();
   const D = process.env.AX_D365_URL!;
 
-  // 1. Pull all DD219 PO lines
-  console.log("1. Pulling DD219 PO lines from AX...");
-  const poLines = await fetchAll(
+  // 1. Pull ALL DD219 PO lines, then the headers for those POs.
+  //    Filter client-side to headers from last 400d (matches awards
+  //    retention window).
+  console.log("1. Pulling all DD219 PO lines from AX...");
+  const poLinesRaw = await fetchAll(
     token,
-    `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=(CustomerRequisitionNumber eq 'DD219' or CustomerRequisitionNumber eq 'dd219')&$select=PurchaseOrderNumber,LineNumber,ItemNumber,OrderedPurchaseQuantity,PurchasePrice,PurchaseOrderLineStatus,RequestedDeliveryDate&$top=1000`
+    `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=(CustomerRequisitionNumber eq 'DD219' or CustomerRequisitionNumber eq 'dd219')&$select=PurchaseOrderNumber,LineNumber,ItemNumber,OrderedPurchaseQuantity,PurchasePrice,PurchaseOrderLineStatus,RequestedDeliveryDate&$top=1000`,
+    5000
   );
-  console.log(`   ${poLines.length} lines`);
-  if (poLines.length === 0) return;
+  console.log(`   ${poLinesRaw.length} DD219 lines total`);
 
-  // 2. Pull the headers to get vendor + ordered date
-  const poNums = [...new Set(poLines.map((l: any) => l.PurchaseOrderNumber))];
-  console.log(`\n2. Pulling headers for ${poNums.length} POs (vendor + accounting date)...`);
+  const allPoNums = [...new Set(poLinesRaw.map((l: any) => l.PurchaseOrderNumber))];
+  console.log(`   ${allPoNums.length} distinct POs — fetching headers...`);
   const headers: any[] = [];
-  for (let i = 0; i < poNums.length; i += 40) {
-    const chunk = poNums.slice(i, i + 40);
+  for (let i = 0; i < allPoNums.length; i += 40) {
+    const chunk = allPoNums.slice(i, i + 40);
     const filter = chunk.map((n) => `PurchaseOrderNumber eq '${n}'`).join(" or ");
     const url = `${D}/data/PurchaseOrderHeadersV2?cross-company=true&$filter=${encodeURIComponent(filter)}&$select=PurchaseOrderNumber,OrderVendorAccountNumber,AccountingDate`;
     headers.push(...(await fetchAll(token, url)));
   }
-  const headerByPo = new Map<string, any>(headers.map((h) => [h.PurchaseOrderNumber, h]));
+  console.log(`   ${headers.length} headers fetched`);
+
+  // No date gate on POs — AX only has 547 DD219 POs total (Dec 2024-Mar
+  // 2025 range). Keep them all, let the award date window do the work.
+  const poLines = poLinesRaw;
+  console.log(`   Using all ${poLines.length} DD219 lines`);
+  if (poLines.length === 0) return;
+
+  const headerByPo = new Map<string, any>(headers.map((h: any) => [h.PurchaseOrderNumber, h]));
 
   // 3. Resolve ItemNumber → NSN via ProductBarcodesV3
   const itemNums = [...new Set(poLines.map((l: any) => l.ItemNumber).filter(Boolean))];
@@ -110,10 +119,10 @@ async function main() {
 
   // 4. Pull our recent awards for those NSNs
   const nsnSet = new Set(itemToNsn.values());
-  console.log(`\n4. Pulling DIBS awards for ${nsnSet.size} NSNs (last 180d)...`);
+  console.log(`\n4. Pulling DIBS awards for ${nsnSet.size} NSNs (last 2 years)...`);
   const awardsByNsn = new Map<string, any[]>();
-  // Awards up to 400 days old — matches the PO-date-window filter below
-  const cutoffIso = new Date(Date.now() - 400 * 86_400_000).toISOString();
+  // Pull awards up to 2 years back — covers older DD219 POs too
+  const cutoffIso = new Date(Date.now() - 730 * 86_400_000).toISOString();
   const nsnArr = Array.from(nsnSet);
   for (let i = 0; i < nsnArr.length; i += 50) {
     const chunk = nsnArr.slice(i, i + 50);
@@ -147,16 +156,15 @@ async function main() {
     if (!nsn) continue;
     const header = headerByPo.get(line.PurchaseOrderNumber);
     const poDate = header?.AccountingDate ? new Date(header.AccountingDate).getTime() : null;
-    // Award can be anywhere within ±180 days of the PO. Directionality
-    // changes by workflow: (a) Abe creates a speculative PO when he
-    // bids, award arrives days/weeks LATER (award date > PO date,
-    // diffDays negative); (b) Abe wins award, builds PO from available
-    // inventory afterward (award date < PO date, diffDays positive).
+    // PO must come AFTER the award. Per Abe 2026-04-16: 'Abe does
+    // not create purchase orders before winning an award. The PO
+    // will probably be created a day or two or three or within the
+    // week after it was awarded.' Window: 0-30 days after award.
     const candidates = (awardsByNsn.get(nsn) || []).filter((a) => {
       if (!poDate || !a.award_date) return false;
       const aDate = new Date(a.award_date).getTime();
-      const diffDays = Math.abs(poDate - aDate) / 86_400_000;
-      return diffDays <= 180;
+      const diffDays = (poDate - aDate) / 86_400_000;
+      return diffDays >= 0 && diffDays <= 30;
     });
 
     let best: any = null;
@@ -174,8 +182,8 @@ async function main() {
       // Score combines: qty proximity + date proximity (closer = better)
       const poDateMs = poDate || 0;
       const aDateMs = a.award_date ? new Date(a.award_date).getTime() : 0;
-      const absDays = Math.abs(poDateMs - aDateMs) / 86_400_000;
-      const dateScore = absDays <= 30 ? 1 : absDays <= 90 ? 0.7 : absDays <= 180 ? 0.4 : 0.2;
+      const days = (poDateMs - aDateMs) / 86_400_000;
+      const dateScore = days <= 7 ? 1 : days <= 14 ? 0.85 : days <= 30 ? 0.6 : 0;
 
       let qtyScore = 0;
       if (aQty && poQty) {
@@ -188,7 +196,7 @@ async function main() {
       if (score > bestScore) {
         bestScore = score;
         best = a;
-        reason = `qty ${aQty}→${poQty} (${qtyScore.toFixed(1)}), date gap ${Math.round(absDays)}d (${dateScore.toFixed(1)})`;
+        reason = `qty ${aQty}→${poQty} (${qtyScore.toFixed(1)}), PO ${Math.round(days)}d after award (${dateScore.toFixed(1)})`;
       }
     }
 

@@ -141,7 +141,7 @@ export async function GET() {
   for (let p = 0; p < 20; p++) {
     const { data } = await supabase
       .from("awards")
-      .select("id, contract_number, fsc, niin, unit_price, quantity, award_date, description")
+      .select("id, contract_number, fsc, niin, unit_price, quantity, award_date, description, ship_status")
       .eq("cage", "0AG09")
       .gte("award_date", sinceIso)
       .order("award_date", { ascending: false })
@@ -160,16 +160,32 @@ export async function GET() {
       linksByAward.get(l.award_id)!.push(l);
     }
   }
+  // Bucketing rules (per Abe 2026-04-16):
+  //   - Shipped to DLA (ship_status='Shipped' or similar) → done,
+  //     regardless of PO state. Some items ship from stock → no PO.
+  //   - Not shipped + no PO → needs attention (stock check or create PO)
+  //   - Not shipped + PO in backorder → vendor follow-up
+  //   - Not shipped + PO received → ready to ship, no chase needed
+  function isShipped(s: string | null): boolean {
+    if (!s) return false;
+    const v = s.trim().toLowerCase();
+    return v === "shipped" || v === "invoiced" || v === "complete";
+  }
+  const awardsShipped: any[] = [];
   const awardsNoPo: any[] = [];
   const awardsBackorder: any[] = [];
-  const awardsReceived: any[] = [];
+  const awardsReceivedPending: any[] = [];
   for (const a of awardsRows) {
     const links = linksByAward.get(a.id) || [];
+    if (isShipped(a.ship_status)) {
+      awardsShipped.push({ ...a, links });
+      continue;
+    }
     if (links.length === 0) {
       awardsNoPo.push({ ...a, links: [] });
     } else {
       const allReceived = links.every((l) => (l.po_line_status || "").trim() === "Received");
-      if (allReceived) awardsReceived.push({ ...a, links });
+      if (allReceived) awardsReceivedPending.push({ ...a, links });
       else awardsBackorder.push({ ...a, links });
     }
   }
@@ -182,10 +198,11 @@ export async function GET() {
     ax_government_pos: axPos,
     ax_po_count: axPos.length,
     ax_error: axError,
-    // award↔PO buckets
+    // award↔PO buckets (shipped awards excluded from action buckets)
     awards_total: awardsRows.length,
+    awards_shipped_count: awardsShipped.length,
     awards_no_po: awardsNoPo,
     awards_backorder: awardsBackorder,
-    awards_received_count: awardsReceived.length,
+    awards_received_pending_count: awardsReceivedPending.length,
   });
 }

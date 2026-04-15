@@ -69,6 +69,7 @@ async function main() {
     cage: "0AG09", // These are ALL our awards
     fob: r.fob?.trim() || null,
     order_number: r.clin?.trim() || null,
+    ship_status: r.ship_status?.trim() || null,
     data_source: "lamlinks_k81",
   })).filter((a: any) => a.fsc && a.niin && a.unit_price > 0);
 

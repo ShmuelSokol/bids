@@ -115,9 +115,14 @@ export default function InvoiceFollowupsPage() {
                 Awards ↔ Purchase Orders ({data.awards_total} awards in last 180d)
               </h2>
               <p className="text-xs text-muted mt-1">
-                Heuristic match: DD219 PO lines → award by NSN + qty + date proximity (±180d). High/medium/low confidence.
-                Received count: <strong>{data.awards_received_count}</strong>. No-PO-yet: <strong>{data.awards_no_po?.length || 0}</strong>. Backorder: <strong>{data.awards_backorder?.length || 0}</strong>.
+                Heuristic match: DD219 PO lines → award by NSN + qty + PO created 0-30d AFTER award. Shipped awards are excluded from action buckets (shipped = done, regardless of PO — some items ship from stock without any PO).
               </p>
+              <div className="flex gap-4 mt-2 text-xs">
+                <span><strong className="text-green-700">{data.awards_shipped_count || 0}</strong> shipped to DLA</span>
+                <span><strong className="text-blue-700">{data.awards_received_pending_count || 0}</strong> received from vendor, ready to ship</span>
+                <span><strong className="text-amber-700">{data.awards_backorder?.length || 0}</strong> on PO backorder (chase vendor)</span>
+                <span><strong className="text-red-700">{data.awards_no_po?.length || 0}</strong> no PO (check stock or create PO)</span>
+              </div>
             </div>
 
             {data.awards_no_po?.length > 0 && (
