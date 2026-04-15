@@ -170,6 +170,54 @@ async function main() {
     }
   }
 
+  // Do draft bids exist (k34 rows with no batch FK), or does every bid
+  // require a k33 batch to exist first? This tells us whether we should
+  // insert in draft state and let Abe submit, or create the full batch.
+  console.log(`\n${"=".repeat(80)}\nDRAFT-STATE PROBE\n${"=".repeat(80)}`);
+  const drafts = await pool.request().query(`
+    SELECT
+      SUM(CASE WHEN idnk33_k34 IS NULL THEN 1 ELSE 0 END) AS null_batch,
+      SUM(CASE WHEN idnk33_k34 = 0 THEN 1 ELSE 0 END) AS zero_batch,
+      COUNT(*) AS total,
+      MIN(idnk33_k34) AS min_batch,
+      MAX(idnk33_k34) AS max_batch
+    FROM k34_tab
+    WHERE scage_k34 = '0AG09'
+  `);
+  console.log("  Any k34 rows with NULL or 0 idnk33_k34? (= drafts):");
+  console.log("  ", JSON.stringify(drafts.recordset[0]));
+
+  // What does the earliest-lifecycle k33 batch look like? Maybe one
+  // that's created but has nothing sent yet.
+  const pending = await pool.request().query(`
+    SELECT TOP 5 *
+    FROM k33_tab
+    WHERE (t_stat_k33 IS NULL OR RTRIM(LTRIM(t_stat_k33)) NOT IN ('sent', 'acknowledged'))
+    ORDER BY uptime_k33 DESC
+  `);
+  console.log(`\n  Any k33 rows NOT yet sent? Found ${pending.recordset.length}`);
+  for (const r of pending.recordset.slice(0, 3)) {
+    console.log("   ",
+      "id=" + r.idnk33_k33,
+      "qotref=" + r.qotref_k33,
+      "o=" + r.o_stat_k33,
+      "t=" + r.t_stat_k33,
+      "a=" + r.a_stat_k33,
+      "s=" + r.s_stat_k33,
+    );
+  }
+
+  // Did Abe today have any bids where k34 → k33 link is NULL (drafts)?
+  const draftBids = await pool.request().query(`
+    SELECT TOP 5 idnk34_k34, idnk11_k34, idnk33_k34, pn_k34, uptime_k34
+    FROM k34_tab
+    WHERE scage_k34 = '0AG09'
+      AND idnk33_k34 IS NULL
+    ORDER BY idnk34_k34 DESC
+  `);
+  console.log(`\n  Draft bids (k34 with null batch FK) today: ${draftBids.recordset.length}`);
+  for (const r of draftBids.recordset) console.log("   ", JSON.stringify(r));
+
   await pool.close();
 }
 
