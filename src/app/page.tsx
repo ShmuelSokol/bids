@@ -281,7 +281,7 @@ export default async function Dashboard() {
                     <td className="px-4 py-1.5 text-xs truncate max-w-[200px]">{b.item_desc || "—"}</td>
                     <td className="px-4 py-1.5 text-right font-mono text-xs">${(b.bid_price || 0).toFixed(2)}</td>
                     <td className="px-4 py-1.5 text-right text-xs">{b.bid_qty || 0}</td>
-                    <td className="px-4 py-1.5 text-right font-mono text-xs font-medium text-blue-700">${((b.bid_price || 0) * (b.bid_qty || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                    <td className="px-4 py-1.5 text-right font-mono text-xs font-medium text-blue-700">${((b.bid_price || 0) * (b.bid_qty || 1)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-4 py-1.5 text-xs text-muted">{b.lead_days}d</td>
                     <td className="px-4 py-1.5">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${b.bid_status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>

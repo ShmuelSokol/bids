@@ -9,9 +9,15 @@ export async function GET(req: NextRequest) {
   const niin = niinParts.join("-");
   const supabase = createServiceClient();
 
-  const [awardsRes, bidsRes, specRes, matchRes] = await Promise.all([
+  const [awardsRes, bidsRes, liveBidsRes, specRes, matchRes] = await Promise.all([
     supabase.from("awards").select("id, fsc, niin, unit_price, quantity, description, award_date, contract_number, cage").eq("fsc", fsc).eq("niin", niin).order("award_date", { ascending: false }).limit(200),
     supabase.from("abe_bids").select("id, nsn, bid_price, lead_time_days, bid_qty, bid_date, fob, solicitation_number").eq("nsn", nsn).order("bid_date", { ascending: false }).limit(200),
+    // Include abe_bids_live too — historical abe_bids misses bids
+    // from the last 24-48h that haven't yet been imported into the
+    // historical table, which was causing "competitor won" rows on
+    // same-day solicitations to show blank in the "Our bid" column
+    // even though Abe had bid.
+    supabase.from("abe_bids_live").select("id, nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").eq("nsn", nsn).order("bid_time", { ascending: false }).limit(50),
     supabase.from("publog_nsns").select("item_name, unit_price, unit_of_issue, cage_code, part_number").eq("nsn", nsn).limit(1),
     supabase.from("nsn_matches").select("match_type, confidence, matched_part_number, matched_description, matched_source").eq("nsn", nsn).limit(5),
   ]);
@@ -19,7 +25,26 @@ export async function GET(req: NextRequest) {
   const allAwards = awardsRes.data || [];
   const ourAwards = allAwards.filter((a: any) => a.cage?.trim() === "0AG09");
   const competitorAwards = allAwards.filter((a: any) => a.cage?.trim() && a.cage.trim() !== "0AG09");
-  const ourBids = bidsRes.data || [];
+  // Union historical + live bids, keyed by (solicitation_number, bid time)
+  // so we don't double-count the same bid after the nightly import runs.
+  const liveBids = (liveBidsRes.data || []).map((b: any) => ({
+    id: -((b.id ?? 0) + 1000000), // negative ids so they don't collide with historical
+    nsn: b.nsn,
+    bid_price: b.bid_price,
+    lead_time_days: b.lead_days,
+    bid_qty: b.bid_qty,
+    bid_date: b.bid_time,
+    fob: b.fob,
+    solicitation_number: b.solicitation_number,
+  }));
+  const histBids = bidsRes.data || [];
+  const histKeys = new Set(
+    histBids.map((b: any) => `${(b.solicitation_number || "").trim()}|${b.bid_date}`)
+  );
+  const ourBids = [
+    ...histBids,
+    ...liveBids.filter((b) => !histKeys.has(`${(b.solicitation_number || "").trim()}|${b.bid_date}`)),
+  ];
 
   // Build a unified timeline: one row per event, sorted by date desc.
   // For each competitor-won award, attach the closest bid we made on

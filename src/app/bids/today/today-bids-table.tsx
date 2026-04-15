@@ -193,7 +193,7 @@ export function TodayBidsTable({ bids }: { bids: Bid[] }) {
                     </td>
                     <td className="px-4 py-1.5 text-right text-xs">{b.bid_qty || 0}</td>
                     <td className="px-4 py-1.5 text-right font-mono text-xs font-medium text-blue-700">
-                      ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-1.5 text-xs text-muted">{b.lead_days ?? "—"}d</td>
                     <td className="px-4 py-1.5 text-xs text-muted">{b.fob || "—"}</td>

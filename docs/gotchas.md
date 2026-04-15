@@ -2,6 +2,36 @@
 
 Things that broke, how we noticed, and what we learned. If you're about to touch one of these areas, read the relevant section first or you'll repeat our mistakes.
 
+## `npm install X` wipes native --no-save deps and kills scheduled tasks
+
+> Symptom: scheduled task `DIBS - Abe Bids Sync` returned `total:0` every 5 min for half a day. Abe had placed 105+ real bids in LamLinks that never reached the DIBS dashboard. Root cause only visible in the dispatcher log (`C:\tmp\dibs-logs\sync-abe-bids-live.log`) as `Cannot find module 'mssql/msnodesqlv8'`.
+
+`mssql` + `msnodesqlv8` are native packages that can't go in `package.json` — Railway's Linux build fails on compilation. They live in `node_modules` only via `npm install --no-save`. Any subsequent `npm install X` that touches `package.json` (adding exceljs, jszip, etc.) wipes them.
+
+**Fix in place:** `scripts/windows/run-dibs-task.bat` now self-heals at the top of every task run — checks `node_modules/mssql` and reinstalls with `--no-save` if missing. Adds ~3-5s on the first run post-reinstall, zero overhead after.
+
+**Rule:** after ANY `npm install` that touches package.json, verify `node_modules/mssql` still exists before expecting scheduled tasks to work.
+
+## Reset password flow went 404 for 3+ weeks
+
+> Symptom: `/api/auth/forgot-password` sent Supabase reset emails with `redirectTo: /login/reset-password`, but `/login/reset-password/page.tsx` didn't exist. Users clicked the reset link and saw a Next.js 404. Broken since the feature was added.
+
+**Lesson:** when wiring an email-link redirect, test the whole round-trip before shipping — sending the email, clicking the link, completing the form. API route + page component are two independent surfaces and it's easy to ship one.
+
+**Fixed 2026-04-15** — new `src/app/login/reset-password/page.tsx` parses the access token from the URL hash, posts to the existing `/api/auth/reset-password` API, redirects on success.
+
+## DMF "auto-generate PO number" checkbox
+
+> Problem before fix: our AX PO write-back spec originally assumed DIBS would supply PO numbers. After the 4-15 meeting we learned AX DMF has an "auto-generate" checkbox that makes AX assign numbers from its UI sequence — which is what Yosef actually uses for the PO header import.
+
+**Rule:** DIBS POSTs the header file WITHOUT a PURCHASEORDERNUMBER column. Yosef's preconfigured DMF project has the auto-generate checkbox set. If someone resets the project or unchecks it, the whole pipeline breaks. See `docs/flows/ax-po-writeback.md`.
+
+## Don't rebuild Yosef's Sales Order MPI logic
+
+> Problem before fix: original AX SO generator spec had DIBS generating a full sales-order DMF workbook with contract grouping + DODAAC routing + CLIN/TCN numbering. That's years of Yosef's business logic. Rebuilding it would (a) take weeks and (b) drift out of sync with his version.
+
+**Rule:** DIBS' job for sales orders is pre-validation only. We check DODAAC mapping + NSN match in AX, surface errors early in DIBS, then hand the awards file back unchanged to Abe to upload into Yosef's existing MPI Sales Order page. See `docs/flows/ax-so-writeback.md`.
+
 ## "Two parallel range queries" lies — pagination must actually loop
 
 > Symptom: dashboard showed 253 sourceable, /solicitations showed 46. Same shared filter logic, same data — but two different counts.

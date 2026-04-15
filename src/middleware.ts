@@ -9,6 +9,18 @@ const PUBLIC_PATHS = ["/login", "/api/auth", "/api/dibbs", "/api/track", "/api/b
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const token = request.cookies.get("sb-access-token")?.value;
+
+  // If already logged in and hitting the login page (or
+  // forgot-password), bounce to dashboard. Reset-password stays
+  // accessible because the user lands there from an email link
+  // and may have a stale session from a different account.
+  if (
+    token &&
+    (pathname === "/login" || pathname === "/login/forgot-password")
+  ) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
 
   // Allow public paths
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
@@ -25,7 +37,6 @@ export function middleware(request: NextRequest) {
   }
 
   // Check for auth cookie
-  const token = request.cookies.get("sb-access-token")?.value;
   if (!token) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);

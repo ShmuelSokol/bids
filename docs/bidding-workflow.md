@@ -72,6 +72,13 @@ Abe set a price (usually the suggested bid, sometimes an override). The row is s
 
 The bid is staged. Today "submitted" means the row is marked `status='submitted'` in `bid_decisions` and copy-pasted into LamLinks by Abe. The direct write-back path is built but gated: `scripts/generate-bid-insert-sql.ts` produces a dry-run SQL file against `k33_tab / k34_tab / k35_tab` for Yosef to review. Once Yosef signs off, `--execute` commits the INSERTs directly, leaving Abe to click Submit in the LamLinks UI (which owns EDI transmission — we never touch the transmit fields).
 
+**Test plan for first real write** (agreed 2026-04-15 meeting):
+1. Back up k33/k34/k35 rows or at least snapshot max IDs first
+2. Abe holds the next real solicitation he'd bid on, tells us the sol#
+3. DIBS writes the chain for that one sol
+4. Yosef watches LamLinks UI — does it appear as a pending draft Abe can review + Submit?
+5. Second test: Abe bids normally, then modifies (65d → 64d) to see how LamLinks handles the second write — supersede or new row. Informs our re-bid handling.
+
 **Column:** `bid_decisions.status = 'submitted'` with a `submitted_at` timestamp.
 
 Once submitted, the row sticks around for post-game analysis. The `award_lookup` background job eventually pulls the award result (win/loss/partial) and attaches it.
