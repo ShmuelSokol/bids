@@ -69,6 +69,40 @@ export function AwardsList({
   const [vendorPrices, setVendorPrices] = useState<any[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<number | "all" | null>(null);
+
+  async function downloadXlsx(poIds: number[], fallbackName?: string) {
+    const key: number | "all" = poIds.length === 1 ? poIds[0] : "all";
+    setDownloadingId(key);
+    try {
+      const res = await fetch("/api/orders/export-xlsx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ poIds }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setMessage(`Export failed: ${err.error || res.status}`);
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename="([^"]+)"/);
+      const filename = m?.[1] || fallbackName || "dibs-pos.xlsx";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setMessage(`Export error: ${e?.message || "unknown"}`);
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   const filtered = useMemo(() => {
     let items = awards;
@@ -445,7 +479,24 @@ export function AwardsList({
               </p>
             </div>
           ) : (
-            purchaseOrders.map((po) => (
+            <>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => downloadXlsx(purchaseOrders.map((p) => p.id))}
+                  disabled={downloadingId === "all"}
+                  className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {downloadingId === "all" ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Building ZIP...
+                    </>
+                  ) : (
+                    <>Download All as ZIP ({purchaseOrders.length} POs)</>
+                  )}
+                </button>
+              </div>
+              {purchaseOrders.map((po) => (
               <div
                 key={po.id}
                 className="rounded-xl border border-card-border bg-card-bg shadow-sm overflow-hidden"
@@ -475,11 +526,25 @@ export function AwardsList({
                       {formatDateShort(po.created_at)}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold font-mono">
-                      ${po.total_cost?.toFixed(2)}
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="text-lg font-bold font-mono">
+                        ${po.total_cost?.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-muted">est. cost</div>
                     </div>
-                    <div className="text-xs text-muted">est. cost</div>
+                    <button
+                      onClick={() => downloadXlsx([po.id])}
+                      disabled={downloadingId === po.id}
+                      className="px-3 py-1.5 rounded-md border border-card-border bg-card-bg hover:bg-accent/5 text-xs font-medium inline-flex items-center gap-1.5"
+                      title={`Download ${po.po_number} as Excel`}
+                    >
+                      {downloadingId === po.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <>Excel</>
+                      )}
+                    </button>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -563,7 +628,8 @@ export function AwardsList({
                   </table>
                 </div>
               </div>
-            ))
+              ))}
+            </>
           )}
         </div>
       )}
