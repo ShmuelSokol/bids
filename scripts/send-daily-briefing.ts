@@ -105,7 +105,7 @@ async function getStats() {
   // Match dashboard logic: sourceable + open + not already bid + no decision.
   // Use the paginator so we pick up ALL sourceable rows, not the first 3K.
   const SOURCEABLE_COLS =
-    "solicitation_number,nsn,suggested_price,quantity,return_by_date,already_bid,already_bid_ll,our_cost,margin_pct,nomenclature,cost_source,is_sourceable";
+    "solicitation_number,nsn,suggested_price,quantity,return_by_date,already_bid,our_cost,margin_pct,nomenclature,cost_source,is_sourceable";
   const [allSourceable, decisionRes, liveBidsRes] = await Promise.all([
     loadAll("dibbs_solicitations", SOURCEABLE_COLS, (q) => q.eq("is_sourceable", true)),
     supabase.from("bid_decisions").select("solicitation_number,nsn,status"),
