@@ -2,6 +2,26 @@
 
 Not built. This page is the spec + working assumptions.
 
+## Architecture locked 2026-04-15 — Flow A
+
+See `docs/meeting-2026-04-15.md` for the full meeting decisions. Summary:
+
+- **Two separate DMF imports**: header first, then lines. NOT a single bundled workbook.
+- **Header import uses the "auto-generate PO number" DMF checkbox** — AX assigns numbers from its own UI sequence. DIBS does NOT supply PO numbers.
+- Between the two imports, DIBS polls AX via OData to learn the assigned PO numbers, then generates the lines file with those numbers + line numbers filled in.
+- Yosef is setting up two named DMF projects in Abe's AX account — one for header, one for lines — so Abe runs them without touching the underlying entity mapping.
+- **DO NOT unchecked that auto-generate checkbox.** Whole thing breaks if it gets manually turned off.
+
+Flow-A sequence per batch of DIBS POs:
+1. DIBS generates **header.xlsx** — one row per PO with vendor + ship-to + a DIBS correlation tag in some field that AX will preserve (candidate: `VendorOrderReference` or a custom ref field — needs confirmation)
+2. Abe runs the "PO Header" DMF project in AX with that file → AX creates headers, assigns PO numbers
+3. DIBS polls `PurchaseOrderHeadersV2?$filter=<correlation tag>` → pulls back the assigned `PurchaseOrderNumber`s
+4. DIBS generates **lines.xlsx** — `PURCHASEORDERNUMBER` (from step 3), `LINENUMBER` (sequential), `ITEMNUMBER`, `ORDEREDPURCHASEQUANTITY`, `PURCHASEPRICE`, `PURCHASEUNITSYMBOL`, `RECEIVINGWAREHOUSEID='W01'`
+5. Abe runs the "PO Lines" DMF project → AX creates lines linked to the headers
+6. DIBS polls `PurchaseOrderLinesV2?$filter=PurchaseOrderNumber eq <n>` → flips DIBS state to `posted`
+
+After that, Abe selects the new POs and clicks **Send Confirmation** in the AX UI — Dynamics emails the PDF to the vendor using the vendor's stored email address. **Don't rebuild this in DIBS**; Dynamics already has it.
+
 ## Architectural pivot (2026-04-15, from Yosef)
 
 The OData service principal DIBS uses is **read-only.** No POST, PUT, PATCH on PurchaseOrderHeaders / Lines / ReleasedProducts / etc. That kills every "just POST to AX" plan. Yosef's established pattern across his projects is:
