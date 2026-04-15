@@ -23,10 +23,20 @@ const sb = createClient(
 async function main() {
   const pool = await sql.connect(config);
 
-  // Get today's bids with full details. Timezone fix happens in TS
-  // below — see etNaiveToUtcIso(). SQL Server 2012 on the LamLinks
-  // box doesn't support AT TIME ZONE (2016+), so we can't fix it
-  // server-side.
+  // Pull Abe's bids from the last 30 days — NOT just today.
+  //
+  // Bug fix (2026-04-16 from Abe): /solicitations was showing items
+  // Abe had already bid on because abe_bids_live only held today's
+  // rows. When Abe bid Monday night on a solicitation due 4/17, the
+  // sol still closed open in DIBS on Wednesday because the bid row
+  // was from 2 days ago.
+  //
+  // 30-day window catches every bid still within a typical open
+  // solicitation response window (government RFQs are usually
+  // 7-14 days, occasionally 30). Table size: ~150 bids/day × 30 =
+  // ~4500 rows, trivial.
+  //
+  // Timezone fix happens in TS below — see etNaiveToUtcIso().
   const result = await pool.request().query(`
     SELECT
       k34.idnk34_k34 AS bid_id,
@@ -59,7 +69,7 @@ async function main() {
     JOIN k10_tab k10 ON k10.idnk10_k10 = k11.idnk10_k11
     JOIN k08_tab k08 ON k08.idnk08_k08 = k11.idnk08_k11
     LEFT JOIN k33_tab k33 ON k33.idnk33_k33 = k34.idnk33_k34
-    WHERE k34.uptime_k34 >= CAST(GETDATE() AS DATE)
+    WHERE k34.uptime_k34 >= DATEADD(day, -30, CAST(GETDATE() AS DATE))
     ORDER BY k34.uptime_k34 DESC
   `);
 
@@ -86,7 +96,7 @@ async function main() {
 
   await pool.close();
 
-  console.log(`${bids.length} bids today (${bids.filter(b => b.bid_status === 'submitted').length} submitted, ${bids.filter(b => b.bid_status === 'pending').length} pending)`);
+  console.log(`${bids.length} bids in last 30d (${bids.filter(b => b.bid_status === 'submitted').length} submitted, ${bids.filter(b => b.bid_status === 'pending').length} pending)`);
 
   // Upsert to Supabase
   if (bids.length > 0) {
