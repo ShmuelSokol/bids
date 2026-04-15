@@ -66,32 +66,42 @@ async function main() {
   const token = await getToken();
   const D = process.env.AX_D365_URL!;
 
-  // 1. Pull ALL DD219 PO lines, then the headers for those POs.
-  //    Filter client-side to headers from last 400d (matches awards
-  //    retention window).
-  console.log("1. Pulling all DD219 PO lines from AX...");
-  const poLinesRaw = await fetchAll(
-    token,
-    `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=(CustomerRequisitionNumber eq 'DD219' or CustomerRequisitionNumber eq 'dd219')&$select=PurchaseOrderNumber,LineNumber,ItemNumber,OrderedPurchaseQuantity,PurchasePrice,PurchaseOrderLineStatus,RequestedDeliveryDate&$top=1000`,
-    5000
-  );
-  console.log(`   ${poLinesRaw.length} DD219 lines total`);
-
-  const allPoNums = [...new Set(poLinesRaw.map((l: any) => l.PurchaseOrderNumber))];
-  console.log(`   ${allPoNums.length} distinct POs — fetching headers...`);
+  // 1. AX OData silently caps any single filter at 1000 rows (no
+  //    nextLink beyond that). Walk history by MONTH so each request's
+  //    result set stays well under the cap. Go back 24 months.
+  console.log("1. Pulling headers by month (AX OData has a hidden 1000-row cap per filter)...");
   const headers: any[] = [];
-  for (let i = 0; i < allPoNums.length; i += 40) {
-    const chunk = allPoNums.slice(i, i + 40);
-    const filter = chunk.map((n) => `PurchaseOrderNumber eq '${n}'`).join(" or ");
-    const url = `${D}/data/PurchaseOrderHeadersV2?cross-company=true&$filter=${encodeURIComponent(filter)}&$select=PurchaseOrderNumber,OrderVendorAccountNumber,AccountingDate`;
-    headers.push(...(await fetchAll(token, url)));
+  for (let monthsBack = 0; monthsBack < 24; monthsBack++) {
+    const end = new Date();
+    end.setUTCDate(1); end.setUTCHours(0, 0, 0, 0);
+    end.setUTCMonth(end.getUTCMonth() - monthsBack);
+    const start = new Date(end);
+    start.setUTCMonth(end.getUTCMonth() - 1);
+    const url = `${D}/data/PurchaseOrderHeadersV2?cross-company=true&$top=1000&$orderby=AccountingDate desc&$filter=AccountingDate ge ${start.toISOString()} and AccountingDate lt ${end.toISOString()}&$select=PurchaseOrderNumber,OrderVendorAccountNumber,AccountingDate`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) continue;
+    const d: any = await r.json();
+    headers.push(...(d.value || []));
   }
-  console.log(`   ${headers.length} headers fetched`);
+  console.log(`   ${headers.length} headers pulled across 24 months`);
 
-  // No date gate on POs — AX only has 547 DD219 POs total (Dec 2024-Mar
-  // 2025 range). Keep them all, let the award date window do the work.
+  // Walk chunks of 40 PO numbers, pull their DD219 lines
+  console.log("\n2. Pulling DD219 lines chunk by chunk...");
+  const poLinesRaw: any[] = [];
+  for (let i = 0; i < headers.length; i += 40) {
+    const chunk = headers.slice(i, i + 40);
+    const filter = chunk.map((h: any) => `PurchaseOrderNumber eq '${h.PurchaseOrderNumber}'`).join(" or ");
+    const ddFilter = `(CustomerRequisitionNumber eq 'DD219' or CustomerRequisitionNumber eq 'dd219') and (${filter})`;
+    const url = `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=${encodeURIComponent(ddFilter)}&$select=PurchaseOrderNumber,LineNumber,ItemNumber,OrderedPurchaseQuantity,PurchasePrice,PurchaseOrderLineStatus,RequestedDeliveryDate&$top=500`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (r.ok) {
+      const d: any = await r.json();
+      poLinesRaw.push(...(d.value || []));
+    }
+    if (i % 800 === 0 && i > 0) console.log(`   ...${i} headers scanned, ${poLinesRaw.length} DD219 lines so far`);
+  }
   const poLines = poLinesRaw;
-  console.log(`   Using all ${poLines.length} DD219 lines`);
+  console.log(`   Total DD219 lines found: ${poLines.length}`);
   if (poLines.length === 0) return;
 
   const headerByPo = new Map<string, any>(headers.map((h: any) => [h.PurchaseOrderNumber, h]));
