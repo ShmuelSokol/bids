@@ -246,10 +246,12 @@ function generateSql(resolved: ResolvedBid[]): string {
 async function main() {
   console.log(`${DRY_RUN ? "=== DRY RUN ===" : "!!! EXECUTE MODE — will write to LamLinks !!!"}\n`);
 
-  // Pull quoted bid decisions from Supabase that we'd auto-submit.
+  // Pull quoted bid decisions. The status='quoted' filter IS our
+  // idempotency key: rows flip to 'submitted' after --execute succeeds,
+  // so re-running the script finds 0 quoted and cannot duplicate.
   const { data: quoted } = await sb
     .from("bid_decisions")
-    .select("solicitation_number, nsn, final_price, quantity, lead_time_days")
+    .select("id, solicitation_number, nsn, final_price, quantity, lead_time_days")
     .eq("status", "quoted")
     .limit(10);
   console.log(`Found ${quoted?.length || 0} quoted bid_decisions to translate.\n`);
@@ -259,10 +261,33 @@ async function main() {
     return;
   }
 
+  // Second safety net: if Abe already has a live bid on this
+  // solicitation_number (via LamLinks UI), skip it. Protects against
+  // the case where a quote was staged in DIBS but Abe manually bid in
+  // LamLinks before we pressed --execute. abe_bids_live is refreshed
+  // by scripts/sync-abe-bids-live.ts every 5 min.
+  const solNos = quoted.map((q) => q.solicitation_number?.trim()).filter(Boolean);
+  const { data: liveBids } = await sb
+    .from("abe_bids_live")
+    .select("solicitation_number")
+    .in("solicitation_number", solNos);
+  const alreadyLive = new Set(
+    (liveBids || []).map((b: any) => b.solicitation_number?.trim()).filter(Boolean)
+  );
+  if (alreadyLive.size > 0) {
+    console.log(`Skipping ${alreadyLive.size} rows — Abe already has live LamLinks bids on those sol#s.`);
+  }
+
   const pool = await sql.connect(config);
   const resolved: ResolvedBid[] = [];
   const skipped: { sol: string; nsn: string; reason: string }[] = [];
+  const decisionIdBySolNsn = new Map<string, number>();
   for (const d of quoted) {
+    const sol = d.solicitation_number?.trim();
+    if (alreadyLive.has(sol)) {
+      skipped.push({ sol: d.solicitation_number, nsn: d.nsn, reason: "Abe already has live LamLinks bid" });
+      continue;
+    }
     const input: BidInput = {
       solicitation_number: d.solicitation_number,
       nsn: d.nsn,
@@ -271,10 +296,13 @@ async function main() {
       lead_days: d.lead_time_days || 45,
     };
     const r = await resolveBid(pool, input);
-    if (r) resolved.push(r);
-    else skipped.push({ sol: d.solicitation_number, nsn: d.nsn, reason: "no matching k11 in LamLinks" });
+    if (r) {
+      resolved.push(r);
+      decisionIdBySolNsn.set(`${sol}__${d.nsn}`, d.id);
+    } else {
+      skipped.push({ sol: d.solicitation_number, nsn: d.nsn, reason: "no matching k11 in LamLinks" });
+    }
   }
-  await pool.close();
 
   console.log(`Resolved: ${resolved.length}, Skipped: ${skipped.length}`);
   for (const s of skipped) console.log(`  skipped: ${s.sol} / ${s.nsn} — ${s.reason}`);
@@ -282,6 +310,7 @@ async function main() {
 
   if (resolved.length === 0) {
     console.log("Nothing to write.");
+    await pool.close();
     return;
   }
 
@@ -292,12 +321,51 @@ async function main() {
   console.log(`\n--- Preview (first 80 lines) ---`);
   console.log(sqlOut.split("\n").slice(0, 80).join("\n"));
   console.log(`\n--- Full SQL is in ${outPath} ---`);
+
+  if (!DRY_RUN) {
+    // Execute mode: actually run the SQL against LamLinks, then flip
+    // bid_decisions.status to 'submitted' on success. Order matters —
+    // we only mark submitted AFTER the LamLinks write commits, so any
+    // failure leaves the rows still 'quoted' and retryable.
+    console.log(`\n>>> Executing SQL against LamLinks...`);
+    try {
+      // Strip the dry-run ROLLBACK block — we generated COMMIT above.
+      await pool.request().batch(sqlOut);
+      console.log(`✓ LamLinks write succeeded.`);
+
+      const decisionIds = Array.from(decisionIdBySolNsn.values());
+      const { error: updateErr } = await sb
+        .from("bid_decisions")
+        .update({ status: "submitted", updated_at: new Date().toISOString() })
+        .in("id", decisionIds);
+      if (updateErr) {
+        console.error(`!! LamLinks wrote but flagging submitted in Supabase FAILED: ${updateErr.message}`);
+        console.error(`!! Manually flip these ${decisionIds.length} bid_decisions IDs to status='submitted': ${decisionIds.join(",")}`);
+      } else {
+        console.log(`✓ Flipped ${decisionIds.length} bid_decisions to status='submitted'.`);
+      }
+    } catch (e: any) {
+      console.error(`✗ LamLinks execute FAILED: ${e?.message || e}`);
+      console.error(`   bid_decisions were NOT updated. They remain 'quoted' and can be retried.`);
+      await pool.close();
+      process.exit(1);
+    }
+  }
+
+  await pool.close();
+
   console.log(`\nNEXT STEPS:`);
-  console.log(`  1. Read the full file and review with Yosef`);
-  console.log(`  2. If approved, re-run with --execute flag:`);
-  console.log(`     npx tsx scripts/generate-bid-insert-sql.ts --execute`);
-  console.log(`  3. Open LamLinks, confirm the new batch shows up as pending`);
-  console.log(`  4. Abe clicks 'Submit' in LamLinks UI — normal flow from there`);
+  if (DRY_RUN) {
+    console.log(`  1. Read the full file and review with Yosef`);
+    console.log(`  2. If approved, re-run with --execute flag:`);
+    console.log(`     npx tsx scripts/generate-bid-insert-sql.ts --execute`);
+    console.log(`  3. Open LamLinks, confirm the new batch shows up as pending`);
+    console.log(`  4. Abe clicks 'Submit' in LamLinks UI — normal flow from there`);
+  } else {
+    console.log(`  1. Open LamLinks, confirm the new batch shows up as pending`);
+    console.log(`  2. Abe clicks 'Submit' in LamLinks UI → EDI → DIBBS`);
+    console.log(`  3. Monitor k33.t_stat_k33 for transition to 'sent'`);
+  }
 }
 
 main().catch((e) => {
