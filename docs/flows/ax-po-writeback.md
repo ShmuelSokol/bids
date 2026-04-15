@@ -113,25 +113,46 @@ When we get answers, come back here and mark each with **[ANSWERED]** + the answ
 **[ANSWERED 2026-04-15 from recon]** 2. AX auto-numbers POs — 50 distinct `PurchaseOrderNumber` values returned, sequential in the normal range.
 **[ANSWERED 2026-04-15 from recon]** 6. Currency is constant `USD`.
 **[ANSWERED 2026-04-15 from recon]** 10. Cross-company works (`?cross-company=true` on the recon succeeded).
+**[ANSWERED 2026-04-15 ssokol]** 4. Warehouse is always `W01` (Brooklyn). No per-item/per-vendor routing to W03 NJ for DIBS-generated POs.
+**[ANSWERED 2026-04-15 ssokol]** 12. AX does NOT auto-send to vendors after Confirm. Some vendors have portals (operator re-enters the PO in their web UI), others receive by email. So DIBS' job ends at Confirm; Abe/Yosef handles per-vendor transmission manually.
 
-Still open:
+**[NEW 2026-04-15 from ssokol]** Gap identified: some items being purchased aren't yet set up in AX. We need an "NPI" (New Product Import) procedure — when a DIBS PO line's NSN/item doesn't exist in AX, create it before the PO can land. Needs its own sub-flow (product master + vendor-item-link + UoM conversion rules). Out of scope for phase 2; add as a phase 2.5 prerequisite.
 
-3. **Vendor identifiers.** Our `nsn_costs.vendor` has values like `AMAZON`, `000202`, `MCMAST`, `CHEMET`, `000249`. The AX sample has `ZHEJIA`, `HAEMON`, `MEDPLU` — also short 6-char codes. Are our 34K nsn_vendor_prices all valid AX `VendorAccountNumber`s? Best check: run a sample of our distinct DIBS vendors against `/data/Vendors?$filter=VendorAccountNumber in ...` and see how many miss. If any miss, we need a translation table.
-4. **Warehouse + address selection per PO.** When we create a new PO, which warehouse do we route to — `W01` or `W03`? Does it depend on the vendor, the item, or the operator's choice? Same question for the ship-to address (Brooklyn vs East Brunswick). **Proposed default until answered**: Brooklyn + W01 (more frequent in sample).
-5. **Payment terms.** Small-set in sample (`PPD`, `N30`, `N14`, `N7`, `N60`). Does the vendor master supply this automatically if we omit `PaymentTermsName`? If yes, safer to omit. If no, we need a per-vendor lookup.
-7. **Line UoM match.** If our DIBS-side UoM (from `po_lines.unit_of_measure`, ultimately `k81.cln_ui_k81`) doesn't match the UoM AX uses for that item, does AX auto-convert via the product's UoM conversion rules, or does it reject? The bid-side UoMs are `EA`, `PG`, `PK`, `BX`; AX lines show `ea`, `B1000`, etc.
-8. **Confirm permissions.** Does the DIBS OAuth service principal have permission to call the `confirmOrder` action on `PurchaseOrderHeadersV2`? Probe-able: do a dry `OPTIONS` or just attempt Confirm on a test PO and see if AX returns 403. **If no permission**, DIBS stops at Draft and Abe/Yosef finishes in AX UI.
-9. **Rejection behavior.** If we POST a PO header with one invalid line (missing field, bad ItemNumber), does AX fail the whole batch or just the line? We want all-or-nothing — on partial success we might end up with a PO with fewer lines than intended, which is worse than no PO.
-11. **Duplicate prevention.** If DIBS retries a POST after a partial failure, will AX deduplicate, or will we get two POs for the same lines? Assumed NO dedup — we'll persist `ax_po_number` on first success and refuse to re-POST for that DIBS `purchase_orders.id`.
-12. **EDI-to-vendor flow.** Once a PO is Confirmed in AX, does AX automatically send it to the vendor (EDI 850, email, fax), or is there another manual click? Affects whether Abe still has something to do after DIBS fires Confirm.
+Still open (see "Questions for Yosef" below — these are the renumbered, plain-English versions you can paste into a message).
 
-New questions raised by the recon:
+## Questions for Yosef (clean list, renumbered)
 
-13. **`WorkflowState` behavior on insert.** Lines in the sample all show `'NotSubmitted'`. Do we set this on POST, or does AX manage it? If we set `'NotSubmitted'`, does that route to a human approver in AX's workflow engine (if workflows are configured)?
-14. **`DocumentApprovalStatus` transitions.** The sample shows only `Confirmed`/`Approved`. Are there never any drafts in this tenant, or is there a filter excluding them from OData? If drafts exist but aren't readable, we might still POST draft successfully but not be able to read the result.
-15. **`Orderer`/`Requester` on hardcoded `000001`.** Is that a fixed integration user, or the default employee that happens to always be used? If our service principal POSTs without it, does AX use the service principal's identity or a system default?
-16. **`CustomerRequisitionNumber='DD219'`.** Every sampled line carried this — confirms DD219 is THE DLA government customer code for our gov work. Should DIBS-generated POs always stamp `DD219`, or do some non-gov DIBS POs need a different code?
-17. **Barcode population on lines.** Currently 0 of 143 sampled lines have `Barcode`/`BarCodeSetupId` populated. Worth having DIBS populate them as `(<nsn>, 'NSN')` so warehouse can scan? Would need confirmation that populating them doesn't break anything.
+Context to include when sending:
+
+> DIBS has a new feature that would let it create purchase orders directly in D365 instead of Abe exporting to Excel and someone keying them in. I've reverse-engineered most of the shape from 50 recent POs — need your answers on the remaining items before I flip the switch.
+
+1. **Vendor accounts.** DIBS has ~34,000 vendor price records pulled from AX. The vendor codes we hold look like `AMAZON`, `000202`, `MCMAST`, `CHEMET`. The 50 POs we sampled used codes like `ZHEJIA`, `HAEMON`, `MEDPLU` (same shape). Can I assume every vendor in our DIBS data corresponds to a real `VendorAccountNumber` in AX, or should I expect misses? If misses, is there a translation we should maintain?
+
+2. **Payment terms.** PO headers in the sample have `PaymentTermsName` values of `PPD`, `N30`, `N14`, `N7`, `N60`. If DIBS POSTs a PO without specifying payment terms, will AX pull them automatically from the vendor master, or does the create fail? If manual, we'll need to know which terms apply per vendor.
+
+3. **Unit of measure match.** Our source data calls units `EA`, `PG`, `PK`, `BX`. AX lines show `ea`, `B1000`, etc. If we send a PO line with UoM `EA` but the item in AX is set up for `PG`, will AX auto-convert via the product's UoM conversion rules, or reject the line? Context: our bidding/UoM-match logic has already been fixed so we won't send bad UoM math — this is about the AX-side conversion only.
+
+4. **Confirm permission.** After DIBS creates the PO (Draft state), we want to call AX's "Confirm" action so the PO transitions into the normal lifecycle. Does our OAuth service principal (the one with the D365 API credentials DIBS is already using for reads) have permission to call `confirmOrder` on `PurchaseOrderHeadersV2`? If no, DIBS will stop at Draft and you'll click Confirm manually in AX.
+
+5. **Rejection behavior.** If we POST a PO with 10 lines and one line has a bad field, does AX reject the whole PO or just that line? We want all-or-nothing, because a partial PO (say 9 lines committed, 1 missing) is worse than none.
+
+6. **Duplicate prevention.** If DIBS retries a POST after a partial network failure, will AX deduplicate, or would we end up with two real POs? I'm assuming no dedup on your side — DIBS will store the AX-assigned PO number on first success and refuse to re-POST the same DIBS draft — but let me know if there's anything server-side I should rely on instead.
+
+7. **AX-side "new product import" for items not yet in AX.** You mentioned some items we're buying aren't set up in AX yet. What's the flow you want?
+   - (a) DIBS detects missing items and creates a queue for you to set up manually before the PO goes through?
+   - (b) DIBS creates the product in AX itself via `ReleasedProductsV2` (or whichever entity) using data from our bid sources? If so, what are the required fields — I'd need to know product group, tracking dimensions, storage dimensions, tax setup, UoM, etc.
+   - (c) Some hybrid — DIBS creates the product with a "needs review" flag and you fill in the rest later?
+   My recommendation is (a) for now (safe, non-destructive) and moving to (c) once we have confidence.
+
+8. **Workflow approvals.** PO lines in the sample all show `WorkflowState='NotSubmitted'`. If workflows are configured on PurchaseOrderHeader in this tenant, and DIBS POSTs a new PO, will it automatically route to a human approver, or is that workflow off?
+
+9. **Orderer / Requester employee number.** Every sampled PO had `OrdererPersonnelNumber='000001'` and `RequesterPersonnelNumber='000001'`. Is that a specific integration/service user, or just the default that always gets used? Should DIBS hardcode `000001`, or do you want a dedicated employee number for DIBS-generated POs (e.g., to audit which POs came from the system vs keyed manually)?
+
+10. **`CustomerRequisitionNumber='DD219'`.** Every sampled line stamped DD219 (our DLA government customer). All DIBS-generated POs are DLA-origin, so DIBS will always stamp DD219 — can you confirm that's correct, or are there any DIBS POs that should carry a different code?
+
+11. **Barcode / NSN scannability on lines.** None of the 143 sampled lines have `Barcode` / `BarCodeSetupId` populated. If DIBS populates `Barcode=<the NSN>` + `BarCodeSetupId='NSN'` on each line, would warehouse benefit (being able to scan NSN for receipt), or is there a reason these are intentionally left null?
+
+12. **Ship-to address.** Sample shows 2 options: `SZY Brooklyn` (`000000203`, W01) and `SZY New NJ` (`000011805`, W03). You confirmed warehouse is always W01 for DIBS POs — can I take that to mean the ship-to is always Brooklyn (`000000203`), or is there a reason the ship-to would ever be different from the warehouse?
 
 ## Proposed implementation (post-answers)
 
