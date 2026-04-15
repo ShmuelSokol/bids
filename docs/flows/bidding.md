@@ -197,7 +197,7 @@ Takes `{ quotes, format: "lamlinks"|"dibbs", download?: boolean }` and returns a
 2. **A row can only be quoted/submitted/skipped if `is_sourceable = true`.** (Not enforced in the API — the UI hides the buttons on non-sourceable rows, but `/api/bids/decide` doesn't check.)
 3. **`final_price` should be set when `status = "quoted"` or `"submitted"`.** Not enforced — `null` is allowed.
 4. **Sourceable count = dashboard count.** Both pages must use `isSourceableOpen()` from `src/lib/solicitation-filters.ts`. Enforced by shared helper.
-5. **`abe_bids_live` must always be filtered to today.** Stale rows contaminate `already_bid` flagging. Enforced in both `src/app/page.tsx:39` and `src/app/solicitations/page.tsx:44`.
+5. **`abe_bids_live` now holds 30 days of bids.** The old rule said "filter to today"; that rule caused a real bug where bids from yesterday didn't dedup the solicitation off the Sourceable tab (Abe saw sols he'd already bid on). Because dedup keys on exact `solicitation_number`, 30d of stale rows is safe — a matching sol# is a matching sol#, timing doesn't matter. `/bids/today` + dashboard's "bids today" panel still apply their own per-view today filter.
 6. **Date comparisons use `YYYY-MM-DD` string comparison, never `new Date()`.** Timezone hazard. Enforced in `isOpenSolicitation()` + the client useMemo counts in `solicitations-list.tsx:176`.
 7. **Decided_by is populated from `profile.full_name` or email.** Set by `/api/bids/decide` — not nullable in practice but not enforced by DB.
 8. **Default lead time = 45 days.** Hardcoded in `/api/bids/decide:42`.

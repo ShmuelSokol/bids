@@ -178,13 +178,15 @@ return new Date(rowDate) >= new Date(new Date().toDateString());
 
 **Lesson:** date comparisons across server/client/browser timezones are a bug magnet. Normalize to YYYY-MM-DD strings and compare lexicographically. Never call `new Date()` in business logic.
 
-## The two stale-data traps (abe_bids_live)
+## abe_bids_live window — today vs 30d
 
-**Trap 1:** The sync script writes today's bids into `abe_bids_live`. We were SELECTing *all* rows without a date filter, so yesterday's 277 bids were still there, labeled as "today's bids" in the UI.
+**Original rule (2026-03): filter to today.** Stale rows were mislabeling today's sourceables as already-bid because the page UI was counting yesterday's bids as "today's bids." Fix then: `.gte("bid_time", today)` on every read.
 
-**Trap 2:** The solicitations page marks any row in `abe_bids_live` as `already_bid`. With yesterday's stale data present, 13 items that were sourceable-today got marked as already-bid (from yesterday's session) and excluded from the sourceable count. Dashboard showed 33, solicitations showed 20.
+**Revised rule (2026-04-15): 30-day window.** Reverted the per-view filter for `/solicitations` specifically after Abe reported sols he'd bid on Monday STILL showing as Sourceable on Wednesday. Because Monday's bid_time was older than "today," the dedup Set never contained the sol#, and /solicitations showed the sol as open despite a valid bid in LamLinks.
 
-**Fix:** every query of `abe_bids_live` must include `.gte("bid_time", today)`. Treat "live" bids as ephemeral, not cumulative.
+**Resolution:** dedup keys on EXACT `solicitation_number` — having 30d of stale bids in the table is safe. A bid on sol X thirty days ago correctly dedups today's open sol X. Views that display "today's activity" (`/bids/today`, dashboard "Bids Today" panel) still apply their own per-view `bid_time >= today` filter; they're display filters, not dedup filters.
+
+**Lesson:** the shape of the data matters more than the staleness. Dedup by identity field, display by time field.
 
 ## Why we don't add native packages to package.json
 
