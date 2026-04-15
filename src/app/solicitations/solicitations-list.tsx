@@ -992,6 +992,14 @@ export function SolicitationsList({
 
       {/* Solicitation Table */}
       <div className="rounded-xl border border-card-border bg-card-bg shadow-sm overflow-hidden">
+        <div className="px-3 py-1.5 text-[10px] text-muted bg-gray-50 border-b border-card-border flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="font-semibold">Data sources:</span>
+          <span><span className="px-1 rounded bg-cyan-50 text-cyan-700 font-medium">LL</span> = LamLinks import</span>
+          <span><span className="px-1 rounded bg-gray-100 text-gray-600">no LL badge</span> = DIBBS scrape</span>
+          <span>Cost source shown under $ — <span className="text-green-700">AX price agreement</span> / Recent PO / MDB</span>
+          <span><span className="px-1 rounded bg-green-100 text-green-700">P/N Match</span> = PUB LOG match</span>
+          <span><span className="px-1 rounded bg-purple-100 text-purple-700">Bid in LL</span> = Abe already bid via LamLinks</span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

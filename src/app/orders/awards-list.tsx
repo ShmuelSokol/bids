@@ -74,6 +74,13 @@ export function AwardsList({
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [downloadingId, setDownloadingId] = useState<number | "all" | null>(null);
+  const [validateResult, setValidateResult] = useState<{
+    checked: number;
+    ready: any[];
+    nsn_missing: { nsn: string; awards: any[] }[];
+    dodaac_missing: any[];
+  } | null>(null);
+  const [validating, setValidating] = useState(false);
 
   async function downloadFromEndpoint(endpoint: string, poIds: number[], fallbackName: string) {
     const key: number | "all" = poIds.length === 1 ? poIds[0] : "all";
@@ -298,25 +305,28 @@ export function AwardsList({
           </Link>
           <button
             onClick={async () => {
-              const r = await fetch("/api/so/validate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({}),
-              });
-              const d = await r.json();
-              if (!r.ok) {
-                setMessage(`SO validate failed: ${d.error || r.status}`);
-                return;
+              setValidating(true);
+              try {
+                const r = await fetch("/api/so/validate", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({}),
+                });
+                const d = await r.json();
+                if (!r.ok) {
+                  setMessage(`SO validate failed: ${d.error || r.status}`);
+                  return;
+                }
+                setValidateResult(d);
+              } finally {
+                setValidating(false);
               }
-              const readyN = d.ready?.length || 0;
-              const nsnMissing = d.nsn_missing?.length || 0;
-              setMessage(
-                `Validated ${d.checked} awards. ${readyN} ready for MPI, ${nsnMissing} NSN(s) need creation in AX. ${d.dodaac_missing?.length || 0} DODAAC issue(s).`
-              );
             }}
-            className="px-3 py-1.5 rounded border border-card-border bg-card-bg text-xs font-medium hover:bg-accent/5 inline-flex items-center gap-1"
+            disabled={validating}
+            className="px-3 py-1.5 rounded border border-card-border bg-card-bg text-xs font-medium hover:bg-accent/5 inline-flex items-center gap-1 disabled:opacity-50"
             title="Pre-validate awards against AX before you run the MPI Sales Order import"
           >
+            {validating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             Validate for AX
           </button>
         </div>
@@ -775,6 +785,82 @@ export function AwardsList({
           )}
         </div>
       )}
+      {/* Validate-for-AX Result Modal */}
+      {validateResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setValidateResult(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-[720px] max-w-[95vw] max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-card-border flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-bold">AX pre-validation results</h3>
+                <p className="text-xs text-muted mt-1">
+                  Checked {validateResult.checked} recent awards against AX. Fix everything below BEFORE running the MPI Sales Order import — DIBS catching issues here is faster than MPI's error screen.
+                </p>
+              </div>
+              <button onClick={() => setValidateResult(null)} className="text-muted hover:text-foreground text-xl leading-none">×</button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
+                  <div className="text-2xl font-bold text-green-700">{validateResult.ready.length}</div>
+                  <div className="text-xs text-muted mt-1">Ready for MPI</div>
+                </div>
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-700">{validateResult.nsn_missing.length}</div>
+                  <div className="text-xs text-muted mt-1">NSNs need AX item</div>
+                </div>
+                <div className="rounded-lg bg-slate-100 border border-slate-200 p-3 text-center">
+                  <div className="text-2xl font-bold text-slate-700">{validateResult.dodaac_missing.length}</div>
+                  <div className="text-xs text-muted mt-1">DODAAC unmapped <span className="text-[9px] align-top text-slate-500">(stubbed)</span></div>
+                </div>
+              </div>
+
+              {validateResult.nsn_missing.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">NSNs with no AX item</h4>
+                  <p className="text-xs text-muted mb-2">
+                    Each NSN needs an item created in AX (via NPI) or attached to an existing item. Abe does this in the MPI error workflow OR via the NPI multi-sheet import.
+                  </p>
+                  <div className="rounded border border-card-border max-h-64 overflow-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr className="text-left text-muted">
+                          <th className="px-3 py-1.5 font-medium">NSN</th>
+                          <th className="px-3 py-1.5 font-medium text-right">Awards affected</th>
+                          <th className="px-3 py-1.5 font-medium">Example contract</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {validateResult.nsn_missing.slice(0, 100).map((row, i) => (
+                          <tr key={i} className="border-t border-card-border/40">
+                            <td className="px-3 py-1.5 font-mono text-accent">{row.nsn}</td>
+                            <td className="px-3 py-1.5 text-right">{row.awards.length}</td>
+                            <td className="px-3 py-1.5 text-muted font-mono text-[10px]">
+                              {row.awards[0]?.contract_number || "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {validateResult.nsn_missing.length > 100 && (
+                    <p className="text-[10px] text-muted mt-1">Showing first 100 of {validateResult.nsn_missing.length}</p>
+                  )}
+                </div>
+              )}
+
+              {validateResult.dodaac_missing.length === 0 && (
+                <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-muted">
+                  <strong>DODAAC check stubbed.</strong> The awards table doesn't carry DODAAC today; needs Yosef's schema tour (which k81 join reaches ka0) before this column becomes meaningful. For now, DIBS can't catch DODAAC-map-missing issues ahead of MPI.
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-3 border-t border-card-border text-right">
+              <button onClick={() => setValidateResult(null)} className="px-3 py-1.5 rounded bg-accent text-white text-xs font-medium">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Supplier Switch Modal */}
       {switchingLine && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setSwitchingLine(null)}>
