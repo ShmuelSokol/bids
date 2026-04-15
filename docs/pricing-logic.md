@@ -18,17 +18,26 @@ That bracketing is the heart of the pricing engine.
 ## The empirical markup brackets
 
 ```
-Cost bracket         │ Multiplier
+Cost bracket         │ Multiplier (recalibrated 2026-04)
 ─────────────────────┼─────────────
-Under $25            │ 1.64x
+Under $25            │ 2.00x  (was 1.64x)
 $25 – $100           │ 1.36x
 $100 – $500          │ 1.21x
 $500 and up          │ 1.16x
 ```
 
-You can see the logic: a $5 bandage with a 64% markup still only yields $3.20 of gross — barely enough to cover picking, packing, and shipping. A $1,000 laryngoscope at 16% still yields $160 per unit. The brackets *normalize* for fixed cost absorption.
+You can see the logic: a $5 bandage with a 100% markup still only yields $5 of gross — barely enough to cover picking, packing, and shipping. A $1,000 laryngoscope at 16% still yields $160 per unit. The brackets *normalize* for fixed cost absorption.
 
-These numbers aren't hand-waved. They were fit against the win/loss distribution across the dataset. If we priced a $40 item at 1.64x (which would be aggressive for that bracket) we'd lose ~70% of the time. At 1.36x we win roughly where the winning-bid distribution peaks.
+These numbers aren't hand-waved. They were fit against the win/loss distribution across the dataset, then **recalibrated in April 2026** after comparing our `suggested_price` against Abe's actual bids over a 14-day window (466 bids with known cost). Abe's empirical median multipliers:
+
+| Bracket | Abe median | DIBS was suggesting | Action |
+|---------|-----------|---------------------|--------|
+| <$25    | **2.29×** | 1.64× | Raised to 2.00× (conservative anchor) |
+| $25-100 | 1.40×     | 1.36× | Kept (within 3%) |
+| $100-500| 1.19×     | 1.21× | Kept (within 2%) |
+| $500+   | 1.18×     | 1.16× | Kept (within 2%) |
+
+The `<$25` bracket was badly miscalibrated — for a $10-cost item we'd suggest $16.40 but Abe actually bid $22.90. Cheap items need more margin to clear fixed overhead (handling, packaging, shipping eat ~$5 regardless of item price). Going to 2.00× closes most of the gap while staying conservative against outliers at the p75 (4.94×) — Abe will still manually bump when needed, and we won't overshoot.
 
 ## Cost waterfall: what "cost" means
 

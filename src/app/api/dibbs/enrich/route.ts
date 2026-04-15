@@ -12,14 +12,26 @@ import { createServiceClient } from "@/lib/supabase-server";
 /**
  * Empirical bracket markup with boundary hysteresis.
  *
- * The brackets were fit against 2,591 historical wins; a hard step between
- * them caused discontinuities at the boundaries (a $0.02 cost change could
- * swing suggested price by 17%). We linearly interpolate within a $BAND-wide
- * window on each side of each boundary so nearby costs produce nearby prices.
+ * The brackets were originally fit against 2,591 historical wins. Recalibrated
+ * 2026-04-14 against 466 of Abe's last 14 days of bids (where we had cost
+ * data). Abe's empirical medians:
+ *   <$25:    2.29x (was 1.64x — bumped to 2.00x, closer to truth but still
+ *            conservative to avoid overpricing the tail)
+ *   $25-100: 1.40x (model says 1.36x — keep, within 3%)
+ *   $100-500: 1.19x (model says 1.21x — keep, within 2%)
+ *   $500+:   1.18x (model says 1.16x — keep, within 2%)
+ *
+ * The <$25 bump is the big fix: cheap items need more margin to clear fixed
+ * handling + shipping costs. At 1.64x a $10-cost item was suggested $16.40
+ * but Abe bid $22.90 — ~140 bids/day were systematically too low.
+ *
+ * We linearly interpolate within a $BAND-wide window on each side of each
+ * boundary so nearby costs produce nearby prices (avoids 17% jumps on 1¢
+ * cost changes).
  */
 function interpolateMarkup(cost: number): number {
   const brackets: [number, number][] = [
-    [0, 1.64],
+    [0, 2.00],    // recalibrated from 1.64 based on Abe's 14-day median of 2.29
     [25, 1.36],
     [100, 1.21],
     [500, 1.16],
@@ -262,7 +274,17 @@ export async function POST() {
     let priceSource: string | null = null;
     const lastWinPrice = pricingMap.get(nsn); // our last winning bid price
 
-    if (lastWinPrice && lastWinPrice > 0 && cost && cost > 0) {
+    // Suspicious-cost guardrail: if our cost data is wildly off vs the
+    // last winning price, trust history over cost. Recalibration against
+    // Abe's last 14 days showed a cluster of bids where cost was clearly
+    // wrong (cost $210, Abe bid $6) — those broke the model. Ratio >10 or
+    // <0.1 means one of the two numbers is lying; the winning-bid price
+    // is usually the truth since it cleared the market.
+    const costLooksWrong =
+      cost && cost > 0 && lastWinPrice && lastWinPrice > 0 &&
+      (cost / lastWinPrice > 10 || cost / lastWinPrice < 0.1);
+
+    if (lastWinPrice && lastWinPrice > 0 && cost && cost > 0 && !costLooksWrong) {
       // We won before — use last winning price if it's profitable
       const winMargin = (lastWinPrice - cost) / lastWinPrice;
       if (winMargin > 0.05) {
@@ -270,11 +292,23 @@ export async function POST() {
         suggestedPrice = Math.round(lastWinPrice * 100) / 100;
         priceSource = `Last winning bid ($${lastWinPrice.toFixed(2)}) — ${Math.round(winMargin * 100)}% margin on $${cost.toFixed(2)} cost`;
       } else {
-        // Margin was thin — use cost + small markup
-        const safePrice = Math.round(cost * 1.10 * 100) / 100;
-        suggestedPrice = Math.max(safePrice, lastWinPrice);
-        priceSource = `Cost + 10% (last win was thin margin)`;
+        // Margin was thin — anchor to the winning price + a token bump,
+        // and floor at cost × 1.15 so we always have SOME margin.
+        // Previous version collapsed to cost × 1.10 which undershot by
+        // a median of ~30% vs Abe's actual bids (he doesn't slash to
+        // bare-minimum margin just because the last win was thin).
+        const flooredAtCost = cost * 1.15;
+        const anchoredAtLastWin = lastWinPrice * 1.01;
+        const safePrice = Math.max(flooredAtCost, anchoredAtLastWin);
+        suggestedPrice = Math.round(safePrice * 100) / 100;
+        priceSource = `Last win $${lastWinPrice.toFixed(2)} +1% or cost × 1.15 (thin-margin fallback)`;
       }
+      withCostCount++;
+    } else if (costLooksWrong && lastWinPrice && lastWinPrice > 0) {
+      // Cost data looks wrong — trust history. Price off last winning
+      // bid + 2% increment (same pattern as the no-cost branch below).
+      suggestedPrice = Math.round(lastWinPrice * 1.02 * 100) / 100;
+      priceSource = `Last winning bid $${lastWinPrice.toFixed(2)} +2% (cost $${cost!.toFixed(2)} looked wrong, ignored)`;
       withCostCount++;
     } else if (cost && cost > 0) {
       // No winning history — use bracket markup with linear interpolation
