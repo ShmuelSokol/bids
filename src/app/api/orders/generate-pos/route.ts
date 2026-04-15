@@ -6,17 +6,27 @@ import { computeMarginPct } from "@/lib/margin";
 /**
  * POST /api/orders/generate-pos
  *
- * For each selected award, look up the cheapest supplier for that NSN
- * from `nsn_vendor_prices`. Group awards by that supplier and create
- * one draft PO per supplier — so 12 items cheapest from Vendor A all
- * land on Vendor A's PO, 5 items from Vendor B on Vendor B's PO, etc.
+ * For each selected award, pick a supplier + cost using the pricing-
+ * engine waterfall (same source-of-truth the bidder uses so we don't
+ * ship profitable bids to loss-making POs). Order of preference:
  *
- * Awards with no vendor price lookup land on a single "UNASSIGNED"
- * PO that Abe can re-assign per-line via the supplier-switch flow.
+ *   1. nsn_costs row where cost_source = "AX PO (last 2 months)" —
+ *      actual transacted cost with this vendor, freshest.
+ *   2. nsn_costs row where cost_source = "AX PO (last 3 months)".
+ *   3. nsn_costs row where cost_source = "AX price agreement
+ *      (cheapest vendor)" — asking price, only trusted when UoM
+ *      matches the award's UoM.
+ *   4. nsn_costs row where cost_source = "AX PO (older)".
  *
- * `unit_cost` on each po_line uses the vendor's price (not the
- * historical award.our_cost), so margin reflects the actual cost
- * we'd pay this supplier today.
+ * UoM check: the award carries a `unit_of_measure` column (EA, PG,
+ * BX, etc.). nsn_costs.unit_of_measure carries the AX-side UoM. If
+ * they disagree, we cannot safely multiply cost × qty without a pack-
+ * size conversion we don't have, so the award is routed to UNASSIGNED
+ * for manual supplier-switch. This is what kept the old "cheapest
+ * price_agreement" path producing negative-margin POs.
+ *
+ * Awards with no nsn_costs hit OR a UoM mismatch land on UNASSIGNED.
+ * Abe fixes those via the supplier-switch flow.
  *
  * Race-condition defense: the request body comes from the browser and
  * can be stale. Before creating any PO we re-fetch the awards from the
@@ -77,42 +87,68 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // For each NSN in the eligible awards, look up the cheapest vendor
-  // from nsn_vendor_prices. Sort ascending by price so the FIRST row
-  // per NSN wins (we keep only one cheapest per NSN below).
+  // For each NSN, pick the waterfall-winner cost from nsn_costs.
+  // (nsn_costs has already applied the waterfall across PO history +
+  // price agreements, and stores one row per NSN with the winning
+  // source + vendor + UoM.)
   const nsns = [...new Set(eligible.map((a) => a.nsn).filter(Boolean))];
-  const cheapestByNsn = new Map<
-    string,
-    { vendor: string; price: number; source: string | null; itemNumber: string | null }
-  >();
+  type CostRow = {
+    cost: number;
+    source: string | null;
+    vendor: string | null;
+    uom: string | null;
+    itemNumber: string | null;
+  };
+  const waterfallByNsn = new Map<string, CostRow>();
   if (nsns.length > 0) {
-    const { data: vendorPrices } = await supabase
-      .from("nsn_vendor_prices")
-      .select("nsn, vendor, price, price_source, item_number")
+    const { data: costs } = await supabase
+      .from("nsn_costs")
+      .select("nsn, cost, cost_source, vendor, unit_of_measure, item_number")
       .in("nsn", nsns)
-      .gt("price", 0)
-      .order("price", { ascending: true });
-    for (const vp of vendorPrices || []) {
-      if (!cheapestByNsn.has(vp.nsn)) {
-        cheapestByNsn.set(vp.nsn, {
-          vendor: vp.vendor,
-          price: vp.price,
-          source: vp.price_source,
-          itemNumber: vp.item_number,
-        });
-      }
+      .gt("cost", 0);
+    for (const c of costs || []) {
+      waterfallByNsn.set(c.nsn, {
+        cost: c.cost,
+        source: c.cost_source,
+        vendor: c.vendor,
+        uom: c.unit_of_measure,
+        itemNumber: c.item_number,
+      });
     }
   }
 
-  // Group by cheapest vendor (NOT by award.cage which is the awardee = us).
-  // Awards with no vendor price land on UNASSIGNED — Abe can switch them
-  // per-line afterward via the supplier-switch flow.
+  // Group by waterfall-winner vendor. UoM-mismatch and no-match cases
+  // both fall through to UNASSIGNED so Abe's Switch-Supplier flow can
+  // fix them. The only thing that lands on a real supplier PO is a
+  // line where we have a real vendor AND the UoM matches between the
+  // award line and the vendor's price.
+  function sameUom(a: string | null | undefined, b: string | null | undefined): boolean {
+    if (!a || !b) return false; // require both sides to be known
+    return a.trim().toUpperCase() === b.trim().toUpperCase();
+  }
+
+  type Routing = { supplier: string; reason: string; cost: CostRow | null };
+  const routingByAward = new Map<number, Routing>();
   const bySupplier = new Map<string, any[]>();
+
   for (const award of eligible) {
-    const cheapest = cheapestByNsn.get(award.nsn);
-    const supplier = cheapest?.vendor?.trim() || "UNASSIGNED";
-    if (!bySupplier.has(supplier)) bySupplier.set(supplier, []);
-    bySupplier.get(supplier)!.push(award);
+    const cost = waterfallByNsn.get(award.nsn);
+    let routing: Routing;
+    if (!cost || !cost.vendor) {
+      routing = { supplier: "UNASSIGNED", reason: "no cost/vendor in nsn_costs", cost: cost ?? null };
+    } else if (!sameUom(award.unit_of_measure, cost.uom)) {
+      routing = {
+        supplier: "UNASSIGNED",
+        reason: `UoM mismatch: award=${award.unit_of_measure || "?"} vs vendor=${cost.uom || "?"}`,
+        cost,
+      };
+    } else {
+      routing = { supplier: cost.vendor.trim(), reason: cost.source || "nsn_costs", cost };
+    }
+    routingByAward.set(award.id, routing);
+    const key = routing.supplier;
+    if (!bySupplier.has(key)) bySupplier.set(key, []);
+    bySupplier.get(key)!.push(award);
   }
 
   const createdPOs: any[] = [];
@@ -123,18 +159,20 @@ export async function POST(req: NextRequest) {
     poIndex++;
     const poNumber = `PO-${new Date().toISOString().split("T")[0].replace(/-/g, "")}-${timestamp}-${poIndex}`;
 
-    // Per-line unit_cost = vendor's price for this NSN if known, else
-    // fall back to the historical award.our_cost.
+    // Per-line unit_cost = the waterfall-winner cost from nsn_costs
+    // when the award's UoM matched. UNASSIGNED lines still get 0 cost
+    // (Abe switches supplier → cost repopulates from the target).
     const lineDrafts = supplierAwards.map((a: any) => {
-      const cheapest = cheapestByNsn.get(a.nsn);
-      const unitCost = cheapest?.price ?? a.our_cost ?? 0;
+      const routing = routingByAward.get(a.id);
+      const onRealSupplier = supplier !== "UNASSIGNED";
+      const unitCost = onRealSupplier ? routing?.cost?.cost ?? 0 : 0;
       const qty = a.quantity || 1;
       return {
         award: a,
         unit_cost: unitCost,
         total_cost: unitCost * qty,
-        cost_source: cheapest?.source || (a.our_cost ? "historical_po" : null),
-        vendor_item_number: cheapest?.itemNumber || null,
+        cost_source: onRealSupplier ? routing?.cost?.source ?? null : routing?.reason ?? null,
+        vendor_item_number: onRealSupplier ? routing?.cost?.itemNumber ?? null : null,
       };
     });
     const totalCost = lineDrafts.reduce((s, l) => s + l.total_cost, 0);
@@ -160,11 +198,14 @@ export async function POST(req: NextRequest) {
       nsn: l.award.nsn,
       description: l.award.description,
       quantity: l.award.quantity,
+      unit_of_measure: l.award.unit_of_measure || null,
       unit_cost: l.unit_cost,
       total_cost: l.total_cost,
       sell_price: l.award.unit_price,
       margin_pct: computeMarginPct(l.award.unit_price, l.unit_cost),
       supplier,
+      cost_source: l.cost_source,
+      vendor_item_number: l.vendor_item_number,
       contract_number: l.award.contract_number,
       order_number: l.award.order_number,
       fob: l.award.fob,
@@ -226,11 +267,18 @@ export async function POST(req: NextRequest) {
     userAgent,
   });
 
-  // Surface how many lines couldn't be auto-assigned (no vendor price)
-  // so the UI can prompt Abe to use the supplier-switch on the
-  // UNASSIGNED PO.
+  // Surface how many lines couldn't be auto-assigned. Separate the
+  // "no cost row" case from the "UoM mismatch" case so Abe knows
+  // whether to expect vendor data to show up on the next sync or
+  // whether he needs to manually switch supplier.
   const unassignedCount = bySupplier.get("UNASSIGNED")?.length || 0;
   const supplierCount = createdPOs.length - (unassignedCount > 0 ? 1 : 0);
+  const unassignedBreakdown = { no_cost: 0, uom_mismatch: 0 };
+  for (const [, routing] of routingByAward) {
+    if (routing.supplier !== "UNASSIGNED") continue;
+    if (routing.reason.startsWith("UoM mismatch")) unassignedBreakdown.uom_mismatch++;
+    else unassignedBreakdown.no_cost++;
+  }
 
   return NextResponse.json({
     success: true,
@@ -238,6 +286,7 @@ export async function POST(req: NextRequest) {
     line_count: eligible.length,
     supplier_count: supplierCount,
     unassigned_line_count: unassignedCount,
+    unassigned_breakdown: unassignedBreakdown,
     skipped_already_claimed: alreadyClaimed.length,
     pos: createdPOs,
   });
