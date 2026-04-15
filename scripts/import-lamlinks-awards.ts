@@ -7,6 +7,7 @@
 import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
+import { etNaiveToUtcIso } from "./tz-helpers";
 
 const config = {
   connectionString:
@@ -63,7 +64,7 @@ async function main() {
     unit_price: r.unit_price || 0,
     quantity: r.quantity || 0,
     unit_of_measure: r.unit_of_measure?.trim() || null,
-    award_date: r.award_date ? new Date(r.award_date).toISOString() : null,
+    award_date: etNaiveToUtcIso(r.award_date),
     contract_number: r.contract_number?.trim() || "",
     cage: "0AG09", // These are ALL our awards
     fob: r.fob?.trim() || null,

@@ -18,6 +18,7 @@
 import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
+import { etNaiveToUtcIso } from "./tz-helpers";
 
 const config = {
   connectionString:
@@ -104,7 +105,7 @@ async function main() {
       unit_price: r.unit_price ? Number(r.unit_price) : null,
       quantity: r.quantity ? Number(r.quantity) : 1,
       description: r.description?.trim() || "",
-      award_date: r.award_date || null,
+      award_date: etNaiveToUtcIso(r.award_date),
       data_source: cage === "0AG09" ? "lamlinks_kc4_self" : "lamlinks_kc4_competitor",
     });
   }
