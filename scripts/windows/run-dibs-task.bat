@@ -26,6 +26,16 @@ if errorlevel 1 (
     exit /b 2
 )
 
+REM Self-heal native deps if they got wiped by an `npm install X` call.
+REM mssql + msnodesqlv8 are installed with --no-save because they can't
+REM go in package.json (Railway build would fail). Any later npm install
+REM that runs in this repo drops them, which silently breaks every
+REM scheduled task that queries LamLinks. Check + reinstall if missing.
+if not exist "node_modules\mssql" (
+    echo [%date% %time%] mssql missing, reinstalling --no-save... >> "%LOG_FILE%"
+    call npm install --no-save mssql msnodesqlv8 >> "%LOG_FILE%" 2>&1
+)
+
 echo. >> "%LOG_FILE%"
 echo === [%date% %time%] Starting %SCRIPT% === >> "%LOG_FILE%"
 call npx tsx scripts\%SCRIPT%.ts >> "%LOG_FILE%" 2>&1
