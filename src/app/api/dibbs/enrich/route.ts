@@ -126,7 +126,7 @@ export async function POST() {
     } else {
       const resp = await fetch(
         "https://masterdb.everreadygroup.com/api/dibs/items/export?has_nsn=1",
-        { headers: { "X-Api-Key": KEY }, signal: AbortSignal.timeout(15000) }
+        { headers: { "X-Api-Key": KEY }, signal: AbortSignal.timeout(30000) }
       );
       if (!resp.ok) {
         mdbErrors.push(`MDB fetch ${resp.status}`);
