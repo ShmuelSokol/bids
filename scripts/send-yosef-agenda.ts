@@ -105,6 +105,142 @@ const HTML = `<!doctype html>
 <div class="q"><strong>Q-ax-10 — <code>BarCode</code> NSN vs UPC.</strong> Sample uses UPC. For DLA items should DIBS stamp NSN? Does warehouse receiving handle both?</div>
 <div class="q"><strong>Q-ax-11 — <code>EXTERNALITEMDESC</code> 4th column.</strong> Sheet has 3 headers but rows have 4 values (4th = barcode). Template bug or positional?</div>
 
+<h2>4. End-to-end flow — please scrutinize</h2>
+<p style="margin: 6px 0 10px; font-size: 12px;">This is my mental model of the full DIBS pipeline. <strong>Cross out anything wrong</strong> so I'm not building against a false assumption. Numbered steps are the flow; lettered items below each step are the assumptions I'm making that need validation.</p>
+
+<div class="card">
+<h3>Stage 1 — Solicitation capture</h3>
+<ol>
+<li>DIBBS website scraped twice daily (6am + 12pm ET) for open RFQs, stored in <code>dibbs_solicitations</code></li>
+<li>LamLinks k10 pulled twice daily (5:30am + 1pm Mon-Fri) for LamLinks-subscribed FSCs</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) DIBBS has every RFQ LamLinks doesn't and vice versa — we take the union. (b) <code>sol_no_k10</code> matches DIBBS solicitation format exactly, so dedup by sol# is reliable. (c) LamLinks only subscribes to ~240 FSCs; DIBBS scrape fills in the other 224 FSCs.</p>
+</div>
+
+<div class="card">
+<h3>Stage 2 — Enrichment</h3>
+<ol>
+<li>For each new sol, match NSN against AX first (<code>ProductBarcodesV3</code> where <code>BarcodeSetupId='NSN'</code>), then Master DB as fallback</li>
+<li>Pull cost from <code>nsn_costs</code> — rebuilt nightly from AX <code>PurchasePriceAgreements</code> (24K NSNs, 100% with UoM)</li>
+<li>Apply pricing waterfall: empirical bracket markup (2.00× / 1.36× / 1.21× / 1.16× by cost bracket), OR winning-history override if we've won this NSN recently</li>
+<li>Compute margin, FOB-adjusted margin (if Destination), AI score (0-100)</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) AX is authoritative over Master DB when they disagree on NSN. (b) <code>PurchasePriceAgreements</code> is the RIGHT cost source — it's asking price, not transacted, but recent PO cost path needs a header-join we haven't built yet. (c) Empirical brackets from 466 of Abe's recent bids generalize to future ones. (d) UoM mismatch (award EA vs vendor PG) routes to UNASSIGNED instead of producing bad margin math.</p>
+</div>
+
+<div class="card">
+<h3>Stage 3 — Bid decision (Abe)</h3>
+<ol>
+<li>Abe opens <code>/solicitations</code>, filters to sourceable, reviews each row</li>
+<li>Quotes at suggested price (or override with comment) → writes <code>bid_decisions</code> row with <code>status='quoted'</code></li>
+<li>Batch: select all quoted → "Submit N Bids" → currently just flips to <code>status='submitted'</code> in Supabase and Abe manually copy-pastes to LamLinks</li>
+</ol>
+<p class="muted"><strong>Assumption:</strong> default bid lead time = 45 days. Can be overridden but never is in practice.</p>
+</div>
+
+<div class="card">
+<h3>Stage 4 — Bid write-back to LamLinks <em>(pending your review)</em></h3>
+<ol>
+<li>DIBS generates <code>BEGIN TRANSACTION; INSERT k33 (batch header) + k34 (bid line) × N + k35 (pricing) × N; UPDATE k33 qotref; COMMIT;</code></li>
+<li>k33 inserted with <code>a_stat='acknowledged'</code>, <code>o/t/s_stat=NULL</code> — our read of "pending draft, shown in LamLinks UI, not yet transmitted"</li>
+<li>Abe sees batch in LamLinks UI, clicks Submit → LamLinks' own app code flips the transmit state and sends EDI to DIBBS</li>
+<li>On our side, <code>bid_decisions.status</code> flips <code>quoted → submitted</code> post-COMMIT</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) a_stat='acknowledged' is the right draft state. (b) No triggers or stored procs fire on k33/k34/k35 INSERT (confirmed from sys.triggers + sys.procedures). (c) ~45 hardcoded ERG company constants on k34 (SZY Holdings LLC, 10101 Foster Ave, tax 030538101, etc.) are correct and stable. (d) <code>idpo_k34='1 '</code>, <code>qtek14_k34=3</code> — same values Abe uses on all 50 recent bids. (e) LamLinks UI app code is what transmits; DIBS never touches o/t/s_stat fields.</p>
+</div>
+
+<div class="card">
+<h3>Stage 5 — Award detection</h3>
+<ol>
+<li>LamLinks k81 imported nightly into <code>awards</code> table (21,953 rows after dedup fix)</li>
+<li>Competitor awards from k81 also captured (kc4_tab → awards with cage ≠ 0AG09, 127K rows)</li>
+<li>Match awards back to bid_decisions via (fsc, niin, date) — loose match, no explicit FK</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) k81 has every DLA award we care about. (b) Award date within 90 days of bid date is a safe correlation window. (c) No stale rows in awards — dedup by (contract_number, fsc, niin, cage).</p>
+</div>
+
+<div class="card">
+<h3>Stage 6 — PO generation</h3>
+<ol>
+<li>Abe opens <code>/orders</code>, filters Awards by date, selects batch, clicks "Generate POs"</li>
+<li>DIBS looks up cheapest vendor for each NSN in <code>nsn_costs</code></li>
+<li>Groups lines by that winning vendor (NOT by awardee CAGE — awardee is always us, 0AG09)</li>
+<li>Lines with UoM mismatch between award and vendor price → UNASSIGNED bucket; Abe uses Switch Supplier to manually reassign</li>
+<li>Creates <code>purchase_orders</code> + <code>po_lines</code> rows in Supabase; now exportable as Excel per-supplier or ZIP'd folder of all</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) Vendor codes in <code>nsn_costs.vendor</code> (AMAZON, MCMAST, CHEMET, 000202, etc.) all resolve to real AX <code>VendorAccountNumber</code>s. (b) Award sell price × qty − vendor cost × qty = margin (requires UoM match, enforced). (c) FOB Destination shipping is baked in via the enrichment pricing step.</p>
+</div>
+
+<div class="card">
+<h3>Stage 7 — AX PO write-back <em>(Q-ax-1 decides approach)</em></h3>
+<ol>
+<li>Flow A: DIBS picks PO#, generates header+lines workbook, Yosef DMF-imports, DIBS polls; OR</li>
+<li>Flow B: Yosef creates header in AX UI (AX auto-numbers), pastes PO# back to DIBS, DIBS generates lines-only, Yosef DMF-imports, DIBS polls</li>
+<li>DIBS polls <code>PurchaseOrderLinesV2</code> via OData until expected line count appears; flips local state <code>drafted → posted</code></li>
+<li>After AX Confirm, Yosef manually transmits to vendor (portal/email — no auto-EDI)</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) OData service principal is read-only, confirmed by you. (b) DMF is the only viable write path. (c) DMF accepts operator-supplied PO numbers. (d) One AX PO per Supabase PO, no merging/splitting. (e) Once AX has the PO, AX is source of truth — DIBS doesn't mutate after posting.</p>
+</div>
+
+<div class="card">
+<h3>Stage 8 — NPI (conditional)</h3>
+<ol>
+<li>Before Stage 7, DIBS checks every PO line's item against AX <code>ReleasedProductsV2</code></li>
+<li>For any missing item: DIBS generates NPI multi-sheet workbook (RPCreate + RPV2 + APPROVEDVENDOR + EXTERNALITEMDESC + BarCode + TradeAgreement)</li>
+<li>Yosef imports NPI workbook; DIBS polls until new ItemNumbers resolvable</li>
+<li>Then Stage 7 proceeds</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) NPI sheets are processed in dependency order on a single DMF import click. (b) <code>PRODUCTGROUPID='FG-NonRX'</code> is correct for DLA/NSN items — or whatever group you specify. (c) Constants per sheet (FIFO-Stock, Warehouse reservation, SiteWHLoc, etc.) are stable across DIBS items. (d) EA is the default for BOM/Inventory/Purchase/Sales UoM on DIBS items.</p>
+</div>
+
+<div class="card">
+<h3>Stage 9 — Sales order creation <em>(need your template to build)</em></h3>
+<ol>
+<li>Awards → "Generate SOs" button → DIBS generates government-flow SO DMF template</li>
+<li>Stamps DD219 customer, DLA contract #, CLIN per line</li>
+<li>Yosef imports; DIBS polls for SO numbers</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) Every DIBS award becomes exactly one AX SO line; awards with the same contract number can share an SO header. (b) The government-flow SO template differs materially from the vendor-facing one — hence needing your specific version. (c) SO creation happens BEFORE warehouse fulfillment (ka8/ka9), since ka9 references k81 (the award).</p>
+</div>
+
+<div class="card">
+<h3>Stage 10 — Fulfillment (warehouse, not DIBS)</h3>
+<ol>
+<li>warehouse2 picks items, creates LamLinks ka8 (job) + ka9 (line) + kaj (shipment)</li>
+<li>DIBS reads this via the shipping sync (every 15 min) to show fulfillment state on <code>/shipping</code></li>
+</ol>
+<p class="muted"><strong>Assumption:</strong> DIBS never writes to ka8/ka9/kaj — warehouse ops own that.</p>
+</div>
+
+<div class="card">
+<h3>Stage 11 — Invoicing</h3>
+<ol>
+<li><strong>To DLA (existing):</strong> <code>/invoicing</code> page generates EDI 810 X12, user uploads to Mil-Pac VAN → WAWF</li>
+<li><strong>To LamLinks internal (NEW, your 7 questions):</strong> DIBS writes kad + kae rows at <code>cinsta='Not Posted'</code>, UPDATE ka9 to link; you flip to 'Posted' in LamLinks UI</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) DLA customer ship-to is always the hardcoded DLA Distribution, New Cumberland PA — or overridable. (b) "Not Posted" kad rows show up as drafts in your LamLinks UI, same pattern as k33 for bids. (c) k31=203 = "ERG DLA Customer" is constant. (d) k06=1 = company/org code is constant. (e) AX reads kad/kae directly (not via separate integration layer we'd break).</p>
+</div>
+
+<div class="card">
+<h3>Stage 12 — Remittance</h3>
+<ol>
+<li>DLA pays ~3x/month via wire</li>
+<li>Abe pastes remittance file into <code>/invoicing</code> → parser matches to our invoices</li>
+</ol>
+<p class="muted"><strong>Known gap:</strong> current matcher uses a hardcoded list of 8 invoice numbers (dev mock); needs real lookup against the invoice history. Not blocking today but flagging.</p>
+</div>
+
+<div class="card" style="background: #fef3c7; border-left: 3px solid #d97706;">
+<h3>Top 5 things I most want you to X out if wrong</h3>
+<ol>
+<li><strong>All DIBS customers are DLA.</strong> Every DIBS bid → DD219 customer → W01 Brooklyn ship-to. No non-DLA DIBS flow.</li>
+<li><strong>Vendor codes in DIBS all exist in AX.</strong> 34K nsn_vendor_prices rows carry codes like AMAZON, MCMAST — assumed 1-to-1 with AX VendorAccountNumber.</li>
+<li><strong>k33.a_stat='acknowledged' + null o/t/s = pending draft in LamLinks UI.</strong> If that's wrong, our bid write-back puts rows into a state Abe can't see or Abe accidentally transmits.</li>
+<li><strong>DMF is the only write path.</strong> OData service principal is read-only; no shortcut via a different auth.</li>
+<li><strong>No auto-EDI to vendors after AX Confirm.</strong> You confirmed this, but flagging so I don't accidentally rebuild vendor transmission when you'd rather it stay manual.</li>
+</ol>
+</div>
+
 </body></html>`;
 
 async function sendWhatsApp(phone: string, message: string, mediaUrl?: string) {
@@ -182,14 +318,14 @@ async function main() {
   }
 
   const body = [
-    "*DIBS — 1 PM agenda (revised)*",
+    "*DIBS — 1 PM agenda*",
     "",
-    "Three items, ranked:",
-    "1. Bid write-back — review SQL, flip --execute on ONE bid today (5 min)",
-    "2. Invoice chain — answer 7 questions (10-15 min) to unblock build",
-    "3. AX PO write-back — pick Flow A or B + share header/SO templates",
+    "Three asks, ranked:",
+    "1. Bid write-back — review SQL, flip --execute on ONE bid today",
+    "2. Invoice chain — answer 7 questions",
+    "3. AX PO — pick Flow A or B, share header/SO templates",
     "",
-    "PDF has the details.",
+    "PLUS: final section is the full 12-stage DIBS pipeline with every assumption I'm making. Cross out anything wrong so I'm not building against bad models.",
   ].join("\n");
 
   const result = await sendWhatsApp(PHONE, body, pdfUrl);
