@@ -38,14 +38,23 @@ function classify(values: any[], colname: string): string {
   const firstVal = nonNull[0];
   const typeHint = typeof firstVal;
 
-  const looksLikeId = /^idn|_id$|^id_/.test(colname);
+  // A column is the table's OWN PK if its name is `idn<table>_<table>`
+  // like idnk34_k34. Other idnXX_<thistable> columns are FKs to
+  // another table — those are required INPUT on insert, not auto.
+  const pkMatch = colname.match(/^idn([a-z0-9]+)_([a-z0-9]+)$/i);
+  const looksLikeOwnPk = pkMatch && pkMatch[1].toLowerCase() === pkMatch[2].toLowerCase();
+  const looksLikeFk = pkMatch && pkMatch[1].toLowerCase() !== pkMatch[2].toLowerCase();
   const looksLikeTime =
     /time|date|dte$|tme$|dt_$|^add|^upd|^rec/.test(colname.toLowerCase()) ||
     firstVal instanceof Date;
   const looksLikeUser = /upname|addnme|user_|creatd|updby|addby/.test(colname.toLowerCase());
 
   if (nullRate === 1) return "🚫 always null — skip on INSERT";
-  if (looksLikeId && distinct.size === values.length) return `🔑 auto ID (unique, ${distinct.size} distinct)`;
+  if (looksLikeOwnPk && distinct.size === values.length) return `🔑 auto PK (unique, ${distinct.size} distinct) — SKIP on insert`;
+  if (looksLikeFk) {
+    if (distinct.size === values.length) return `🧷 FK (unique per row, ${distinct.size} distinct) — REQUIRED input`;
+    if (distinct.size < values.length) return `🧷 FK (${distinct.size} distinct, rows share parent) — REQUIRED input`;
+  }
   if (looksLikeTime) return `⏰ auto timestamp (let DB default)`;
   if (looksLikeUser) return `👤 auto user (${distinct.size} distinct: ${[...distinct].slice(0, 3).join(", ")})`;
   if (distinct.size === 1) return `📌 constant: ${[...distinct][0]}`;
@@ -110,10 +119,11 @@ async function main() {
       SELECT TOP ${SAMPLE_SIZE} k33.*
       FROM k33_tab k33
       WHERE k33.idnk33_k33 IN (
-        SELECT DISTINCT TOP ${SAMPLE_SIZE} idnk33_k34
+        SELECT TOP ${SAMPLE_SIZE} idnk33_k34
         FROM k34_tab
         WHERE scage_k34 = '0AG09' AND upname_k34 LIKE '%ajoseph%'
-        ORDER BY idnk34_k34 DESC
+        GROUP BY idnk33_k34
+        ORDER BY MAX(idnk34_k34) DESC
       )
     `,
     "k33_tab — the batch headers those bids were attached to"
