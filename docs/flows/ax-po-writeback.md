@@ -130,48 +130,87 @@ When we get answers, come back here and mark each with **[ANSWERED]** + the answ
 
 Still open (see "Questions for Yosef" below — these are the renumbered, plain-English versions you can paste into a message).
 
-## Questions for Yosef (revised for DMF-spreadsheet plan)
+## DMF template specs (from Yosef's 4-13-26 workbooks)
 
-Context to include when sending:
+### Purchase order lines — `Purchase_order_lines_V2`
 
-> From your voice note — you confirmed the service principal is read-only and you import via DMF spreadsheets. That changes the whole write-back design from "DIBS POSTs to AX OData" to "DIBS generates the DMF template, you import." I've reframed the open questions below around the spreadsheet format specifically — most of the old API-side concerns go away.
+Single-sheet workbook. 7 columns, all required:
 
-1. **DMF template files.** Can you share the exact template spreadsheets you use today for each of these imports — column headers, sample rows, any special formatting (dates, percentages, required empty columns)?
-   - Purchase order headers
-   - Purchase order lines
-   - Released products (NPI — new product release)
-   - Approved vendors
-   - External item descriptions
-   - Trade agreements (if you use it for DIBS-type items)
-   - Sales orders (government-flow)
-   If there's a Git repo or shared folder, a link is fine.
+| # | Column                    | Sample         | Source in DIBS                               |
+|---|---------------------------|----------------|----------------------------------------------|
+| 1 | PURCHASEORDERNUMBER       | `PO014330`     | DIBS-generated (see open Q3 below)           |
+| 2 | LINENUMBER                | `1`, `2`, ...  | sequential within PO                         |
+| 3 | ITEMNUMBER                | `UNF159433-2`  | `po_lines.vendor_item_number` (from AX)      |
+| 4 | ORDEREDPURCHASEQUANTITY   | `12`           | `po_lines.quantity`                          |
+| 5 | PURCHASEPRICE             | `5.64`         | `po_lines.unit_cost`                         |
+| 6 | PURCHASEUNITSYMBOL        | `ea`           | `po_lines.unit_of_measure` lowercased        |
+| 7 | RECEIVINGWAREHOUSEID      | `W03`          | `W01` for DIBS POs (confirmed by Yosef)      |
 
-2. **Data entity names per sheet.** When you configure the DMF import, each sheet maps to a specific data entity (e.g., `Purchase order headers V2`). Can you list the exact entity name per template? That gets baked into DIBS' polling logic so we know what OData entity to read back from.
+Observation: the sample uses `W03` because it's an Amazon consumer-fulfillment PO. DIBS-side will always stamp `W01`. UoM is lowercase in the template — we'll need to downcase our `EA/PG/PK/BX` values.
 
-3. **Key fields for read-back correlation.** When DIBS generates a PO row in the header sheet, it needs to recognize that row AFTER your import assigns a PO number. What field(s) can DIBS populate that will (a) round-trip into AX and (b) be readable via OData so DIBS can match imported→posted rows? Candidates: `VendorOrderReference`, `PurchaseOrderName`, a custom field, or an "External reference" column on the template.
+**Still needed**: the matching PO HEADER template (Yosef referenced "2 imports, headers and lines" in his voice note — we only have lines so far).
 
-4. **Unit of measure conventions in the template.** Our source data uses `EA / PG / PK / BX`. AX shows `ea / B1000 / ...`. In YOUR DMF templates specifically, what's the column name and expected casing — `Purchase unit` in lowercase `ea`, `PurchaseUnitSymbol` matching AX's enum? Does DMF normalize, or will `EA` vs `ea` fail import?
+### New Product Import — 7-sheet workbook
 
-5. **Vendor reconciliation.** Our DIBS vendor data (~34K rows) holds codes like `AMAZON`, `000202`, `MCMAST`, `CHEMET`. Are all of those guaranteed to exist as `VendorAccountNumber`s in AX? If some don't, does your DMF flow catch it (per-row error) or silently drop them? We may need a pre-flight validation step against `/data/Vendors`.
+Sheet names observed: `RawData`, `RPCreate`, `RPV2`, `APPROVEDVENDOR`, `EXTERNALITEMDESC`, `BarCode`, `TradeAgreement`.
 
-6. **Payment terms per vendor.** The template presumably has a `PaymentTermsName` column. If DIBS leaves it blank, will DMF pull the default from the vendor master on import, or error? If we have to fill it, should DIBS query AX's vendor master first to copy the default, or do you have a lookup table?
+**`RawData`** — Yosef's working sheet; not imported to AX. Becomes the source that DIBS's generator can mirror to stay in his mental model. 6 cols: `Item#`, `Description`, `Vendor`, `External`, `BarcodeValue`, `Price`.
 
-7. **NPI gating.** For lines whose item doesn't exist in AX, the order of operations is:
-   (a) DIBS generates the NPI multi-sheet workbook
-   (b) You import it; AX creates the released product
-   (c) DIBS re-polls AX until the new `ItemNumber` shows up
-   (d) DIBS then generates the PO lines with those now-real item numbers
-   Does that match how you'd want it? Alternative: DIBS generates one combined workbook with NPI sheets AND PO sheets, DMF processes in order. Does DMF support dependent-entity ordering in one bundle?
+**`RPCreate`** — 16 cols. Constants in sample (hardcode for DIBS items unless noted):
+- `BOMUNITSYMBOL` / `INVENTORYUNITSYMBOL` / `PURCHASEUNITSYMBOL` / `SALESUNITSYMBOL` = `EA` (uppercase here, unlike on PO lines)
+- `INVENTORYRESERVATIONHIERARCHYNAME` = `Warehouse`
+- `ITEMMODELGROUPID` = `FIFO-Stock`
+- `PRODUCTGROUPID` = `FG-NonRX` — **open question**: right product group for DIBS/DLA medical items?
+- `PRODUCTSUBTYPE` = `Product`
+- `PRODUCTTYPE` = `Item`
+- `STORAGEDIMENSIONGROUPNAME` = `SiteWHLoc`
+- `TRACKINGDIMENSIONGROUPNAME` = `None`
 
-8. **Sales order template fields.** You mentioned a government-flow SO design that's different from the vendor-facing one. Can you share the template + a recent imported example? Specifically interested in: how the government customer (DD219) gets stamped, how the DLA contract number is referenced, how line-level contract modifiers (CLIN etc) are passed.
+Variable (per item):
+- `ITEMNUMBER`, `PRODUCTNUMBER` — identical in sample; pattern like `EMW48178`
+- `PRODUCTNAME`, `PRODUCTSEARCHNAME`, `SEARCHNAME` — all three get the same long description in sample
 
-9. **Ship-to default.** Now that warehouse is always W01, is the ship-to always `SZY Brooklyn` (`000000203`), or are there cases where a DLA-origin PO ships to a different location even though the warehouse is W01?
+**`RPV2`** — 5 cols. Constants:
+- `DEFAULTORDERTYPE` = `Purch`
+- `PRODUCTCOVERAGEGROUPID` = `Req.`
+- `RAWMATERIALPICKINGPRINCIPLE` = `OrderPicking`
+- `UNITCONVERSIONSEQUENCEGROUPID` = `EA Only`
 
-10. **NSN / barcode population on PO lines.** Nothing in the sample populates `Barcode` / `BarCodeSetupId`. If DIBS populates them in the template (`Barcode=<nsn digits>`, `BarCodeSetupId='NSN'`), does DMF accept it, does warehouse benefit from NSN-scan receipts, or should we leave it blank?
+Variable: `ITEMNUMBER` (matches RPCreate).
 
-11. **Polling cadence for "Posted" confirmation.** After you click Import in AX, roughly how long before the rows are readable via OData? Seconds? Minutes? We want to know how often DIBS should poll before it gives up and shows "import pending (check AX)" instead.
+**`APPROVEDVENDOR`** — 2 cols: `APPROVEDVENDORACCOUNTNUMBER`, `ITEMNUMBER`. One row per (item, vendor) pair.
 
-12. **Failure surface.** When a DMF import has partial failure (some rows committed, some rejected), where does the rejected-row report live — in AX UI only, or is there a file/entity DIBS can read to surface "these 2 PO lines didn't make it" to Abe?
+**`EXTERNALITEMDESC`** — 3 visible col headers but 4 columns of data in rows (the 4th col has barcodes but no header in row 1 — appears to be a template bug or DMF consumes it positionally): `ITEMNUMBER`, `VENDORACCOUNTNUMBER`, `VENDORPRODUCTNUMBER`, `[unnamed=barcode]`.
+
+**`BarCode`** — 6 cols: `ITEMNUMBER`, `BARCODESETUPID` (sample=`UPC` — DIBS would use `NSN` for gov items), `BARCODE`, `ISDEFAULTSCANNEDBARCODE` (`Yes`), `PRODUCTQUANTITY` (`1`), `PRODUCTQUANTITYUNITSYMBOL` (`EA`).
+
+**`TradeAgreement`** — 14 cols, mostly empty in sample (1 row). Use only when a locked-in vendor price agreement needs to land in AX simultaneously: `TRADEAGREEMENTJOURNALNUMBER`, `LINENUMBER`, `ITEMNUMBER`, `PRICE`, `PRICEAPPLICABLEFROMDATE`, `PRICEAPPLICABLETODATE`, `PRICECURRENCYCODE`, `PRICESITEID`, `PURCHASEPRICEQUANTITY`, `QUANTITYUNITSYMBOL`, `TOQUANTITY`, `VENDORACCOUNTNUMBER`, `WILLDELIVERYDATECONTROLDISREGARDLEADTIME`, `WILLSEARCHCONTINUE`.
+
+## Questions for Yosef (pruned after seeing 4-13-26 templates)
+
+Most of the original 12 are answered by the templates themselves. 11 items remain, in priority order:
+
+1. **PO headers template.** You said "2 imports, headers and lines." I have the lines template (`Purchase_order_lines_V2`, 7 cols) but not headers. Can you share the headers template: entity/sheet name, columns, and a sample row with a typical vendor code + payment terms + ship-to address?
+
+2. **PO number generation.** The lines template has `PURCHASEORDERNUMBER` populated (`PO014330`) — DIBS has to supply it, AX doesn't auto-assign on DMF import, right? What pattern should DIBS use? Its own numeric range to avoid collisions, or a prefix like `DIBS-<n>` / `PO-DIBS-<n>`?
+
+3. **Sales order template.** Need the government-flow SO template — a recent example + column list unblocks that side of scope.
+
+4. **DIBS vendor coverage in AX.** Our vendor codes (`AMAZON`, `000202`, `MCMAST`, `CHEMET`, etc.) — are they all guaranteed to resolve to real `VendorAccountNumber`s in AX? I'd rather DIBS pre-flight via OData read before you Import than have DMF silently reject rows.
+
+5. **Product group for DIBS items.** NPI sample uses `PRODUCTGROUPID = FG-NonRX`. Right for DLA / NSN medical items, or a different group (e.g. `FG-MIL`, `FG-GOV`)?
+
+6. **`EXTERNALITEMDESC` 4th column.** Sheet has 3 header labels but every data row has 4 values (4th = barcode). Missing header, or does DMF consume it positionally?
+
+7. **`BarCode` sheet — NSN vs UPC.** Sample uses `BARCODESETUPID=UPC`. For DLA items we'd want `NSN` with NSN digits. Any reason not to, and does warehouse receiving treat NSN-setup barcodes the same as UPC?
+
+8. **Read-back correlation.** Since DIBS supplies `PURCHASEORDERNUMBER`, we can poll `/data/PurchaseOrderLinesV2?$filter=PurchaseOrderNumber eq '...'`. Sufficient, or do we need another correlation field (e.g. `VendorOrderReference`) for edge cases?
+
+9. **NPI ordering inside one workbook.** Does DMF process the 7 sheets in a guaranteed order on one Import (RPCreate → RPV2 → APPROVEDVENDOR → EXTERNALITEMDESC → BarCode → TradeAgreement), or do you import each sheet separately? Affects whether DIBS ships one bundle or 6 files.
+
+10. **Polling cadence.** After you click Import, how long until the rows show up via OData? Seconds? 1 min? 5 min?
+
+11. **Partial-failure reporting.** When DMF rejects some rows, is there anything DIBS can read via OData for the rejection list, or does that report live only in AX DMF Execution Details?
 
 ## Proposed implementation (post-answers)
 
