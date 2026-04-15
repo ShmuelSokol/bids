@@ -65,10 +65,13 @@ REM -----------------------------------------------------------------------
 REM Abe's live bids — every 5 min, 6am-6pm all week (Abe bids on weekends too).
 REM This is the closest-to-real-time task, feeds the dashboard.
 REM -----------------------------------------------------------------------
+REM /sc minute /mo N on its own creates a ONE-DAY window that dies after
+REM 24 hours. Use /sc daily + /ri /du so the task re-windows every day
+REM AND repeats inside each window until 6pm.
 schtasks /create /tn "DIBS - Abe Bids Sync" ^
     /tr "cmd /c \"\"%DISPATCHER%\" sync-abe-bids-live\"" ^
-    /sc minute /mo 5 ^
-    /st 06:00 /et 18:00 ^
+    /sc daily /st 06:00 ^
+    /ri 5 /du 12:00 ^
     /ru "%RUN_AS_USER%" /it /f
 echo.
 
@@ -106,8 +109,8 @@ REM tracking numbers throughout the day; we want them visible on /shipping.
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - Shipping Sync" ^
     /tr "cmd /c \"\"%DISPATCHER%\" sync-shipping\"" ^
-    /sc minute /mo 15 ^
-    /st 06:00 /et 18:00 ^
+    /sc daily /st 06:00 ^
+    /ri 15 /du 12:00 ^
     /ru "%RUN_AS_USER%" /it /f
 echo.
 
