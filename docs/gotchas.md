@@ -178,6 +178,19 @@ return new Date(rowDate) >= new Date(new Date().toDateString());
 
 **Lesson:** date comparisons across server/client/browser timezones are a bug magnet. Normalize to YYYY-MM-DD strings and compare lexicographically. Never call `new Date()` in business logic.
 
+## "Quote failed: Not Authenticated" after N hours idle
+
+> Symptom: Abe loads `/solicitations`, the page works fine, he clicks "Quote as Suggested" — HTTP 401 `Not authenticated`. Reload the page and all the other data still shows (it used the cached/SSR'd content). He's still logged in per the UI, but any write endpoint 401s.
+
+Root cause: Supabase access tokens expire after 1 hour by default. DIBS' cookie stores both an `sb-access-token` (1h) and an `sb-refresh-token` (30d). `getCurrentUser` in `src/lib/supabase-server.ts` was building the Supabase client with `Authorization: Bearer <access_token>` pinned in global headers BEFORE calling `setSession` to refresh — so every request used the expired token even after setSession rotated it, and `auth.getUser()` returned null.
+
+Two-part fix (2026-04-16):
+
+1. Stop pinning the Authorization header. Let `setSession` drive the client's auth state so it picks up the refreshed token.
+2. When `setSession` rotates to a new access_token, persist the new tokens back to the cookies so subsequent requests don't re-refresh every time (and so the cookie's 1h window keeps sliding).
+
+The cookie-write is in a try/catch because `cookies().set()` throws in page/render contexts where only route handlers can mutate cookies — harmless, the in-memory session is still correct for the current request.
+
 ## abe_bids_live window — today vs 30d
 
 **Original rule (2026-03): filter to today.** Stale rows were mislabeling today's sourceables as already-bid because the page UI was counting yesterday's bids as "today's bids." Fix then: `.gte("bid_time", today)` on every read.

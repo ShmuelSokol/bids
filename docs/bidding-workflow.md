@@ -87,6 +87,8 @@ Once submitted, the row sticks around for post-game analysis. The `award_lookup`
 
 **Already Bid:** We've already placed a bid for this `solicitation_number` in LamLinks (via the `abe_bids` and `abe_bids_live` tables). No point showing it to Abe again.
 
+`abe_bids_live` holds the **last 30 days** of bids for dedup purposes (was "today only" — flipped 2026-04-16 after Abe reported sols he'd bid on Monday still appearing as Sourceable on Wednesday). The view tables (`/bids/today`, dashboard "Bids Today" panel) still filter to today for display — they're display filters, not dedup filters. See `docs/gotchas.md` → "abe_bids_live window — today vs 30d".
+
 **Skipped:** Abe actively decided "don't bid." Stored in `bid_decisions` with `status = 'skipped'` plus a comment.
 
 Both states keep the row out of the active Sourceable list. Abe can still find them under the "Bid in LL" and "Skipped" filter tabs respectively.
@@ -151,6 +153,39 @@ The crucial thing the workflow enables: **every bid teaches the system.**
 - A loss at price Y → we see the actual winner's CAGE and price, which reshapes our bracket averages for that FSC.
 
 Over time this compounds. The more Abe bids, the sharper the pricing gets. The pricing brackets will drift slightly each quarter as we refit against a larger dataset.
+
+## Abe's actual daily pattern (from 2026-04-16 conversation)
+
+The documented morning/review/afternoon sequence above is the idealized DIBS flow. Abe's current-world LamLinks flow is slightly different and worth capturing so DIBS evolves toward it rather than away from it:
+
+1. **Morning (~8 AM)**: emails first — customer service + any quote-related inbound.
+2. **Quotes of the day** — runs through LamLinks' pending solicitations. Abe's stated ideal: "anything under $500, select all quote suggested, done" — the kind of bulk-decision DIBS is being built toward.
+3. **Download yesterday's awards** — LamLinks publishes the day's awards between 8–10 PM local, so "yesterday's" awards are the first batch Abe touches each morning. Current tool: `.xlsx` download → VBA macro strips today's partial day → upload to Dynamics MPI. DIBS' `/so` page replaces this loop.
+4. **Per-award PO decisions** — Abe groups the ~300 daily award lines by part number in Excel, visually scans for items he knows are in stock (sends those straight to warehouse picker), and builds POs for the rest. He intentionally does NOT trust the "X in stock" count from the system — too many cases where stock is committed to a different order. Rule: "send it downstairs to pick; if they find stock, great; if not, they tell me and I order."
+5. **Invoicing window (~5:30–6:30 PM)** — processes each shipped order as an invoice, one by one. Roughly 75 invoices per normal day.
+6. **End-of-day**: two things get skipped because there's no time — following up on outstanding POs (vendor side), and following up on unpaid invoices (government side). Both are daily-leaking money.
+
+DIBS' highest-leverage automations, ranked by Abe's own words:
+
+- **Bulk-quote under $X** (already built; pending write-back to LamLinks + tests)
+- **PO follow-up rules per supplier** (built; awaits real POs to exercise)
+- **Payment / invoice follow-up surfacing** (not built; adjacent to `/invoicing/monitor`)
+- **Auto-generate POs from awards grouped by supplier** (built; margin math fixed, UoM match in; pending AX write-back)
+
+### Supplier pricing nuance (Seaberg example)
+
+Some items have multiple vendors where the DIBS/AX cost waterfall would pick the "wrong" one. Abe's 2026-04-16 example:
+
+- NSN maps to an item historically purchased from Tri Tech at $239
+- Abe got a quote from Seaberg (the actual manufacturer; Tri Tech is a reseller) at $157.50
+- Abe won the bid at $204
+- To fulfill: Abe opened the item in AX, added Seaberg as a vendor with a trade agreement at $157.50, THEN generated the PO
+
+This is a manual-intelligence move the system can't replicate — it's Abe knowing that "copying the reseller" is a viable negotiation lever. **Rule for DIBS' PO generator**: always let Abe override the supplier-match on any line before the PO is sent. Never auto-send without his sign-off on per-line vendor choice when the margin is already thin.
+
+### DIBBS vs non-DIBBS solicitations
+
+LamLinks carries solicitations from multiple government procurement systems, not just DIBBS. Abe flagged this during the walkthrough — anything starting with `SPE...` is DIBBS and can be quoted through DIBS' LamLinks write-back path. Anything starting with `W...` (Army-origin, etc.) is DoD but NOT on DIBBS, and LamLinks doesn't support quoting those items back — Abe bids those through separate channels. DIBS should filter to `SPE*` sol numbers on the Sourceable tab as a default, with a toggle to see the rest.
 
 ## What's still manual (and shouldn't be)
 
