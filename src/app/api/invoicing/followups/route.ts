@@ -93,7 +93,9 @@ export async function GET() {
     const D = process.env.AX_D365_URL!;
     // Pull lines marked with DD219 customer requisition, group by PO.
     // Filter to Backorder status so we see open/unreceived only.
-    const url = `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=CustomerRequisitionNumber eq 'DD219' and PurchaseOrderLineStatus eq 'Backorder'&$select=PurchaseOrderNumber,LineNumber,ItemNumber,LineDescription,OrderedPurchaseQuantity,PurchasePrice,RequestedDeliveryDate,ConfirmedDeliveryDate,PurchaseOrderLineStatus&$top=1000`;
+    // Case-insensitive match — observed 'DD219' + 'dd219' variants in
+    // a 1000-row sample; toupper() catches both.
+    const url = `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=toupper(CustomerRequisitionNumber) eq 'DD219' and PurchaseOrderLineStatus eq 'Backorder'&$select=PurchaseOrderNumber,LineNumber,ItemNumber,LineDescription,OrderedPurchaseQuantity,PurchasePrice,RequestedDeliveryDate,ConfirmedDeliveryDate,PurchaseOrderLineStatus&$top=1000`;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) {
       axError = `AX HTTP ${r.status}`;
