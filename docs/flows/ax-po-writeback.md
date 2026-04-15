@@ -1,23 +1,33 @@
 # Flow: AX Purchase Order Write-Back (proposed)
 
-Not built. This page is the spec + working assumptions for letting DIBS create purchase orders directly in D365 / AX instead of exporting to Excel for manual entry.
+Not built. This page is the spec + working assumptions.
 
-Same phased approach we used for the bid chain (`scripts/generate-bid-insert-sql.ts`) and plan to use for the invoice chain:
+## Architectural pivot (2026-04-15, from Yosef)
 
-1. Recon — classify fields on existing POs so we know what's required, constant, and variable
-2. Dry-run generator — builds the AX API payload without firing
-3. `--execute` on ONE PO with someone watching AX
-4. Scale
+The OData service principal DIBS uses is **read-only.** No POST, PUT, PATCH on PurchaseOrderHeaders / Lines / ReleasedProducts / etc. That kills every "just POST to AX" plan. Yosef's established pattern across his projects is:
 
-## Scope
+1. DIBS generates spreadsheets in the exact format AX's **Data Management Framework** (DMF) imports expect
+2. Yosef (or Abe) downloads the file, uploads it into AX DMF, runs the import
+3. DIBS then polls AX via OData READ to confirm the rows landed and pick up auto-assigned identifiers (PO numbers, etc.)
+4. DIBS UI shows "Pending / Posted" status per PO
 
-For each `purchase_orders` row in Supabase with `status='draft'`, DIBS should be able to click a button and have AX:
+This means three separate spreadsheet generators, one per AX entity group:
 
-1. Create a PO header (auto-assigned PO number, linked to the vendor)
-2. Add each `po_lines` row as an AX purchase order line
-3. Optionally confirm the PO (transition Draft → Confirmed, which is AX's "post" step — this is what sends the PO to the vendor EDI-side)
+- **PO headers + lines** (2-sheet import)
+- **New product release** (multi-entity: Released products + Approved vendors + External item descriptions + possibly Trade agreements)
+- **Sales orders** (government-flow specific — different from the vendor-facing template Yosef had originally designed)
 
-After success, DIBS flips the local row's `status` to `submitted` and records the AX PO number + AX internal ID so downstream receipt matching still works.
+Same "dry-run first, Yosef reviews, then we generate per-PO" phased rollout as bid/invoice chains, but the "execute" step is Yosef clicking Import in AX rather than DIBS firing an API call.
+
+## Scope (revised)
+
+For each ready-to-fulfill batch of awards in DIBS:
+
+1. **Sales order sheet** — one row per award line, in the government-flow template. Yosef imports → AX creates SOs and returns SO numbers. DIBS polls + displays.
+2. **NPI sheet (conditional)** — for any line whose `ItemNumber` isn't in AX yet, DIBS generates a multi-entity product-release workbook first. Yosef imports. DIBS re-polls AX for the new items, then generates the PO sheet.
+3. **PO header + PO lines sheets** — one row per DIBS-generated PO header, one row per line. Yosef imports → AX creates draft POs, assigns numbers, returns them. DIBS polls + displays with AX PO #.
+4. DIBS UI shows per-PO state: `drafted` → `awaiting_import` → `posted`. `posted` means DIBS has seen the AX PO number in its read-back.
+5. Vendor transmission (EDI / email / portal) remains manual per Yosef — DIBS' job ends at `posted`.
 
 ## Working assumptions (updated 2026-04-15 after recon)
 
@@ -120,82 +130,89 @@ When we get answers, come back here and mark each with **[ANSWERED]** + the answ
 
 Still open (see "Questions for Yosef" below — these are the renumbered, plain-English versions you can paste into a message).
 
-## Questions for Yosef (clean list, renumbered)
+## Questions for Yosef (revised for DMF-spreadsheet plan)
 
 Context to include when sending:
 
-> DIBS has a new feature that would let it create purchase orders directly in D365 instead of Abe exporting to Excel and someone keying them in. I've reverse-engineered most of the shape from 50 recent POs — need your answers on the remaining items before I flip the switch.
+> From your voice note — you confirmed the service principal is read-only and you import via DMF spreadsheets. That changes the whole write-back design from "DIBS POSTs to AX OData" to "DIBS generates the DMF template, you import." I've reframed the open questions below around the spreadsheet format specifically — most of the old API-side concerns go away.
 
-1. **Vendor accounts.** DIBS has ~34,000 vendor price records pulled from AX. The vendor codes we hold look like `AMAZON`, `000202`, `MCMAST`, `CHEMET`. The 50 POs we sampled used codes like `ZHEJIA`, `HAEMON`, `MEDPLU` (same shape). Can I assume every vendor in our DIBS data corresponds to a real `VendorAccountNumber` in AX, or should I expect misses? If misses, is there a translation we should maintain?
+1. **DMF template files.** Can you share the exact template spreadsheets you use today for each of these imports — column headers, sample rows, any special formatting (dates, percentages, required empty columns)?
+   - Purchase order headers
+   - Purchase order lines
+   - Released products (NPI — new product release)
+   - Approved vendors
+   - External item descriptions
+   - Trade agreements (if you use it for DIBS-type items)
+   - Sales orders (government-flow)
+   If there's a Git repo or shared folder, a link is fine.
 
-2. **Payment terms.** PO headers in the sample have `PaymentTermsName` values of `PPD`, `N30`, `N14`, `N7`, `N60`. If DIBS POSTs a PO without specifying payment terms, will AX pull them automatically from the vendor master, or does the create fail? If manual, we'll need to know which terms apply per vendor.
+2. **Data entity names per sheet.** When you configure the DMF import, each sheet maps to a specific data entity (e.g., `Purchase order headers V2`). Can you list the exact entity name per template? That gets baked into DIBS' polling logic so we know what OData entity to read back from.
 
-3. **Unit of measure match.** Our source data calls units `EA`, `PG`, `PK`, `BX`. AX lines show `ea`, `B1000`, etc. If we send a PO line with UoM `EA` but the item in AX is set up for `PG`, will AX auto-convert via the product's UoM conversion rules, or reject the line? Context: our bidding/UoM-match logic has already been fixed so we won't send bad UoM math — this is about the AX-side conversion only.
+3. **Key fields for read-back correlation.** When DIBS generates a PO row in the header sheet, it needs to recognize that row AFTER your import assigns a PO number. What field(s) can DIBS populate that will (a) round-trip into AX and (b) be readable via OData so DIBS can match imported→posted rows? Candidates: `VendorOrderReference`, `PurchaseOrderName`, a custom field, or an "External reference" column on the template.
 
-4. **Confirm permission.** After DIBS creates the PO (Draft state), we want to call AX's "Confirm" action so the PO transitions into the normal lifecycle. Does our OAuth service principal (the one with the D365 API credentials DIBS is already using for reads) have permission to call `confirmOrder` on `PurchaseOrderHeadersV2`? If no, DIBS will stop at Draft and you'll click Confirm manually in AX.
+4. **Unit of measure conventions in the template.** Our source data uses `EA / PG / PK / BX`. AX shows `ea / B1000 / ...`. In YOUR DMF templates specifically, what's the column name and expected casing — `Purchase unit` in lowercase `ea`, `PurchaseUnitSymbol` matching AX's enum? Does DMF normalize, or will `EA` vs `ea` fail import?
 
-5. **Rejection behavior.** If we POST a PO with 10 lines and one line has a bad field, does AX reject the whole PO or just that line? We want all-or-nothing, because a partial PO (say 9 lines committed, 1 missing) is worse than none.
+5. **Vendor reconciliation.** Our DIBS vendor data (~34K rows) holds codes like `AMAZON`, `000202`, `MCMAST`, `CHEMET`. Are all of those guaranteed to exist as `VendorAccountNumber`s in AX? If some don't, does your DMF flow catch it (per-row error) or silently drop them? We may need a pre-flight validation step against `/data/Vendors`.
 
-6. **Duplicate prevention.** If DIBS retries a POST after a partial network failure, will AX deduplicate, or would we end up with two real POs? I'm assuming no dedup on your side — DIBS will store the AX-assigned PO number on first success and refuse to re-POST the same DIBS draft — but let me know if there's anything server-side I should rely on instead.
+6. **Payment terms per vendor.** The template presumably has a `PaymentTermsName` column. If DIBS leaves it blank, will DMF pull the default from the vendor master on import, or error? If we have to fill it, should DIBS query AX's vendor master first to copy the default, or do you have a lookup table?
 
-7. **AX-side "new product import" for items not yet in AX.** You mentioned some items we're buying aren't set up in AX yet. What's the flow you want?
-   - (a) DIBS detects missing items and creates a queue for you to set up manually before the PO goes through?
-   - (b) DIBS creates the product in AX itself via `ReleasedProductsV2` (or whichever entity) using data from our bid sources? If so, what are the required fields — I'd need to know product group, tracking dimensions, storage dimensions, tax setup, UoM, etc.
-   - (c) Some hybrid — DIBS creates the product with a "needs review" flag and you fill in the rest later?
-   My recommendation is (a) for now (safe, non-destructive) and moving to (c) once we have confidence.
+7. **NPI gating.** For lines whose item doesn't exist in AX, the order of operations is:
+   (a) DIBS generates the NPI multi-sheet workbook
+   (b) You import it; AX creates the released product
+   (c) DIBS re-polls AX until the new `ItemNumber` shows up
+   (d) DIBS then generates the PO lines with those now-real item numbers
+   Does that match how you'd want it? Alternative: DIBS generates one combined workbook with NPI sheets AND PO sheets, DMF processes in order. Does DMF support dependent-entity ordering in one bundle?
 
-8. **Workflow approvals.** PO lines in the sample all show `WorkflowState='NotSubmitted'`. If workflows are configured on PurchaseOrderHeader in this tenant, and DIBS POSTs a new PO, will it automatically route to a human approver, or is that workflow off?
+8. **Sales order template fields.** You mentioned a government-flow SO design that's different from the vendor-facing one. Can you share the template + a recent imported example? Specifically interested in: how the government customer (DD219) gets stamped, how the DLA contract number is referenced, how line-level contract modifiers (CLIN etc) are passed.
 
-9. **Orderer / Requester employee number.** Every sampled PO had `OrdererPersonnelNumber='000001'` and `RequesterPersonnelNumber='000001'`. Is that a specific integration/service user, or just the default that always gets used? Should DIBS hardcode `000001`, or do you want a dedicated employee number for DIBS-generated POs (e.g., to audit which POs came from the system vs keyed manually)?
+9. **Ship-to default.** Now that warehouse is always W01, is the ship-to always `SZY Brooklyn` (`000000203`), or are there cases where a DLA-origin PO ships to a different location even though the warehouse is W01?
 
-10. **`CustomerRequisitionNumber='DD219'`.** Every sampled line stamped DD219 (our DLA government customer). All DIBS-generated POs are DLA-origin, so DIBS will always stamp DD219 — can you confirm that's correct, or are there any DIBS POs that should carry a different code?
+10. **NSN / barcode population on PO lines.** Nothing in the sample populates `Barcode` / `BarCodeSetupId`. If DIBS populates them in the template (`Barcode=<nsn digits>`, `BarCodeSetupId='NSN'`), does DMF accept it, does warehouse benefit from NSN-scan receipts, or should we leave it blank?
 
-11. **Barcode / NSN scannability on lines.** None of the 143 sampled lines have `Barcode` / `BarCodeSetupId` populated. If DIBS populates `Barcode=<the NSN>` + `BarCodeSetupId='NSN'` on each line, would warehouse benefit (being able to scan NSN for receipt), or is there a reason these are intentionally left null?
+11. **Polling cadence for "Posted" confirmation.** After you click Import in AX, roughly how long before the rows are readable via OData? Seconds? Minutes? We want to know how often DIBS should poll before it gives up and shows "import pending (check AX)" instead.
 
-12. **Ship-to address.** Sample shows 2 options: `SZY Brooklyn` (`000000203`, W01) and `SZY New NJ` (`000011805`, W03). You confirmed warehouse is always W01 for DIBS POs — can I take that to mean the ship-to is always Brooklyn (`000000203`), or is there a reason the ship-to would ever be different from the warehouse?
+12. **Failure surface.** When a DMF import has partial failure (some rows committed, some rejected), where does the rejected-row report live — in AX UI only, or is there a file/entity DIBS can read to surface "these 2 PO lines didn't make it" to Abe?
 
 ## Proposed implementation (post-answers)
 
-### Phase 1 — Recon (do now, doesn't need answers)
+### Phase 1 — AX entity recon (done)
 
-`scripts/reverse-engineer-ax-po-schema.ts`:
-- Pull 50 recent POs from `PurchaseOrderHeadersV2` + their lines from `PurchaseOrderLinesV2`
-- Classify every field (auto / constant / small-set / variable / always-null) same pattern as `reverse-engineer-bid-schema.ts`
-- Dump one complete header+lines chain
-- Output a list of "fields populated in all 50 headers" — those are our de-facto required fields
-- Print a refined version of the standing-questions list based on what the sample actually shows
+`scripts/reverse-engineer-ax-po-schema.ts` — sampled 50 POs + 143 lines, classified fields. Output sits in `data/d365/po-*-sample.json`. **Still useful post-pivot**: the "constant fields" table tells us what values to hardcode into the DMF templates regardless of how the data gets to AX.
 
-Lets us narrow assumptions before asking Yosef 12 questions.
+### Phase 2 — DMF spreadsheet generators (after Yosef shares templates)
 
-### Phase 2 — Dry-run generator
+Three generators, each behind `--dry-run`:
 
-`scripts/generate-ax-po-json.ts`:
-- Input: Supabase `purchase_orders` rows with `status='draft'` (optionally filtered by id)
-- Output: a `.json` file per PO containing the exact AX OData body we WOULD POST, + a preview of the Confirm call
-- `--dry-run` default; `--execute` actually POSTs
-- On `--execute`, after each successful AX response:
-  - Persist `ax_po_number` + `ax_po_internal_id` on the `purchase_orders` row
-  - Flip `purchase_orders.status` from `draft` to `submitted`
-  - If Confirm succeeded too, flip to `confirmed`
-- On failure, leave the row at `draft` and log the AX error body to `sync_log`
+- `scripts/generate-ax-po-xlsx.ts` — reads DIBS `purchase_orders` + `po_lines` → produces a 2-sheet workbook matching Yosef's PO DMF template. Each PO header row gets a DIBS-tracking reference populated into whichever field answered Q3 (so DIBS can correlate on read-back).
+- `scripts/generate-ax-npi-xlsx.ts` — reads DIBS lines whose `ItemNumber` isn't in AX → produces the multi-sheet product-release workbook (Released products + Approved vendors + External descriptions + Trade agreements per Yosef's multi-entity pattern).
+- `scripts/generate-ax-so-xlsx.ts` — reads DIBS `awards` → produces the government-flow sales order template.
 
-### Phase 3 — UI surface
+All three use the existing `exceljs` dep (already in package.json from the PO-export feature).
 
-On `/orders` POs tab, add a button per PO:
-- Label: "Create in AX" (while status=draft) → "In AX: <po_number>" (while status=submitted) → "Confirmed in AX" (while status=confirmed)
-- Disabled while pending; shows spinner
-- On click → POST to `/api/orders/push-to-ax` with `{ poId }`
-- That route wraps the generator logic server-side
+### Phase 3 — UI surface on /orders
 
-Also add a batch "Create All in AX" above the list (same pattern as the new "Download All as ZIP" button).
+For each state the PO can be in:
 
-### Schema adds
+- **drafted** — DIBS generated the row but Yosef hasn't pulled the file yet. Button: "Download DMF workbook". Label changes based on whether NPI is needed first.
+- **awaiting_import** — workbook downloaded. Small hint: "Import in AX; DIBS will detect posting automatically." Manual button "Mark as imported" to trigger polling early.
+- **posted** — DIBS has polled AX and seen the PO number. Label "AX: `<po_number>`".
+- **import_error** — if polling finds the row never landed after N minutes, surface as error with a "Download again" action.
 
-Three new columns on `purchase_orders`:
+### Phase 4 — Polling infrastructure
 
-- `ax_po_number text` — the AX-assigned PO number
-- `ax_po_internal_id text` — the AX ETag / internal UUID for API follow-ups
-- `ax_error text` — last AX error body, null when successful; cleared on retry
+Background job (Windows Task Scheduler, every 5 min): for DIBS POs in `awaiting_import` state, query `/data/PurchaseOrderHeadersV2` filtered by whichever correlation field we chose in Q3. If found, flip state to `posted` and persist the AX PO number. If not found after a time-out window, flip to `import_error`.
+
+### Schema adds on `purchase_orders`
+
+- `ax_po_number text` — AX-assigned PO number after import + read-back
+- `ax_correlation_ref text` — the DIBS-generated ID we populate into a DMF column so we can find the row again via OData (value depends on Q3 answer)
+- `dmf_state text` — `drafted` | `awaiting_import` | `posted` | `import_error`
+- `dmf_last_polled_at timestamptz`
+- `dmf_error text` — last error from a polling attempt or from Abe manually reporting
+
+### Schema adds on a new `awards` companion (for sales orders)
+
+TBD after Yosef shares the SO template. Similar shape: `ax_so_number`, `ax_so_correlation_ref`, `dmf_state`, etc.
 
 ## Invariants / things that MUST stay true
 
