@@ -11,26 +11,35 @@ The OData service principal DIBS uses is **read-only.** No POST, PUT, PATCH on P
 3. DIBS then polls AX via OData READ to confirm the rows landed and pick up auto-assigned identifiers (PO numbers, etc.)
 4. DIBS UI shows "Pending / Posted" status per PO
 
-### Header-then-lines reality (clarified 2026-04-15 ssokol)
+### PO-number reality (clarified 2026-04-15 ssokol, round 2)
 
-**DIBS does NOT supply PO numbers.** The operator (Yosef or Abe) manually creates the PO HEADER in the AX UI — AX auto-assigns the PO number there — then imports the lines via DMF using that existing PO number. So the actual operator flow is:
+AX's DMF **can** accept operator-supplied PO numbers on the header import — Yosef's Amazon flow just doesn't set it up that way (he creates headers in the UI instead). For DIBS, that means the cleaner end-to-end "DIBS generates everything, Yosef imports, done" path is available if we want it.
 
-1. DIBS shows a "ready to push" card per would-be PO with: supplier, line count, total, ship-to — everything the operator needs to create the header manually in AX.
-2. Operator opens AX, creates the PO header, AX auto-numbers it (e.g. `PO014330`).
-3. Operator pastes that PO number back into DIBS (or DIBS polls AX on the vendor + date to detect a newly-created matching header — see Q8).
-4. DIBS generates the lines-only DMF spreadsheet with `PURCHASEORDERNUMBER` filled in.
-5. Operator imports the lines sheet via DMF.
-6. DIBS polls AX, sees the lines, flips state to `posted`.
+**Two viable flows** — decide with Yosef which to implement first:
 
-The headers DMF template (if it exists) is OUT OF THE CRITICAL PATH. Yosef may never share one because he doesn't use one — the header always comes from the AX UI.
+**Flow A — fully generated (preferred):**
 
-### Three generators (scope restated)
+1. DIBS generates `<PO-number>` per would-be PO in its own numeric range (or a prefix like `PO-DIBS-<n>`) to avoid colliding with the AX auto-number sequence
+2. DIBS generates a header sheet + lines sheet (2-sheet workbook, or two separate files — TBD by DMF processing order)
+3. Yosef imports the workbook in AX
+4. DIBS polls `/data/PurchaseOrderHeadersV2?$filter=PurchaseOrderNumber eq '<our-number>'` → sees it → flips state to `posted`
 
-- **PO lines sheet** (single-sheet, 7-col `Purchase_order_lines_V2`) — generated per-PO AFTER the operator supplies the AX-assigned PO number.
-- **NPI multi-sheet workbook** — generated when items need to be released in AX before they can be referenced by PO lines.
-- **Sales orders** — government-flow template; still need to see Yosef's sample.
+**Flow B — operator-created header (what Yosef does for Amazon):**
 
-Same "dry-run first, Yosef reviews, then per-PO" rollout as bid/invoice chains; the "execute" step is Yosef clicking Import in AX.
+1. DIBS shows "ready to create" card with vendor + ship-to + total
+2. Operator creates header in AX UI (AX auto-assigns number, e.g. `PO014330`)
+3. Operator pastes PO number back into DIBS (or DIBS auto-detects by polling for new headers matching vendor + date)
+4. DIBS generates the lines-only DMF sheet with that PO number
+5. Operator imports lines via DMF; DIBS polls and flips state
+
+Flow A takes one less manual step per PO but requires the header DMF template + Yosef's blessing on the PO-number pattern. Flow B is what Yosef already knows.
+
+### Generators in scope
+
+- **PO header sheet** (Flow A only, if chosen)
+- **PO lines sheet** — always; single-sheet 7-col `Purchase_order_lines_V2`
+- **NPI multi-sheet workbook** — conditional on items that need to be released in AX first
+- **Sales orders (government-flow)** — need template from Yosef
 
 ## Scope (revised)
 
@@ -38,10 +47,11 @@ For each ready-to-fulfill batch of awards in DIBS:
 
 1. **Sales order sheet** — one row per award line, in the government-flow template. Yosef imports → AX creates SOs and returns SO numbers. DIBS polls + displays.
 2. **NPI sheet (conditional)** — for any line whose `ItemNumber` isn't in AX yet, DIBS generates the multi-entity product-release workbook first. Yosef imports. DIBS re-polls AX for the new items, then the PO flow can proceed.
-3. **PO header (operator, manual in AX UI)** — DIBS does NOT automate this. DIBS only shows the "ready to create" card.
-4. **PO lines sheet** — generated once the operator pastes back the PO number. Operator imports via DMF. DIBS polls + displays with AX PO #.
-5. DIBS UI per-PO state: `ready_for_ax_header` → `awaiting_po_number` → `lines_generated` → `awaiting_lines_import` → `posted`.
-6. Vendor transmission (EDI / email / portal) remains manual per Yosef — DIBS' job ends at `posted`.
+3. **PO (Flow A or B — per Yosef's choice)** — see PO-number reality section above.
+4. DIBS UI per-PO state (depending on flow):
+   - Flow A: `drafted` → `workbook_ready` → `awaiting_import` → `posted`
+   - Flow B: `ready_for_ax_header` → `awaiting_po_number` → `lines_generated` → `awaiting_lines_import` → `posted`
+5. Vendor transmission (EDI / email / portal) remains manual per Yosef — DIBS' job ends at `posted`.
 
 ## Working assumptions (updated 2026-04-15 after recon)
 
@@ -200,32 +210,40 @@ Variable: `ITEMNUMBER` (matches RPCreate).
 
 **`TradeAgreement`** — 14 cols, mostly empty in sample (1 row). Use only when a locked-in vendor price agreement needs to land in AX simultaneously: `TRADEAGREEMENTJOURNALNUMBER`, `LINENUMBER`, `ITEMNUMBER`, `PRICE`, `PRICEAPPLICABLEFROMDATE`, `PRICEAPPLICABLETODATE`, `PRICECURRENCYCODE`, `PRICESITEID`, `PURCHASEPRICEQUANTITY`, `QUANTITYUNITSYMBOL`, `TOQUANTITY`, `VENDORACCOUNTNUMBER`, `WILLDELIVERYDATECONTROLDISREGARDLEADTIME`, `WILLSEARCHCONTINUE`.
 
-## Questions for Yosef (pruned after flow clarification)
+## Questions for Yosef
 
-Operator supplies the PO number (by creating the header in AX UI first). DIBS just generates the lines sheet once it has the number. That simplifies things. 9 items remain:
+The big architectural fork at the top; everything else is detail:
 
-1. **Sales order template.** Need the government-flow SO template — a recent example + column list unblocks that whole side of scope.
+1. **Flow A or Flow B?** (see "PO-number reality" above)
+   - A = DIBS generates PO number + header sheet + lines sheet; you import the whole thing.
+   - B = You create the header in AX UI (AX auto-numbers); DIBS generates lines-only once you hand back the number.
 
-2. **Auto-detect new PO header?** After you create a new PO in AX, would you rather:
-   (a) **Paste the AX-assigned PO number back into DIBS** manually (simple — DIBS shows a small input box per pending PO)
-   (b) **DIBS auto-detects** by polling `/data/PurchaseOrderHeadersV2` for new entries matching the expected vendor + today's date + rough line count, and suggests the match for you to confirm?
-   (a) is safer; (b) is nicer for volume. Your call.
+   A is one less manual step per PO, but only works if (a) you're OK with DIBS-supplied PO numbers in your AX PO sequence, (b) you share the header DMF template, and (c) DMF processes header-then-lines in a single bundle correctly.
 
-3. **DIBS vendor coverage in AX.** Our vendor codes (`AMAZON`, `000202`, `MCMAST`, `CHEMET`, etc.) — are those all guaranteed to resolve to real `VendorAccountNumber`s in AX? If not, DIBS should pre-flight via OData read before showing the "ready to create header" card so we catch missing vendors before you step into AX.
+2. **If Flow A:**
+   - (a) Can you share the PO headers DMF template — entity/sheet name, column list, and one sample row?
+   - (b) What pattern should DIBS use for PO numbers to avoid colliding with AX's auto-number sequence — its own numeric range, or a prefix like `DIBS-<n>` / `PO-DIBS-<n>`?
+   - (c) When DMF imports a workbook with header sheet + lines sheet, does it process them in the right order (header first, then lines referencing the header) automatically, or do you have to import them as separate DMF jobs?
 
-4. **Product group for DIBS items.** NPI sample uses `PRODUCTGROUPID = FG-NonRX`. Right for DLA / NSN medical items, or a different group (e.g. `FG-MIL`, `FG-GOV`)?
+3. **If Flow B, auto-detect or paste-back?** After you create a new PO in AX manually:
+   - (a) Paste the AX-assigned PO number back into DIBS (simple — DIBS shows a small input box per pending PO)
+   - (b) DIBS auto-detects by polling `/data/PurchaseOrderHeadersV2` for new entries matching the expected vendor + today's date + rough line count, and suggests the match for you to confirm
 
-5. **`EXTERNALITEMDESC` 4th column.** Sheet has 3 header labels but every data row has 4 values (4th = barcode). Missing header in the template, or does DMF consume it positionally?
+4. **Sales order template.** Need the government-flow SO template — a recent example + column list unblocks that whole side of scope. (Applies regardless of Flow A vs B.)
 
-6. **`BarCode` sheet — NSN vs UPC.** Sample uses `BARCODESETUPID=UPC`. For DLA items we'd want `NSN` with NSN digits. Any reason not to, and does warehouse receiving handle NSN-setup barcodes the same way as UPC?
+5. **DIBS vendor coverage in AX.** Our vendor codes (`AMAZON`, `000202`, `MCMAST`, `CHEMET`, etc.) — are those all guaranteed to resolve to real `VendorAccountNumber`s in AX? If not, DIBS should pre-flight via OData read before showing the "ready to push" card so missing vendors surface in DIBS before you step into AX.
 
-7. **NPI ordering inside one workbook.** Does DMF process the 7 sheets in a guaranteed order on one Import (RPCreate → RPV2 → APPROVEDVENDOR → EXTERNALITEMDESC → BarCode → TradeAgreement), or do you run each sheet as a separate DMF import job?
+6. **Product group for DIBS items.** NPI sample uses `PRODUCTGROUPID = FG-NonRX`. Right for DLA / NSN medical items, or a different group (e.g. `FG-MIL`, `FG-GOV`)?
 
-8. **Lines-import read-back.** After you import the lines sheet, DIBS will poll `/data/PurchaseOrderLinesV2?$filter=PurchaseOrderNumber eq '<n>'` and wait until it sees the expected line count. Any reason that wouldn't work (e.g. DMF commits the import as a single transaction so all-or-nothing, or could we see partial reads)?
+7. **`EXTERNALITEMDESC` 4th column.** Sheet has 3 header labels but every data row has 4 values (4th = barcode). Missing header in the template, or does DMF consume it positionally?
 
-9. **Polling cadence.** After you click Import, how long until the lines show up via OData? Seconds? 1 min? 5 min? Sets DIBS' polling interval and the timeout at which we show "looks stuck, check AX DMF."
+8. **`BarCode` sheet — NSN vs UPC.** Sample uses `BARCODESETUPID=UPC`. For DLA items we'd want `NSN` with NSN digits. Any reason not to, and does warehouse receiving handle NSN-setup barcodes the same way as UPC?
 
-10. **Partial-failure reporting.** When DMF rejects some rows, is there anything DIBS can read via OData for the rejection list, or does that report live only in AX DMF Execution Details UI?
+9. **NPI ordering inside one workbook.** Does DMF process the 7 sheets in a guaranteed order on one Import (RPCreate → RPV2 → APPROVEDVENDOR → EXTERNALITEMDESC → BarCode → TradeAgreement), or do you run each sheet as a separate DMF import job?
+
+10. **Polling cadence.** After you click Import, how long until the rows show up via OData? Seconds? 1 min? 5 min?
+
+11. **Partial-failure reporting.** When DMF rejects some rows, is there anything DIBS can read via OData for the rejection list, or does that report live only in AX DMF Execution Details UI?
 
 ## Proposed implementation (post-answers)
 
