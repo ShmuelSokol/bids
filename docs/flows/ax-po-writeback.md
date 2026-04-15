@@ -19,65 +19,119 @@ For each `purchase_orders` row in Supabase with `status='draft'`, DIBS should be
 
 After success, DIBS flips the local row's `status` to `submitted` and records the AX PO number + AX internal ID so downstream receipt matching still works.
 
-## Working assumptions (to verify)
+## Working assumptions (updated 2026-04-15 after recon)
 
-Everything in this section is our best guess from probing `PurchaseOrderLinesV2` earlier and from what we know about AX tenants generally. Each assumption has a stability grade:
+Graded by stability:
 
-- **S** = we've observed this directly
-- **L** = likely based on standard AX behavior / tenant shape
-- **G** = guess; needs verification
+- **S** = observed directly in the recon sample (`scripts/reverse-engineer-ax-po-schema.ts`, 50 recent POs + 143 lines)
+- **L** = likely based on the sample or standard AX behavior
+- **G** = still a guess; needs verification
 
 ### Entities + fields
 
-1. **[L] PO headers live in `PurchaseOrderHeaderV2`** (cross-company). We haven't probed this entity yet — the bids-side probe only looked at `PurchaseOrderLinesV2`.
-2. **[S] `PurchaseOrderLinesV2` carries** `ItemNumber`, `PurchasePrice`, `PurchaseUnitSymbol`, `PurchasePriceQuantity`, `Barcode`, `BarCodeSetupId`. No `VendorAccountNumber` field on the line — vendor is on the header.
-3. **[G] AX auto-generates the PO number** when we POST the header without specifying one (standard AX behavior when "Auto-numbered" is on for the purchase order number sequence). We'll POST without a `PurchaseOrderNumber` and read the assigned one from the response.
-4. **[L] Company code / legal entity** is `szyh` — observed on the `ProductBarcodesV3` probe as `dataAreaId`. Headers API calls need `?cross-company=true` plus `dataAreaId` on the body (or in a header).
+1. **[S] PO headers live in `PurchaseOrderHeadersV2`** (plural). Cross-company supported.
+2. **[S] `PurchaseOrderLinesV2` carries** `ItemNumber`, `PurchasePrice`, `PurchaseUnitSymbol`, `PurchasePriceQuantity`, `Barcode`, `BarCodeSetupId`, `OrderedPurchaseQuantity`, `LineDescription`, `LineNumber`. No vendor field — vendor is on the header.
+3. **[S] AX auto-generates the PO number.** Confirmed: 50 headers returned 50 distinct `PurchaseOrderNumber` values with no gaps in the normal-sequence range. POST without one, read it back from the response.
+4. **[S] Company / legal entity** is `szyh`. Every sampled header had `dataAreaId='szyh'`.
 
-### Required fields on the header (guesses, ordered by likelihood of being mandatory)
+### Header fields — what's actually populated (from 50-row sample)
 
-- **[G]** `OrderVendorAccountNumber` — the AX vendor to bill
-- **[G]** `RequestedDeliveryDate` — from our `po_lines.required_delivery`, or today+N days if null
-- **[G]** `DeliveryAddressPostalAddressLocationId` — probably has a company default; may or may not need explicit
-- **[G]** `DefaultShippingSiteId` + `DefaultShippingWarehouseId` — likely required; probably "1" / main warehouse
-- **[G]** `PurchaseOrderDocumentStateDescription` — probably has a default; we'd POST without it and let AX set "Draft"
-- **[G]** `PurchaseOrderPlacedDate` = today
-- **[G]** `PurchaseOrderStatus` = "Backorder" or "Open order" (AX-y names)
-- **[G]** `ProcurementSiteId` / `RequesterPersonnelNumber` — may not be required depending on policy
+Constants across all sampled POs (hardcode on insert):
 
-### Required fields on each line (guesses)
+- **[S]** `CurrencyCode='USD'`
+- **[S]** `DefaultReceivingSiteId='S01'`
+- **[S]** `PurchaseOrderPoolId='DOM'`
+- **[S]** `PurchaseOrderHeaderCreationMethod='Purchase'`
+- **[S]** `SalesTaxGroupCode='NY-Exempt'`
+- **[S]** `VendorPaymentMethodName='Check'`
+- **[S]** `VendorPostingProfileId='ALL'`
+- **[S]** `LanguageId='en-US'`
+- **[S]** `InvoiceType='Invoice'`
+- **[S]** `DeliveryAddressCountryRegionId='USA'`
+- **[S]** `IsOneTimeVendor='No'` + `IsDeliveredDirectly='No'` + `IsChangeManagementActive='No'`
 
-- **[S]** `ItemNumber` — we already carry this on `po_lines` as `vendor_item_number` once populated
-- **[S]** `PurchasePrice` — unit cost
-- **[S]** `PurchaseUnitSymbol` — UoM (`po_lines.unit_of_measure`)
-- **[G]** `OrderedPurchaseQuantity` — the qty
-- **[G]** `LineDescription` — we carry this on `po_lines.description`
-- **[G]** `RequestedDeliveryDate` — `po_lines.required_delivery`
-- **[L]** `Barcode` + `BarCodeSetupId='NSN'` — populate so the line is scannable by NSN
-- **[G]** `DeliveryAddressLocationId` — may inherit from header
-- **[G]** `SalesTaxGroupCode` / `SalesTaxItemGroupCode` — may inherit from vendor master
+Small-set (2-5 values — depends on vendor/warehouse):
 
-### Confirm (post) step
+- **[S]** `DefaultReceivingWarehouseId` — `W01` or `W03`
+- **[S]** `DeliveryAddressLocationId` — `000000203` (SZY Brooklyn) or `000011805` (SZY New NJ)
+- **[S]** `DeliveryAddressDescription` — `SZY Brooklyn` or `SZY New NJ`
+- **[S]** `DeliveryAddressStreet` / `City` / `StateId` / `ZipCode` — follow from `DeliveryAddressDescription`
+- **[S]** `PaymentTermsName` — `PPD`, `N30`, `N14`, `N7`, `N60` (driven by vendor master; we can likely let it default)
+- **[S]** `DocumentApprovalStatus` — `Confirmed` or `Approved` in the sample; see State section below
 
-- **[G]** AX exposes a `ConfirmPurchaseOrder` OData action (or similar) that transitions Draft → Confirmed and triggers any EDI-to-vendor flows.
-- **[L]** Our OAuth service principal may NOT have permission to call Confirm — Confirm is usually a role-gated action in AX. Worst case we stop at "Draft created" and a human confirms in the AX UI. Same pattern as the bid chain where we never touch the transmit fields.
+Variable (we supply per-PO):
+
+- **[S]** `OrderVendorAccountNumber` — `ZHEJIA`, `HAEMON`, `MEDPLU`, etc. 31 distinct across 50 POs → this IS the AX vendor code (short form, not DUNS).
+- **[S]** `PurchaseOrderName` — human-readable vendor name, 31 distinct. Likely auto-populated from vendor master.
+- **[S]** `InvoiceVendorAccountNumber` — same 31 distinct; matches `OrderVendorAccountNumber` in sample.
+
+User attribution:
+
+- **[S]** `OrdererPersonnelNumber='000001'` + `RequesterPersonnelNumber='000001'` — same employee on all 50. Likely "the AX integration user." Safe to hardcode.
+
+### Line fields — what's actually populated
+
+Constants across all sampled lines:
+
+- **[S]** `CustomerRequisitionNumber='DD219'` — **this is the DLA government customer code** (matches memory). Every PO line carries it.
+- **[S]** `PurchaseOrderLineCreationMethod='Purchase'`
+- **[S]** `CalculateLineAmount='Yes'`
+- **[S]** `SalesTaxGroupCode='NY-Exempt'`
+- **[S]** `SalesTaxItemGroupCode='Taxable'`
+- **[S]** `VendorInvoiceMatchingPolicy='ThreeWayMatch'`
+- **[S]** `OrderedInventoryStatusId='Available'`
+
+Variable (we supply):
+
+- **[S]** `ItemNumber` — 127 distinct of 143 lines.
+- **[S]** `OrderedPurchaseQuantity`, `PurchasePrice`, `PurchaseUnitSymbol`, `LineDescription`.
+- **[S]** `LineNumber` — we assign sequentially.
+
+Inherits from header (don't set on line):
+
+- **[L]** `DeliveryAddress*` fields — all populated on lines in the sample, but they match the header → AX is denormalizing. On insert we can probably omit and AX will backfill.
+- **[L]** `ExternalItemNumber` — often equals `ItemNumber` on sampled lines. Optional.
+
+### Barcode / NSN on the line
+
+- **[S]** `Barcode` and `BarCodeSetupId` are **null on every sampled line**. Warehouse isn't populating them today. If we want NSN-scannable receiving, we'd populate `Barcode=<nsn-digits>` + `BarCodeSetupId='NSN'` on each line. Worth doing but optional.
+
+### State fields + confirm/post step
+
+- **[S]** `WorkflowState` on lines is `'NotSubmitted'` constant in sample. This field likely controls submission-workflow routing; safe to omit on insert.
+- **[S]** `DocumentApprovalStatus` on headers: `Confirmed` (most) or `Approved` (rest). **We didn't see any `Draft` or `NotApproved` values** — either (a) OData filters them out, (b) our sample only returned confirmed ones, or (c) the tenant auto-confirms. Need to check how a draft POST will behave.
+- **[S]** `PurchaseOrderStatus`: `Backorder` (most — means open, not yet received), `Invoiced`, `Received`, `Canceled`. These are post-confirm lifecycle states. On insert we likely don't set this; AX sets `Backorder` after Confirm.
+- **[S]** `PurchaseOrderLineStatus`: matches — `Backorder` for open lines, `Received`/`Invoiced` for closed.
+- **[G]** To transition Draft → Confirmed, AX exposes a bound action (e.g., `Microsoft.Dynamics.DataEntities.confirmOrder` or similar). Needs probing — the recon sample doesn't show the action name. The standard pattern is `POST .../PurchaseOrderHeadersV2(dataAreaId='szyh',PurchaseOrderNumber='X')/Microsoft.Dynamics.DataEntities.confirmOrder`.
+- **[L]** Our OAuth service principal may lack permission to call Confirm. Fallback: stop at Draft, human confirms in AX UI.
 
 ## Standing questions (for Yosef / the AX admin)
 
 When we get answers, come back here and mark each with **[ANSWERED]** + the answer.
 
-1. **Legal entity / dataAreaId.** Is `szyh` the right company for all our POs, or do some vendors go through another LE?
-2. **PO number generation.** Does AX auto-number our POs, or is there a custom sequence where DIBS needs to supply the next number?
-3. **Vendor identifiers.** `nsn_costs.vendor` + `nsn_vendor_prices.vendor` today hold values like `AMAZON`, `000202`, `MCMAST`, `CHEMET`. Are those all valid `VendorAccountNumber` values AX will accept as-is, or do some need translation?
-4. **Header required fields.** Which of these are required vs default-settable: `DefaultShippingSiteId`, `DefaultShippingWarehouseId`, `DeliveryAddressPostalAddressLocationId`, `RequesterPersonnelNumber`, `ProcurementSiteId`?
-5. **Payment terms / delivery terms.** Does the vendor master supply these automatically, or do we need to pass `PaymentTermsName` and `DeliveryTermsCode` on the header?
-6. **Currency.** Always USD? Or does AX need `PurchaseCurrencyCode='USD'` explicitly?
-7. **Line UoM match.** If the award shipped in `EA` but the vendor master on AX prefers `PG` for the same item, does AX auto-convert, or do we need to pass the matching UoM?
-8. **Confirm permissions.** Does the `dibs-api` service principal have permission to call the Confirm action? Or do we stop at Draft and let a human click Confirm in AX?
-9. **Rejection behavior.** If we POST an invalid line (missing field, bad item number), does AX reject the whole PO or just the line? We'd prefer all-or-nothing so DIBS can retry cleanly.
-10. **Cross-company header.** Does `PurchaseOrderHeaderV2` accept `?cross-company=true` on POST, or do we need to scope to a specific company endpoint?
-11. **Duplicate prevention.** If DIBS sends the same PO twice (retry after a partial failure), does AX deduplicate, or do we end up with two POs for the same lines? If no dedup, we need to persist an idempotency key.
-12. **EDI-to-vendor flow.** Once a PO is Confirmed, does AX automatically send it to the vendor via EDI/email, or is there another manual step? This tells us whether Abe still needs to do something after DIBS fires Confirm.
+**[ANSWERED 2026-04-15 from recon]** 1. Legal entity is `szyh` — all 50 sampled POs. Single LE.
+**[ANSWERED 2026-04-15 from recon]** 2. AX auto-numbers POs — 50 distinct `PurchaseOrderNumber` values returned, sequential in the normal range.
+**[ANSWERED 2026-04-15 from recon]** 6. Currency is constant `USD`.
+**[ANSWERED 2026-04-15 from recon]** 10. Cross-company works (`?cross-company=true` on the recon succeeded).
+
+Still open:
+
+3. **Vendor identifiers.** Our `nsn_costs.vendor` has values like `AMAZON`, `000202`, `MCMAST`, `CHEMET`, `000249`. The AX sample has `ZHEJIA`, `HAEMON`, `MEDPLU` — also short 6-char codes. Are our 34K nsn_vendor_prices all valid AX `VendorAccountNumber`s? Best check: run a sample of our distinct DIBS vendors against `/data/Vendors?$filter=VendorAccountNumber in ...` and see how many miss. If any miss, we need a translation table.
+4. **Warehouse + address selection per PO.** When we create a new PO, which warehouse do we route to — `W01` or `W03`? Does it depend on the vendor, the item, or the operator's choice? Same question for the ship-to address (Brooklyn vs East Brunswick). **Proposed default until answered**: Brooklyn + W01 (more frequent in sample).
+5. **Payment terms.** Small-set in sample (`PPD`, `N30`, `N14`, `N7`, `N60`). Does the vendor master supply this automatically if we omit `PaymentTermsName`? If yes, safer to omit. If no, we need a per-vendor lookup.
+7. **Line UoM match.** If our DIBS-side UoM (from `po_lines.unit_of_measure`, ultimately `k81.cln_ui_k81`) doesn't match the UoM AX uses for that item, does AX auto-convert via the product's UoM conversion rules, or does it reject? The bid-side UoMs are `EA`, `PG`, `PK`, `BX`; AX lines show `ea`, `B1000`, etc.
+8. **Confirm permissions.** Does the DIBS OAuth service principal have permission to call the `confirmOrder` action on `PurchaseOrderHeadersV2`? Probe-able: do a dry `OPTIONS` or just attempt Confirm on a test PO and see if AX returns 403. **If no permission**, DIBS stops at Draft and Abe/Yosef finishes in AX UI.
+9. **Rejection behavior.** If we POST a PO header with one invalid line (missing field, bad ItemNumber), does AX fail the whole batch or just the line? We want all-or-nothing — on partial success we might end up with a PO with fewer lines than intended, which is worse than no PO.
+11. **Duplicate prevention.** If DIBS retries a POST after a partial failure, will AX deduplicate, or will we get two POs for the same lines? Assumed NO dedup — we'll persist `ax_po_number` on first success and refuse to re-POST for that DIBS `purchase_orders.id`.
+12. **EDI-to-vendor flow.** Once a PO is Confirmed in AX, does AX automatically send it to the vendor (EDI 850, email, fax), or is there another manual click? Affects whether Abe still has something to do after DIBS fires Confirm.
+
+New questions raised by the recon:
+
+13. **`WorkflowState` behavior on insert.** Lines in the sample all show `'NotSubmitted'`. Do we set this on POST, or does AX manage it? If we set `'NotSubmitted'`, does that route to a human approver in AX's workflow engine (if workflows are configured)?
+14. **`DocumentApprovalStatus` transitions.** The sample shows only `Confirmed`/`Approved`. Are there never any drafts in this tenant, or is there a filter excluding them from OData? If drafts exist but aren't readable, we might still POST draft successfully but not be able to read the result.
+15. **`Orderer`/`Requester` on hardcoded `000001`.** Is that a fixed integration user, or the default employee that happens to always be used? If our service principal POSTs without it, does AX use the service principal's identity or a system default?
+16. **`CustomerRequisitionNumber='DD219'`.** Every sampled line carried this — confirms DD219 is THE DLA government customer code for our gov work. Should DIBS-generated POs always stamp `DD219`, or do some non-gov DIBS POs need a different code?
+17. **Barcode population on lines.** Currently 0 of 143 sampled lines have `Barcode`/`BarCodeSetupId` populated. Worth having DIBS populate them as `(<nsn>, 'NSN')` so warehouse can scan? Would need confirmation that populating them doesn't break anything.
 
 ## Proposed implementation (post-answers)
 
