@@ -62,7 +62,7 @@ What happens after we win a bid. Award arrives, gets grouped into draft POs by s
 [Delete old PO if now empty]
        │
        ▼
-[Submit to AX ← NOT IMPLEMENTED]
+[Submit to AX ← NOT IMPLEMENTED — see docs/flows/ax-po-writeback.md for spec]
 ```
 
 ## User actions
