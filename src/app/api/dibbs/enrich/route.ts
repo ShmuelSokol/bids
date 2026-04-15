@@ -65,8 +65,24 @@ function interpolateMarkup(cost: number): number {
   return brackets[brackets.length - 1][1];
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const supabase = createServiceClient();
+
+  // Optional injected MDB NSN set. The LamLinks import chain fetches
+  // the MDB export ONCE at the top, then passes the array here so 30
+  // chained enrich calls don't all re-fetch the same 681 rows. Shape:
+  //   { mdbNsns: ["1234-12-123-4567", ...] }
+  // If absent we fall through to the per-call fetch (for /api/dibbs/
+  // scrape-now, manual Sync Data clicks, etc.).
+  let injectedMdbNsns: string[] | null = null;
+  try {
+    const body = await req.json();
+    if (body && Array.isArray(body.mdbNsns)) {
+      injectedMdbNsns = body.mdbNsns;
+    }
+  } catch {
+    // Empty body / non-JSON is fine — default to per-call fetch.
+  }
 
   // Load NSN catalog (AX source — 24K NSNs, need to paginate past 1K default)
   const axNsnSet = new Set<string>();
@@ -114,34 +130,38 @@ export async function POST() {
     awardPage++;
   }
 
-  // Load Master DB NSNs via API (optional — may timeout).
-  // Track failures so they surface in the sync_log instead of silently
-  // shrinking the sourceable set.
+  // Load Master DB NSNs. Prefer the set injected by the LamLinks
+  // import chain (one fetch serves all 30 chained calls); otherwise
+  // fetch directly (manual Sync Data / one-off invocations).
   const mdbNsnSet = new Set<string>();
   const mdbErrors: string[] = [];
-  try {
-    const KEY = process.env.MASTERDB_API_KEY;
-    if (!KEY) {
-      mdbErrors.push("MASTERDB_API_KEY not configured");
-    } else {
-      const resp = await fetch(
-        "https://masterdb.everreadygroup.com/api/dibs/items/export?has_nsn=1",
-        { headers: { "X-Api-Key": KEY }, signal: AbortSignal.timeout(30000) }
-      );
-      if (!resp.ok) {
-        mdbErrors.push(`MDB fetch ${resp.status}`);
+  if (injectedMdbNsns) {
+    for (const n of injectedMdbNsns) if (n) mdbNsnSet.add(n);
+  } else {
+    try {
+      const KEY = process.env.MASTERDB_API_KEY;
+      if (!KEY) {
+        mdbErrors.push("MASTERDB_API_KEY not configured");
       } else {
-        const text = await resp.text();
-        for (const line of text.split("\n")) {
-          try {
-            const item = JSON.parse(line);
-            if (item.nsn) mdbNsnSet.add(item.nsn);
-          } catch {}
+        const resp = await fetch(
+          "https://masterdb.everreadygroup.com/api/dibs/items/export?has_nsn=1",
+          { headers: { "X-Api-Key": KEY }, signal: AbortSignal.timeout(30000) }
+        );
+        if (!resp.ok) {
+          mdbErrors.push(`MDB fetch ${resp.status}`);
+        } else {
+          const text = await resp.text();
+          for (const line of text.split("\n")) {
+            try {
+              const item = JSON.parse(line);
+              if (item.nsn) mdbNsnSet.add(item.nsn);
+            } catch {}
+          }
         }
       }
+    } catch (e: any) {
+      mdbErrors.push(`MDB fetch failed: ${e?.message || "unknown"}`);
     }
-  } catch (e: any) {
-    mdbErrors.push(`MDB fetch failed: ${e?.message || "unknown"}`);
   }
 
   // Load NDC→NSN mappings for pharma items

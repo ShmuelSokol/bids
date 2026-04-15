@@ -43,6 +43,25 @@ async function getStats() {
   const today = new Date().toISOString().split("T")[0];
   const monthStart = today.slice(0, 7) + "-01";
 
+  // Paginated loader — Supabase caps at 1K rows per request, so we
+  // must loop until empty. Hardcoding "N parallel ranges" is how the
+  // dashboard/solicitations count mismatch bug keeps coming back.
+  async function loadAll<T = any>(
+    table: string,
+    select: string,
+    apply: (q: any) => any = (q) => q,
+    hardMax = 20
+  ): Promise<T[]> {
+    const out: any[] = [];
+    for (let p = 0; p < hardMax; p++) {
+      const { data, error } = await apply(supabase.from(table).select(select)).range(p * 1000, (p + 1) * 1000 - 1);
+      if (error || !data || data.length === 0) break;
+      out.push(...data);
+      if (data.length < 1000) break;
+    }
+    return out as T[];
+  }
+
   // Parallel data fetch — all the counts
   const [
     solCount, sourceableCount, openCount, quotedCount, submittedCount,
@@ -56,8 +75,8 @@ async function getStats() {
     supabase.from("dibbs_solicitations").select("id", { count: "exact", head: true }),
     supabase.from("dibbs_solicitations").select("id", { count: "exact", head: true }).eq("is_sourceable", true),
     supabase.from("dibbs_solicitations").select("id", { count: "exact", head: true }).gte("return_by_date", today),
-    supabase.from("bid_decisions").select("id", { count: "exact", head: true }).eq("decision", "quoted"),
-    supabase.from("bid_decisions").select("id", { count: "exact", head: true }).eq("decision", "submitted"),
+    supabase.from("bid_decisions").select("id", { count: "exact", head: true }).eq("status", "quoted"),
+    supabase.from("bid_decisions").select("id", { count: "exact", head: true }).eq("status", "submitted"),
     supabase.from("abe_bids_live").select("id", { count: "exact", head: true }),
     // Last 10 scrapes for history
     supabase.from("sync_log").select("created_at,details").eq("action", "scrape").order("created_at", { ascending: false }).limit(10),
@@ -83,19 +102,15 @@ async function getStats() {
     supabase.from("profiles").select("id", { count: "exact", head: true }),
   ]);
 
-  // Match dashboard logic: sourceable + open + not already bid + no decision
-  const [s1, s2, s3, decisionRes, liveBidsRes] = await Promise.all([
-    supabase.from("dibbs_solicitations").select("solicitation_number,nsn,suggested_price,quantity,return_by_date,already_bid,already_bid_ll,our_cost,margin_pct,nomenclature,cost_source")
-      .eq("is_sourceable", true).range(0, 999),
-    supabase.from("dibbs_solicitations").select("solicitation_number,nsn,suggested_price,quantity,return_by_date,already_bid,already_bid_ll,our_cost,margin_pct,nomenclature,cost_source")
-      .eq("is_sourceable", true).range(1000, 1999),
-    supabase.from("dibbs_solicitations").select("solicitation_number,nsn,suggested_price,quantity,return_by_date,already_bid,already_bid_ll,our_cost,margin_pct,nomenclature,cost_source")
-      .eq("is_sourceable", true).range(2000, 2999),
+  // Match dashboard logic: sourceable + open + not already bid + no decision.
+  // Use the paginator so we pick up ALL sourceable rows, not the first 3K.
+  const SOURCEABLE_COLS =
+    "solicitation_number,nsn,suggested_price,quantity,return_by_date,already_bid,already_bid_ll,our_cost,margin_pct,nomenclature,cost_source,is_sourceable";
+  const [allSourceable, decisionRes, liveBidsRes] = await Promise.all([
+    loadAll("dibbs_solicitations", SOURCEABLE_COLS, (q) => q.eq("is_sourceable", true)),
     supabase.from("bid_decisions").select("solicitation_number,nsn,status"),
     supabase.from("abe_bids_live").select("solicitation_number,nsn,bid_price,bid_qty,bid_time,item_desc,lead_days,bid_status").order("bid_time", { ascending: false }).gte("bid_time", today),
   ]);
-
-  const allSourceable = [...(s1.data || []), ...(s2.data || []), ...(s3.data || [])];
   const decisions = decisionRes.data || [];
   const liveBids = liveBidsRes.data || [];
 

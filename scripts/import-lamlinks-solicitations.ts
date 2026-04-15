@@ -191,6 +191,35 @@ async function main() {
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : "https://dibs-gov-production.up.railway.app";
   console.log(`\nChaining enrichment at ${RAILWAY_URL}/api/dibbs/enrich until backlog drains ...`);
+
+  // Fetch the MDB NSN set ONCE here and pass it to every chained
+  // enrich call. Eliminates 29 redundant MDB roundtrips per morning.
+  let mdbNsns: string[] = [];
+  try {
+    const KEY = process.env.MASTERDB_API_KEY;
+    if (KEY) {
+      const resp = await fetch(
+        "https://masterdb.everreadygroup.com/api/dibs/items/export?has_nsn=1",
+        { headers: { "X-Api-Key": KEY }, signal: AbortSignal.timeout(30000) }
+      );
+      if (resp.ok) {
+        const text = await resp.text();
+        for (const line of text.split("\n")) {
+          try {
+            const item = JSON.parse(line);
+            if (item.nsn) mdbNsns.push(item.nsn);
+          } catch {}
+        }
+        console.log(`  fetched ${mdbNsns.length} MDB NSNs once — will pass to each enrich call`);
+      } else {
+        console.warn(`  MDB fetch HTTP ${resp.status} — falling back to per-call fetch`);
+      }
+    }
+  } catch (e: any) {
+    console.warn(`  MDB fetch error: ${e?.message || "unknown"} — falling back to per-call fetch`);
+  }
+  const enrichBody = mdbNsns.length > 0 ? JSON.stringify({ mdbNsns }) : undefined;
+
   let totalSourceable = 0;
   let totalChecked = 0;
   let totalCost = 0;
@@ -203,7 +232,11 @@ async function main() {
     // Single retry on 502/504 — usually Railway cold-start or transient
     for (let attempt = 0; attempt < 2 && !succeeded; attempt++) {
       try {
-        const resp = await fetch(`${RAILWAY_URL}/api/dibbs/enrich`, { method: "POST" });
+        const resp = await fetch(`${RAILWAY_URL}/api/dibbs/enrich`, {
+          method: "POST",
+          headers: enrichBody ? { "Content-Type": "application/json" } : undefined,
+          body: enrichBody,
+        });
         body = await resp.json().catch(() => ({}));
         if (!resp.ok) {
           if (attempt === 0 && (resp.status === 502 || resp.status === 504)) {
