@@ -188,7 +188,8 @@ Takes `{ quotes, format: "lamlinks"|"dibbs", download?: boolean }` and returns a
 ## External systems
 
 - **DIBBS** — `check-open` only (live solicitation status check).
-- **No direct writes to LamLinks or AX from this flow.** Submission to LamLinks is currently manual copy-paste.
+- **LamLinks writes** — gated behind `scripts/generate-bid-insert-sql.ts`. In dry-run by default (ROLLBACK at end). `--execute` flag commits the `k33 → k34 → k35` chain. Input: `bid_decisions` rows with `status='quoted'`. Output: a `.sql` file under `C:/tmp/lamlinks-bid-insert-<ts>.sql`. The script joins each (`solicitation_number`, `nsn`) to `k11_tab` to resolve the FK + part number + mcage + UoM from `k08_tab`. Unresolved rows are skipped (logged to console).
+- **No direct writes to AX from this flow.**
 
 ## Business invariants
 
@@ -215,7 +216,8 @@ If a freshly-imported NSN shows "No awards / No bids on record" — that's truth
 
 ## Known gaps / TODOs
 
-- **Submission to LamLinks is not automated.** "Submit" just writes `status=submitted` to `bid_decisions`. Abe still copy-pastes to LamLinks. Blocker: Yosef verification of `k33/k34/k35` chain.
+- **Submission to LamLinks is gated, not automated.** "Submit" in the UI writes `status=submitted` to `bid_decisions`. A separate local script (`scripts/generate-bid-insert-sql.ts`) translates those rows into INSERT SQL for the `k33/k34/k35` chain. Runs in dry-run by default. Awaiting Yosef's sign-off on the generated SQL before switching to `--execute`. The schema was reverse-engineered from 50 of Abe's recent successful bids — no stored procs, no triggers, ~45 company-specific constants hardcoded in `K34_CONSTANTS`.
+- **No double-submission guard in `generate-bid-insert-sql.ts`.** If the script runs twice on the same quoted `bid_decisions` row (before `status` gets flipped to `submitted`), it will generate duplicate k34 inserts. Needs a `status = 'quoted' AND submitted_at IS NULL` check plus a post-execute flip to `submitted`.
 - **No server-side auth check that the user can modify this decision.** Any authenticated user can overwrite any other user's `bid_decisions` row. (RLS not configured on `bid_decisions`.)
 - **No audit trail on decision changes.** Upsert overwrites the previous row. `updated_at` is the only trace. If Abe quotes then changes his mind, we lose the original price.
 - **`handleSubmitAll` POSTs sequentially in a loop.** For 50 bids this is ~2-3 seconds of sequential API calls. Could be parallelized (or a batch endpoint added).

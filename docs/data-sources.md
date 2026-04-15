@@ -26,7 +26,9 @@ DIBS is mostly glue between five external systems. This page is a field guide to
 | `k81_tab` | Awards. |
 | `ka8_tab → ka9_tab → kaj_tab → kad_tab → kae_tab` | Job → line → shipment → invoice → invoice line. The invoicing chain. |
 
-**Why we don't write to it:** Everything above is read-only until Yosef signs off. The k33/k34/k35 chain and the ka8→kae invoicing chain both have triggers and stored procedures we haven't fully audited. Writing a malformed row into a 500-orders/week production system is how you lose a week and a lot of trust.
+**Why we don't write to it (yet):** Everything above is read-only until Yosef signs off. The bid chain (`k33/k34/k35`) has been audited — **no stored procedures, no triggers, only 2 column-level DB defaults**. It's a dumb data schema; all submission logic lives in the LamLinks Windows client. So the safe write path is: insert `k33` in `acknowledged` state + `k34` bid lines + `k35` pricing rows, and stop. Abe clicks Submit in the LamLinks UI and its app code handles EDI transmission. Tooling: `scripts/generate-bid-insert-sql.ts` (dry-run SQL generator), `scripts/reverse-engineer-bid-schema.ts` (schema analyzer), `scripts/discover-llk-procs.ts` (proc/trigger audit).
+
+The invoicing chain (`ka8 → ka9 → kaj → kad → kae`) has NOT been audited yet and is Yosef's domain. Writing to it is out of scope until he signs off on the quote/invoice posting test.
 
 ### How to query it
 
