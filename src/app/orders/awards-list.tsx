@@ -49,6 +49,9 @@ interface PurchaseOrder {
   line_count: number;
   created_at: string;
   po_lines: any[];
+  ax_po_number?: string | null;
+  ax_correlation_ref?: string | null;
+  dmf_state?: string | null;
 }
 
 export function AwardsList({
@@ -70,6 +73,54 @@ export function AwardsList({
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [downloadingId, setDownloadingId] = useState<number | "all" | null>(null);
+
+  async function downloadFromEndpoint(endpoint: string, poIds: number[], fallbackName: string) {
+    const key: number | "all" = poIds.length === 1 ? poIds[0] : "all";
+    setDownloadingId(key);
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ poIds }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setMessage(`${fallbackName} failed: ${err.error || res.status}`);
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename="([^"]+)"/);
+      const filename = m?.[1] || fallbackName;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setMessage(`${fallbackName} error: ${e?.message || "unknown"}`);
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  async function pollAx(poIds?: number[]) {
+    const res = await fetch("/api/orders/poll-ax", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(poIds ? { poIds } : {}),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setMessage(`Polled ${data.checked} PO(s); ${data.updated} advanced state.`);
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      setMessage(`Poll failed: ${data.error || res.status}`);
+    }
+  }
 
   async function downloadXlsx(poIds: number[], fallbackName?: string) {
     const key: number | "all" = poIds.length === 1 ? poIds[0] : "all";
@@ -546,6 +597,61 @@ export function AwardsList({
                       )}
                     </button>
                   </div>
+                </div>
+                {/* AX write-back state + actions */}
+                <div className="px-6 py-2 bg-gray-50 border-b border-card-border text-[11px] flex items-center gap-3">
+                  <span className="text-muted">AX state:</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded font-medium ${
+                      po.dmf_state === "posted"
+                        ? "bg-green-100 text-green-700"
+                        : po.dmf_state === "awaiting_po_number" || po.dmf_state === "awaiting_lines_import"
+                          ? "bg-blue-100 text-blue-700"
+                          : po.dmf_state === "lines_ready"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {po.dmf_state || "drafted"}
+                  </span>
+                  {po.ax_po_number && (
+                    <span className="text-muted">
+                      AX PO: <code className="font-mono text-foreground">{po.ax_po_number}</code>
+                    </span>
+                  )}
+                  {!po.dmf_state || po.dmf_state === "drafted" ? (
+                    <button
+                      onClick={() => downloadFromEndpoint("/api/orders/dmf-header", [po.id], `dibs-po-header-${po.id}.xlsx`)}
+                      disabled={downloadingId === po.id || po.supplier === "UNASSIGNED"}
+                      className="ml-auto px-2.5 py-1 rounded bg-accent text-white font-medium disabled:opacity-40"
+                      title="Download the PO header DMF file, import into AX"
+                    >
+                      Download Header DMF
+                    </button>
+                  ) : po.dmf_state === "awaiting_po_number" ? (
+                    <button onClick={() => pollAx([po.id])} className="ml-auto px-2.5 py-1 rounded border border-card-border font-medium">
+                      Check for AX PO #
+                    </button>
+                  ) : po.dmf_state === "lines_ready" ? (
+                    <button
+                      onClick={async () => {
+                        await downloadFromEndpoint("/api/orders/dmf-lines", [po.id], `dibs-po-lines-${po.id}.xlsx`);
+                        // flip state to awaiting_lines_import so polling picks up
+                        await fetch("/api/orders/poll-ax", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ poIds: [po.id] }),
+                        });
+                      }}
+                      className="ml-auto px-2.5 py-1 rounded bg-accent text-white font-medium"
+                    >
+                      Download Lines DMF
+                    </button>
+                  ) : po.dmf_state === "awaiting_lines_import" ? (
+                    <button onClick={() => pollAx([po.id])} className="ml-auto px-2.5 py-1 rounded border border-card-border font-medium">
+                      Check posted
+                    </button>
+                  ) : null}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">

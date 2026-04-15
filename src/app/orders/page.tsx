@@ -23,7 +23,9 @@ async function getData() {
     if (c.cost > 0) costMap.set(c.nsn, c.cost);
   }
 
-  // Load existing POs
+  // Load existing POs (select * brings in the new ax_po_number,
+  // ax_correlation_ref, dmf_state, dmf_last_polled_at, dmf_error,
+  // last_followup_at columns automatically)
   const { data: pos } = await supabase
     .from("purchase_orders")
     .select("*, po_lines(*)")

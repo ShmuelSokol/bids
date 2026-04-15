@@ -127,6 +127,19 @@ schtasks /create /tn "DIBS - Shipping Sync" ^
 echo.
 
 REM -----------------------------------------------------------------------
+REM AX PO poll — every 5 min 6am-6pm. Calls /api/orders/poll-ax which
+REM advances purchase_orders.dmf_state as headers + lines land in AX.
+REM Runs only when there's a PO in awaiting_po_number / awaiting_lines_
+REM import — the route is a no-op otherwise, so this is cheap.
+REM -----------------------------------------------------------------------
+schtasks /create /tn "DIBS - AX PO Poll" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" poll-ax-pos\"" ^
+    /sc daily /st 06:00 ^
+    /ri 5 /du 12:00 ^
+    /ru "%RUN_AS_USER%" /it /f
+echo.
+
+REM -----------------------------------------------------------------------
 REM Daily briefing — 7:00am ET weekdays, after the morning imports land.
 REM Sends WhatsApp summary + PDF.
 REM -----------------------------------------------------------------------

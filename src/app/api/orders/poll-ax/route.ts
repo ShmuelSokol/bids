@@ -38,8 +38,16 @@ async function getToken() {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  // Allow the scheduled task dispatcher (Windows) to hit this route
+  // without a session cookie by presenting X-Internal-Secret.
+  // getCurrentUser() is still the path for browser-triggered polls.
+  const internalSecret = req.headers.get("x-internal-secret");
+  const expected = process.env.INTERNAL_POLL_SECRET;
+  const authedViaSecret = expected && internalSecret === expected;
+  const user = authedViaSecret ? null : await getCurrentUser();
+  if (!authedViaSecret && !user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
 
   const supabase = createServiceClient();
   const body = await req.json().catch(() => ({}));

@@ -152,6 +152,9 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
         <p className="text-xs text-muted py-3">No history on record for this NSN yet.</p>
       ) : (
         <div className="rounded border border-card-border max-h-96 overflow-auto">
+          <div className="px-2 py-1 text-[10px] text-muted bg-gray-50 border-b border-card-border">
+            Sources — <span className="text-purple-700">LL</span> = LamLinks (our awards, our bids, competitor awards via k81/kc4); <span className="text-green-700">PUB</span> = PUB LOG
+          </div>
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-gray-50">
               <tr className="text-muted text-left">
