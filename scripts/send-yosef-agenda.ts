@@ -235,6 +235,17 @@ const HTML = `<!doctype html>
 <p class="muted"><strong>Known gap:</strong> current matcher uses a hardcoded list of 8 invoice numbers (dev mock); needs real lookup against the invoice history. Not blocking today but flagging.</p>
 </div>
 
+<div class="card">
+<h3>Upcoming scope — email orders to suppliers (need a decision)</h3>
+<p style="margin:4px 0">Today the PO-to-vendor step is manual: portal re-entry or email with the Excel attached. DIBS could send the email automatically per PO using the Excel we already generate.</p>
+<p style="margin:6px 0"><strong>Open design question:</strong> where does supplier contact info live?</p>
+<ol>
+<li>Master DB (ssokol already has vendor email + preferences wired up there for Amazon orders) — DIBS consumes via API, single source of truth across ERG</li>
+<li>DIBS's own vendor_contacts table — simpler to build, but duplicates data</li>
+</ol>
+<p class="muted">Leaning toward option 1 (MDB) for consistency with Amazon flow, but want to confirm MDB's vendor-contact schema is general enough to serve DIBS-specific suppliers that may not overlap with the Amazon vendor set. If MDB doesn't have them, we'd need to add a write path to populate.</p>
+</div>
+
 <div class="card" style="background: #fef3c7; border-left: 3px solid #d97706;">
 <h3>Top 5 things I most want you to X out if wrong</h3>
 <ol>
