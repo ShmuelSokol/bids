@@ -104,6 +104,18 @@ schtasks /create /tn "DIBS - Awards Import" ^
 echo.
 
 REM -----------------------------------------------------------------------
+REM AX cost rebuild — 4:00am daily, BEFORE awards import. Pulls
+REM PurchasePriceAgreements + ProductBarcodesV3 from D365, rebuilds
+REM nsn_costs + nsn_vendor_prices with UoM persisted. Keeps suggested
+REM prices and PO-gen cost waterfall aligned with the latest AX data.
+REM -----------------------------------------------------------------------
+schtasks /create /tn "DIBS - AX Cost Rebuild" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" populate-nsn-costs-from-ax\"" ^
+    /sc daily /st 04:00 ^
+    /ru "%RUN_AS_USER%" /it /f
+echo.
+
+REM -----------------------------------------------------------------------
 REM Shipping sync — every 15 min, 6am-6pm weekdays. Warehouse updates
 REM tracking numbers throughout the day; we want them visible on /shipping.
 REM -----------------------------------------------------------------------
