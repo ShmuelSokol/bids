@@ -96,7 +96,9 @@ const HTML = `<!doctype html>
 <div class="q"><strong>Q-ax-1 — Flow A or Flow B?</strong> A is one fewer manual step per PO; B is what you do for Amazon today.</div>
 <div class="q"><strong>Q-ax-2 — If Flow A:</strong> Share the PO headers template (entity + columns + sample), PO number pattern (DIBS range? <code>PO-DIBS-&lt;n&gt;</code>?), and whether DMF processes header-then-lines in one bundle correctly.</div>
 <div class="q"><strong>Q-ax-3 — If Flow B:</strong> After you create the header in AX, should DIBS prompt you to paste the PO number back in manually (simple box per pending PO), or should DIBS auto-detect by polling <code>PurchaseOrderHeadersV2</code> for new entries matching vendor + date + line count?</div>
-<div class="q"><strong>Q-ax-4 — Sales order template.</strong> Need your government-flow SO template + a recent sample to build the awards → SO generator.</div>
+<div class="q"><strong>Q-ax-4a — Sales order template.</strong> Your government-flow SO template + a recent imported example. Need the entity/sheet name, column list, and how DD219 + contract # + CLIN get stamped on the sheet.</div>
+<div class="q"><strong>Q-ax-4b — SO Flow A or B?</strong> Parallel question to the PO fork. Either DIBS supplies SO# and generates the full workbook, OR you create the SO header in AX UI and DIBS generates lines-only.</div>
+<div class="q"><strong>Q-ax-4c — SO grouping.</strong> DIBS default would be one SO per distinct DLA contract number (so multiple awards under the same contract share an SO header). Agree, or is it one-SO-per-award even if they share a contract?</div>
 <div class="q"><strong>Q-ax-5 — Vendor coverage.</strong> Our vendor codes (AMAZON, MCMAST, CHEMET, 000202, ~34K total) — all guaranteed to exist as AX <code>VendorAccountNumber</code>s?</div>
 <div class="q"><strong>Q-ax-6 — Product group for DIBS items.</strong> NPI sample uses <code>FG-NonRX</code>. Right for DLA/NSN, or different?</div>
 <div class="q"><strong>Q-ax-7 — NPI sheet ordering.</strong> Does DMF import the 7 NPI sheets in one click correctly, or separate imports per sheet?</div>
@@ -160,7 +162,31 @@ const HTML = `<!doctype html>
 </div>
 
 <div class="card">
-<h3>Stage 6 — PO generation</h3>
+<h3>Stage 6 — NPI (conditional — runs ahead of SO/PO if items are new)</h3>
+<ol>
+<li>DIBS checks every award / PO line item against AX <code>ReleasedProductsV2</code></li>
+<li>For any missing item: DIBS generates the NPI multi-sheet workbook (RPCreate + RPV2 + APPROVEDVENDOR + EXTERNALITEMDESC + BarCode + TradeAgreement)</li>
+<li>Yosef DMF-imports NPI workbook; DIBS polls until new ItemNumbers resolvable via OData</li>
+<li>Only then do Stage 7 (SO) and Stage 8 (PO) proceed — they can't reference an ItemNumber that doesn't exist in AX yet</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) NPI sheets are processed in dependency order on a single DMF import click. (b) <code>PRODUCTGROUPID='FG-NonRX'</code> is correct for DLA/NSN items — or whatever group you specify. (c) Constants per sheet (FIFO-Stock, Warehouse reservation, SiteWHLoc, etc.) are stable across DIBS items. (d) EA is the default for BOM/Inventory/Purchase/Sales UoM on DIBS items.</p>
+</div>
+
+<div class="card">
+<h3>Stage 7 — Sales order write-back to AX <em>(the customer-side doc; need your template)</em></h3>
+<p style="margin:4px 0 8px">Awards = DLA buying from us. The SO is what we owe the government. Runs BEFORE the vendor PO because the SO establishes the customer obligation and the warehouse ka9 line later FKs back to k81 (the award).</p>
+<p style="margin:6px 0"><strong>SO Flow A (fully generated):</strong> DIBS picks an SO#, generates header + lines DMF workbook per award batch, you import, DIBS polls <code>SalesOrderHeadersV2</code> via OData.</p>
+<p style="margin:6px 0"><strong>SO Flow B (manual header, DIBS generates lines):</strong> You create the SO header in AX UI against DD219 + the contract, paste SO# back into DIBS, DIBS generates lines-only DMF sheet, you import.</p>
+<ol style="margin-top: 8px">
+<li>Either way, end state: DIBS flips per-award <code>so_state</code> to <code>posted</code> once OData confirms</li>
+<li>Header stamps: customer <code>DD219</code>, ship-to per contract (DLA Distribution, New Cumberland PA hardcoded in EDI side), contract number, our CAGE <code>0AG09</code></li>
+<li>Lines stamp: NSN, description, qty, unit price (= award unit_price), CLIN if present, required delivery from the award</li>
+</ol>
+<p class="muted"><strong>Assumptions:</strong> (a) Awards with the same contract_number share an SO header; different contracts → different SO. (b) The government-flow SO template differs materially from the vendor-facing one you had originally, hence needing your specific one. (c) <code>CustomerRequisitionNumber='DD219'</code> on every line (observed on all sampled PO lines; SO side likely same). (d) SO is created BEFORE the PO — warehouse ka9 later references k81 (award) + the invoice side expects the SO to exist. (e) One SO per DIBS "award batch" grouped by contract, not one-per-line.</p>
+</div>
+
+<div class="card">
+<h3>Stage 8 — PO generation (Supabase only)</h3>
 <ol>
 <li>Abe opens <code>/orders</code>, filters Awards by date, selects batch, clicks "Generate POs"</li>
 <li>DIBS looks up cheapest vendor for each NSN in <code>nsn_costs</code></li>
@@ -172,35 +198,14 @@ const HTML = `<!doctype html>
 </div>
 
 <div class="card">
-<h3>Stage 7 — AX PO write-back <em>(Q-ax-1 decides approach)</em></h3>
+<h3>Stage 9 — AX PO write-back <em>(Q-ax-1 decides approach)</em></h3>
 <ol>
-<li>Flow A: DIBS picks PO#, generates header+lines workbook, Yosef DMF-imports, DIBS polls; OR</li>
-<li>Flow B: Yosef creates header in AX UI (AX auto-numbers), pastes PO# back to DIBS, DIBS generates lines-only, Yosef DMF-imports, DIBS polls</li>
+<li>PO Flow A: DIBS picks PO#, generates header+lines workbook, Yosef DMF-imports, DIBS polls; OR</li>
+<li>PO Flow B: Yosef creates header in AX UI (AX auto-numbers), pastes PO# back to DIBS, DIBS generates lines-only, Yosef DMF-imports, DIBS polls</li>
 <li>DIBS polls <code>PurchaseOrderLinesV2</code> via OData until expected line count appears; flips local state <code>drafted → posted</code></li>
 <li>After AX Confirm, Yosef manually transmits to vendor (portal/email — no auto-EDI)</li>
 </ol>
 <p class="muted"><strong>Assumptions:</strong> (a) OData service principal is read-only, confirmed by you. (b) DMF is the only viable write path. (c) DMF accepts operator-supplied PO numbers. (d) One AX PO per Supabase PO, no merging/splitting. (e) Once AX has the PO, AX is source of truth — DIBS doesn't mutate after posting.</p>
-</div>
-
-<div class="card">
-<h3>Stage 8 — NPI (conditional)</h3>
-<ol>
-<li>Before Stage 7, DIBS checks every PO line's item against AX <code>ReleasedProductsV2</code></li>
-<li>For any missing item: DIBS generates NPI multi-sheet workbook (RPCreate + RPV2 + APPROVEDVENDOR + EXTERNALITEMDESC + BarCode + TradeAgreement)</li>
-<li>Yosef imports NPI workbook; DIBS polls until new ItemNumbers resolvable</li>
-<li>Then Stage 7 proceeds</li>
-</ol>
-<p class="muted"><strong>Assumptions:</strong> (a) NPI sheets are processed in dependency order on a single DMF import click. (b) <code>PRODUCTGROUPID='FG-NonRX'</code> is correct for DLA/NSN items — or whatever group you specify. (c) Constants per sheet (FIFO-Stock, Warehouse reservation, SiteWHLoc, etc.) are stable across DIBS items. (d) EA is the default for BOM/Inventory/Purchase/Sales UoM on DIBS items.</p>
-</div>
-
-<div class="card">
-<h3>Stage 9 — Sales order creation <em>(need your template to build)</em></h3>
-<ol>
-<li>Awards → "Generate SOs" button → DIBS generates government-flow SO DMF template</li>
-<li>Stamps DD219 customer, DLA contract #, CLIN per line</li>
-<li>Yosef imports; DIBS polls for SO numbers</li>
-</ol>
-<p class="muted"><strong>Assumptions:</strong> (a) Every DIBS award becomes exactly one AX SO line; awards with the same contract number can share an SO header. (b) The government-flow SO template differs materially from the vendor-facing one — hence needing your specific version. (c) SO creation happens BEFORE warehouse fulfillment (ka8/ka9), since ka9 references k81 (the award).</p>
 </div>
 
 <div class="card">
