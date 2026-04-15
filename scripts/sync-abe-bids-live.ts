@@ -19,10 +19,60 @@ const sb = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+/**
+ * Convert a Date that msnodesqlv8 returned for a naive LamLinks
+ * DATETIME (server local = America/New_York) into proper UTC.
+ *
+ * The driver reads a value like `2026-04-15 15:27:58` and returns
+ * `Date(2026-04-15T15:27:58.000Z)` — same wall-clock numbers tagged
+ * UTC. We want UTC that represents 15:27 ET, which (in DST) is
+ * 19:27 UTC. So we pull the wall-clock components out and rebuild a
+ * Date in the ET zone using Intl.
+ *
+ * Handles DST correctly because we derive the offset from the
+ * claimed wall-clock instant interpreted as NY time.
+ */
+function etNaiveToUtcIso(d: Date | null | undefined): string | null {
+  if (!d || isNaN(d.getTime())) return null;
+  // Pull wall-clock components from the "UTC-tagged" Date, which
+  // are actually the ET wall-clock numbers.
+  const y = d.getUTCFullYear();
+  const mo = d.getUTCMonth();
+  const da = d.getUTCDate();
+  const h = d.getUTCHours();
+  const mi = d.getUTCMinutes();
+  const s = d.getUTCSeconds();
+  const ms = d.getUTCMilliseconds();
+
+  // Use a formatter to figure out the UTC offset for that wall-clock
+  // moment in America/New_York. It returns something like "GMT-04:00".
+  const probe = new Date(Date.UTC(y, mo, da, h, mi, s, ms));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "shortOffset",
+    hour12: false,
+  }).formatToParts(probe);
+  const tzPart = parts.find((p) => p.type === "timeZoneName")?.value || "GMT-05:00";
+  const m = tzPart.match(/([+-])(\d{1,2})(?::(\d{2}))?/);
+  const sign = m?.[1] === "-" ? -1 : 1;
+  const hrs = Number(m?.[2] || 0);
+  const mins = Number(m?.[3] || 0);
+  const offsetMs = sign * (hrs * 60 + mins) * 60 * 1000;
+
+  // Wall-clock moment in ET → true UTC = wall-clock minus offset.
+  // If ET is UTC-4, offsetMs = -14400000. Subtracting a negative =
+  // adding 4 hours → correct UTC.
+  const utc = probe.getTime() - offsetMs;
+  return new Date(utc).toISOString();
+}
+
 async function main() {
   const pool = await sql.connect(config);
 
-  // Get today's bids with full details
+  // Get today's bids with full details. Timezone fix happens in TS
+  // below — see etNaiveToUtcIso(). SQL Server 2012 on the LamLinks
+  // box doesn't support AT TIME ZONE (2016+), so we can't fix it
+  // server-side.
   const result = await pool.request().query(`
     SELECT
       k34.idnk34_k34 AS bid_id,
@@ -61,7 +111,7 @@ async function main() {
 
   const bids = result.recordset.map((r: any) => ({
     bid_id: r.bid_id,
-    bid_time: r.bid_time,
+    bid_time: etNaiveToUtcIso(r.bid_time),
     bidder: r.bidder?.trim(),
     nsn: r.fsc && r.niin ? `${r.fsc.trim()}-${r.niin.trim()}` : null,
     fsc: r.fsc?.trim(),
@@ -69,7 +119,7 @@ async function main() {
     part_number: r.part_number?.trim(),
     mfr_cage: r.mfr_cage?.trim(),
     solicitation_number: r.solicitation_number?.trim(),
-    due_date: r.due_date,
+    due_date: etNaiveToUtcIso(r.due_date),
     bid_price: r.bid_price,
     bid_qty: r.bid_qty,
     lead_days: r.lead_days,
