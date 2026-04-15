@@ -154,6 +154,18 @@ schtasks /create /tn "DIBS - Invoice State Sync" ^
 echo.
 
 REM -----------------------------------------------------------------------
+REM PO ↔ Award heuristic linker — daily 5:15am. Queries AX for all
+REM DD219 PO lines, resolves ItemNumber → NSN via ProductBarcodesV3,
+REM matches each PO line to the most-likely award by (qty, date
+REM proximity ±180d). Powers the award bucketing on /invoicing/followups.
+REM -----------------------------------------------------------------------
+schtasks /create /tn "DIBS - PO Award Link Sync" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" sync-po-award-links\"" ^
+    /sc daily /st 05:15 ^
+    /ru "%RUN_AS_USER%" /it /f
+echo.
+
+REM -----------------------------------------------------------------------
 REM Daily briefing — 7:00am ET weekdays, after the morning imports land.
 REM Sends WhatsApp summary + PDF.
 REM -----------------------------------------------------------------------

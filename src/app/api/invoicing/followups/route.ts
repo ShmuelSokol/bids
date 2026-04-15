@@ -133,6 +133,47 @@ export async function GET() {
     axError = e?.message || "AX lookup failed";
   }
 
+  // ---- Section 3: award ↔ PO linkage status ----
+  // Pull recent 0AG09 awards + join to po_award_links.
+  // Bucket: no PO, PO backorder, PO received.
+  const sinceIso = new Date(Date.now() - 180 * 86_400_000).toISOString();
+  const awardsRows: any[] = [];
+  for (let p = 0; p < 20; p++) {
+    const { data } = await supabase
+      .from("awards")
+      .select("id, contract_number, fsc, niin, unit_price, quantity, award_date, description")
+      .eq("cage", "0AG09")
+      .gte("award_date", sinceIso)
+      .order("award_date", { ascending: false })
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    awardsRows.push(...data);
+    if (data.length < 1000) break;
+  }
+  const awardIds = awardsRows.map((a) => a.id);
+  const linksByAward = new Map<number, any[]>();
+  for (let i = 0; i < awardIds.length; i += 500) {
+    const chunk = awardIds.slice(i, i + 500);
+    const { data } = await supabase.from("po_award_links").select("*").in("award_id", chunk);
+    for (const l of data || []) {
+      if (!linksByAward.has(l.award_id)) linksByAward.set(l.award_id, []);
+      linksByAward.get(l.award_id)!.push(l);
+    }
+  }
+  const awardsNoPo: any[] = [];
+  const awardsBackorder: any[] = [];
+  const awardsReceived: any[] = [];
+  for (const a of awardsRows) {
+    const links = linksByAward.get(a.id) || [];
+    if (links.length === 0) {
+      awardsNoPo.push({ ...a, links: [] });
+    } else {
+      const allReceived = links.every((l) => (l.po_line_status || "").trim() === "Received");
+      if (allReceived) awardsReceived.push({ ...a, links });
+      else awardsBackorder.push({ ...a, links });
+    }
+  }
+
   return NextResponse.json({
     posted_invoices: postedInvoices,
     posted_invoices_count: postedInvoices.length,
@@ -141,5 +182,10 @@ export async function GET() {
     ax_government_pos: axPos,
     ax_po_count: axPos.length,
     ax_error: axError,
+    // award↔PO buckets
+    awards_total: awardsRows.length,
+    awards_no_po: awardsNoPo,
+    awards_backorder: awardsBackorder,
+    awards_received_count: awardsReceived.length,
   });
 }

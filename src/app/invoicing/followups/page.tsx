@@ -107,6 +107,87 @@ export default function InvoiceFollowupsPage() {
             )}
           </div>
 
+          {/* Award → PO linkage buckets */}
+          <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
+            <div className="px-6 py-4 border-b border-card-border">
+              <h2 className="font-semibold flex items-center gap-2">
+                <Package className="h-4 w-4 text-purple-600" />
+                Awards ↔ Purchase Orders ({data.awards_total} awards in last 180d)
+              </h2>
+              <p className="text-xs text-muted mt-1">
+                Heuristic match: DD219 PO lines → award by NSN + qty + date proximity (±180d). High/medium/low confidence.
+                Received count: <strong>{data.awards_received_count}</strong>. No-PO-yet: <strong>{data.awards_no_po?.length || 0}</strong>. Backorder: <strong>{data.awards_backorder?.length || 0}</strong>.
+              </p>
+            </div>
+
+            {data.awards_no_po?.length > 0 && (
+              <div className="border-b border-card-border">
+                <div className="px-6 py-2 bg-red-50 text-xs font-semibold text-red-800">Awards without a matching PO ({data.awards_no_po.length}) — need PO creation</div>
+                <table className="w-full text-xs">
+                  <thead className="text-muted border-b border-card-border">
+                    <tr>
+                      <th className="px-4 py-1.5 text-left font-medium">Contract</th>
+                      <th className="px-4 py-1.5 text-left font-medium">NSN</th>
+                      <th className="px-4 py-1.5 text-right font-medium">Qty</th>
+                      <th className="px-4 py-1.5 text-right font-medium">Sold @</th>
+                      <th className="px-4 py-1.5 text-left font-medium">Awarded</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.awards_no_po.slice(0, 50).map((a: any) => (
+                      <tr key={a.id} className="border-b border-card-border/40">
+                        <td className="px-4 py-1.5 font-mono text-[10px]">{a.contract_number}</td>
+                        <td className="px-4 py-1.5 font-mono">{a.fsc}-{a.niin}</td>
+                        <td className="px-4 py-1.5 text-right">{a.quantity}</td>
+                        <td className="px-4 py-1.5 text-right font-mono">{fmt$(a.unit_price)}</td>
+                        <td className="px-4 py-1.5 text-muted">{formatDateShort(a.award_date)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {data.awards_no_po.length > 50 && <div className="px-6 py-1 text-[10px] text-muted">Showing first 50 of {data.awards_no_po.length}</div>}
+              </div>
+            )}
+
+            {data.awards_backorder?.length > 0 && (
+              <div>
+                <div className="px-6 py-2 bg-amber-50 text-xs font-semibold text-amber-800">Awards with PO in backorder ({data.awards_backorder.length}) — need vendor follow-up</div>
+                <table className="w-full text-xs">
+                  <thead className="text-muted border-b border-card-border">
+                    <tr>
+                      <th className="px-4 py-1.5 text-left font-medium">Contract</th>
+                      <th className="px-4 py-1.5 text-left font-medium">NSN</th>
+                      <th className="px-4 py-1.5 text-right font-medium">Award Qty</th>
+                      <th className="px-4 py-1.5 text-left font-medium">AX PO(s)</th>
+                      <th className="px-4 py-1.5 text-left font-medium">Supplier</th>
+                      <th className="px-4 py-1.5 text-left font-medium">Conf</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.awards_backorder.slice(0, 50).map((a: any) => (
+                      <tr key={a.id} className="border-b border-card-border/40">
+                        <td className="px-4 py-1.5 font-mono text-[10px]">{a.contract_number}</td>
+                        <td className="px-4 py-1.5 font-mono">{a.fsc}-{a.niin}</td>
+                        <td className="px-4 py-1.5 text-right">{a.quantity}</td>
+                        <td className="px-4 py-1.5 font-mono text-[10px]">
+                          {a.links.map((l: any) => `${l.ax_po_number}/${l.ax_line_number}`).join(", ")}
+                        </td>
+                        <td className="px-4 py-1.5 font-mono text-[10px]">{a.links[0]?.supplier || "—"}</td>
+                        <td className="px-4 py-1.5">
+                          <span className={`text-[10px] px-1 rounded ${
+                            a.links[0]?.confidence === "high" ? "bg-green-100 text-green-700" :
+                            a.links[0]?.confidence === "medium" ? "bg-yellow-100 text-yellow-700" :
+                            "bg-gray-100 text-gray-600"
+                          }`}>{a.links[0]?.confidence || "?"}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* AX government POs via DD219 */}
           <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
             <div className="px-6 py-4 border-b border-card-border">
