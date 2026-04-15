@@ -36,6 +36,12 @@ async function main() {
   const pool = await sql.connect(config);
 
   // 2-year window. kc4 has both our wins and competitor wins.
+  //
+  // Skip "Removed" status rows — those are cancelled/withdrawn awards
+  // that shouldn't show in history. They have all-zero price/qty/uom
+  // and would just be noise. Keep "Awarded" rows even if their price
+  // is 0 (that's a real event, LamLinks just didn't capture the price
+  // for some of them).
   const result = await pool.request().query(`
     SELECT
       kc4.cntrct_kc4   AS contract_number,
@@ -44,6 +50,7 @@ async function main() {
       kc4.awdqty_kc4   AS quantity,
       kc4.awd_um_kc4   AS unit_of_measure,
       kc4.reldte_kc4   AS award_date,
+      kc4.c_stat_kc4   AS contract_status,
       kc4.piidno_kc4   AS piid,
       kc4.adddte_kc4   AS imported_at,
       k08.fsc_k08      AS fsc,
@@ -58,6 +65,7 @@ async function main() {
       AND kc4.a_cage_kc4 IS NOT NULL
       AND k08.fsc_k08 IS NOT NULL
       AND k08.niin_k08 IS NOT NULL
+      AND RTRIM(LTRIM(kc4.c_stat_kc4)) != 'Removed'
     ORDER BY kc4.reldte_kc4 DESC
   `);
 
