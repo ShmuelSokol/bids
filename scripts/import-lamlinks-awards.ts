@@ -73,25 +73,35 @@ async function main() {
 
   console.log(`After filtering: ${awards.length} valid awards`);
 
-  // Upsert to Supabase (use contract_number + fsc + niin as dedup key)
+  // Dedupe on (contract_number, fsc, niin, cage) — the same award can
+  // appear in k81 multiple times with different CLINs. Without this,
+  // Supabase upsert errors out because PostgreSQL can't resolve
+  // ON CONFLICT when the same key is present twice in one INSERT.
+  const seen = new Map<string, any>();
+  for (const a of awards) {
+    const key = `${a.contract_number}|${a.fsc}|${a.niin}|${a.cage}`;
+    // Keep the row with the most recent award_date (most relevant)
+    const existing = seen.get(key);
+    if (!existing || (a.award_date && (!existing.award_date || a.award_date > existing.award_date))) {
+      seen.set(key, a);
+    }
+  }
+  const deduped = Array.from(seen.values());
+  console.log(`After dedupe: ${deduped.length} unique awards (dropped ${awards.length - deduped.length} duplicates)`);
+
+  // Upsert to Supabase (constraint: awards_contract_fsc_niin_cage_unique)
   let saved = 0;
-  for (let i = 0; i < awards.length; i += 100) {
-    const batch = awards.slice(i, i + 100);
+  for (let i = 0; i < deduped.length; i += 100) {
+    const batch = deduped.slice(i, i + 100);
     const { error } = await sb
       .from("awards")
       .upsert(batch, { onConflict: "contract_number,fsc,niin,cage", ignoreDuplicates: false });
     if (error) {
-      // If unique constraint doesn't exist, just insert
-      const { error: insertErr } = await sb.from("awards").insert(batch);
-      if (insertErr) {
-        console.error(`Batch error: ${insertErr.message}`);
-      } else {
-        saved += batch.length;
-      }
+      console.error(`Batch ${i} error: ${error.message}`);
     } else {
       saved += batch.length;
     }
-    if ((i + 100) % 1000 === 0) console.log(`  ${saved} saved...`);
+    if ((i + 100) % 2000 === 0) console.log(`  ${saved} saved...`);
   }
 
   console.log(`\nDone! ${saved} of our awards imported to Supabase`);

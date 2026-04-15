@@ -1,24 +1,22 @@
 /**
- * Rebuild nsn_costs + nsn_vendor_prices from AX with proper waterfall
- * and unit-of-measure persistence.
+ * Rebuild nsn_costs + nsn_vendor_prices from AX PriceAgreements with
+ * unit-of-measure persistence. v1 scope: PriceAgreements only (134K
+ * rows). PO-line cost waterfall (Recent PO > Older PO) is v2 — it
+ * needs a second query against PurchaseOrderHeaderV2 to get vendor.
  *
- * Waterfall (matches docs/pricing-logic.md):
- *   1. Recent PO  (RequestedDeliveryDate within 2 months)
- *   2. Recent PO  (within 3 months)
- *   3. AX price agreement (cheapest vendor)
- *   4. Older PO   (> 3 months)
+ * Why this fixes the bug: nsn_vendor_prices had no UoM, so the PO
+ * generator multiplied pack-unit cost × each-unit quantity on award
+ * lines. With UoM persisted here, the generator routes UoM-mismatch
+ * lines to UNASSIGNED instead of producing negative-margin POs.
  *
  * For each NSN:
- *   - nsn_costs gets ONE row: the waterfall-winner cost + source tag
- *     + vendor + unit_of_measure
- *   - nsn_vendor_prices gets ONE row per vendor known for that NSN
- *     (so Abe's Switch-Supplier UI still shows alternatives), each with
- *     its own UoM
+ *   - nsn_costs gets ONE row: cheapest vendor + cost_source
+ *     ("AX price agreement (cheapest vendor)") + vendor + UoM
+ *   - nsn_vendor_prices gets ONE row per known (NSN, vendor) pair
  *
- * Why rebuild both: nsn_vendor_prices is 100% price_agreement today
- * (34K rows) and has no UoM. That's the root cause of the negative-
- * margin PO bug — vendor prices are in pack-units, award prices are
- * in each-units, and we multiply cost * qty as if they matched.
+ * ItemNumber → NSN mapping comes from ProductBarcodesV3 where
+ * BarcodeSetupId='NSN' (PriceAgreements themselves carry only
+ * ItemNumber, not NSN).
  *
  *   npx tsx scripts/populate-nsn-costs-from-ax.ts
  *   npx tsx scripts/populate-nsn-costs-from-ax.ts --dry-run
@@ -72,19 +70,28 @@ async function fetchAllPages(token: string, url: string): Promise<any[]> {
 }
 
 /**
- * Map ItemNumber → NSN. Pulled from nsn_catalog (our AX→NSN mapping
- * built from ProductBarcodesV3). Paginated because 24K rows.
+ * Build ItemNumber → NSN map by querying ProductBarcodesV3 directly.
+ * The NSN barcodes live there (BarcodeSetupId = 'NSN'); nsn_catalog
+ * in Supabase doesn't carry item_number so we can't use it.
+ *
+ * Returned NSNs are formatted as "FSC-NIIN" to match how we store
+ * them elsewhere in the codebase (e.g. "6515-01-153-4716").
  */
-async function loadItemToNsnMap(): Promise<Map<string, string>> {
+async function loadItemToNsnMap(token: string): Promise<Map<string, string>> {
+  const all = await fetchAllPages(
+    token,
+    `${D365_URL}/data/ProductBarcodesV3?cross-company=true&$select=ItemNumber,Barcode,BarcodeSetupId&$filter=BarcodeSetupId eq 'NSN'`
+  );
   const map = new Map<string, string>();
-  for (let page = 0; page < 30; page++) {
-    const { data, error } = await sb
-      .from("nsn_catalog")
-      .select("item_number, nsn")
-      .range(page * 1000, (page + 1) * 1000 - 1);
-    if (error || !data || data.length === 0) break;
-    for (const r of data) if (r.item_number && r.nsn) map.set(r.item_number, r.nsn);
-    if (data.length < 1000) break;
+  for (const r of all) {
+    const item = r.ItemNumber?.trim();
+    const raw = r.Barcode?.trim();
+    if (!item || !raw) continue;
+    // NSN format: FSC (4) + NIIN (9). Accept with-dashes too.
+    const digits = raw.replace(/-/g, "");
+    if (digits.length !== 13) continue;
+    const nsn = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 9)}-${digits.slice(9)}`;
+    map.set(item, nsn);
   }
   return map;
 }
@@ -119,21 +126,18 @@ type CostCandidate = {
 async function main() {
   console.log(`=== NSN COST REBUILDER ${DRY_RUN ? "(DRY RUN)" : "(WRITING)"} ===\n`);
 
-  console.log("1. Loading item_number → NSN map from nsn_catalog...");
-  const itemToNsn = await loadItemToNsnMap();
-  console.log(`   ${itemToNsn.size.toLocaleString()} ItemNumber → NSN mappings\n`);
-
-  console.log("2. Authenticating to AX...");
+  console.log("1. Authenticating to AX...");
   const token = await getToken();
 
-  console.log("3. Pulling PurchaseOrderLinesV2 (transacted costs)...");
-  const poLines = await fetchAllPages(
-    token,
-    `${D365_URL}/data/PurchaseOrderLinesV2?cross-company=true&$select=ItemNumber,PurchasePrice,PurchaseUnitSymbol,RequestedDeliveryDate,VendorAccountNumber`
-  );
-  console.log(`   ${poLines.length.toLocaleString()} PO lines\n`);
+  console.log("\n2. Building ItemNumber → NSN map from ProductBarcodesV3 ...");
+  const itemToNsn = await loadItemToNsnMap(token);
+  console.log(`   ${itemToNsn.size.toLocaleString()} ItemNumber → NSN mappings\n`);
+  if (itemToNsn.size === 0) {
+    console.log("No NSN barcodes found — bailing. Check AX entity access.");
+    return;
+  }
 
-  console.log("4. Pulling PurchasePriceAgreements (asking prices)...");
+  console.log("3. Pulling PurchasePriceAgreements (asking prices + UoM)...");
   const priceAgreements = await fetchAllPages(
     token,
     `${D365_URL}/data/PurchasePriceAgreements?cross-company=true&$select=ItemNumber,Price,QuantityUnitSymbol,VendorAccountNumber`
@@ -141,23 +145,8 @@ async function main() {
   console.log(`   ${priceAgreements.length.toLocaleString()} price agreements\n`);
 
   // Build candidate buckets per NSN, with vendor + UoM attached.
-  console.log("5. Bucketing by NSN...");
+  console.log("4. Bucketing by NSN...");
   const byNsn = new Map<string, CostCandidate[]>();
-
-  for (const p of poLines) {
-    const nsn = itemToNsn.get(p.ItemNumber);
-    if (!nsn || !p.PurchasePrice || p.PurchasePrice <= 0) continue;
-    const source = bucketForPO(p.RequestedDeliveryDate);
-    const cand: CostCandidate = {
-      cost: p.PurchasePrice,
-      source,
-      vendor: p.VendorAccountNumber || null,
-      uom: p.PurchaseUnitSymbol?.trim() || null,
-      itemNumber: p.ItemNumber,
-    };
-    if (!byNsn.has(nsn)) byNsn.set(nsn, []);
-    byNsn.get(nsn)!.push(cand);
-  }
 
   for (const p of priceAgreements) {
     const nsn = itemToNsn.get(p.ItemNumber);
@@ -175,7 +164,7 @@ async function main() {
   console.log(`   ${byNsn.size.toLocaleString()} NSNs have ≥1 candidate\n`);
 
   // Pick waterfall winner per NSN for nsn_costs.
-  console.log("6. Applying waterfall → nsn_costs...");
+  console.log("5. Applying waterfall → nsn_costs...");
   const nsnCostsRows: any[] = [];
   for (const [nsn, cands] of byNsn) {
     cands.sort((a, b) => {
@@ -198,7 +187,7 @@ async function main() {
 
   // Build nsn_vendor_prices: one row per (nsn, vendor) pair, keeping
   // each vendor's lowest-priced + freshest offer.
-  console.log("7. Rolling up vendor alternatives → nsn_vendor_prices...");
+  console.log("6. Rolling up vendor alternatives → nsn_vendor_prices...");
   const byNsnVendor = new Map<string, CostCandidate>();
   for (const [nsn, cands] of byNsn) {
     for (const c of cands) {
@@ -233,7 +222,7 @@ async function main() {
   // Report
   const sourceCounts: Record<string, number> = {};
   for (const r of nsnCostsRows) sourceCounts[r.cost_source] = (sourceCounts[r.cost_source] || 0) + 1;
-  console.log("8. Source distribution in new nsn_costs:");
+  console.log("7. Source distribution in new nsn_costs:");
   for (const [s, n] of Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])) {
     console.log(`   ${n.toString().padStart(6)}  ${s}`);
   }
@@ -249,11 +238,11 @@ async function main() {
   // Truncate + reload. Both tables get fully rebuilt because the old
   // data was 100% price_agreement with no UoM — we don't want to
   // half-merge it with the new shape.
-  console.log("\n9. Clearing existing rows...");
+  console.log("\n8. Clearing existing rows...");
   await sb.from("nsn_costs").delete().not("nsn", "is", null);
   await sb.from("nsn_vendor_prices").delete().not("nsn", "is", null);
 
-  console.log("10. Writing nsn_costs...");
+  console.log("9. Writing nsn_costs...");
   let written = 0;
   for (let i = 0; i < nsnCostsRows.length; i += 500) {
     const batch = nsnCostsRows.slice(i, i + 500);
@@ -263,7 +252,7 @@ async function main() {
   }
   console.log(`   ${written.toLocaleString()} written\n`);
 
-  console.log("11. Writing nsn_vendor_prices...");
+  console.log("10. Writing nsn_vendor_prices...");
   let vWritten = 0;
   for (let i = 0; i < vendorPriceRows.length; i += 500) {
     const batch = vendorPriceRows.slice(i, i + 500);
