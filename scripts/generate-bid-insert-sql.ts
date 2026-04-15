@@ -24,7 +24,8 @@ import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
 
-const DRY_RUN = !process.argv.includes("--execute");
+const PREVIEW = process.argv.includes("--preview"); // ignore abe-live guard — for sample SQL only; forces dry-run
+const DRY_RUN = PREVIEW || !process.argv.includes("--execute");
 
 const config = {
   connectionString:
@@ -267,15 +268,20 @@ async function main() {
   // LamLinks before we pressed --execute. abe_bids_live is refreshed
   // by scripts/sync-abe-bids-live.ts every 5 min.
   const solNos = quoted.map((q) => q.solicitation_number?.trim()).filter(Boolean);
-  const { data: liveBids } = await sb
-    .from("abe_bids_live")
-    .select("solicitation_number")
-    .in("solicitation_number", solNos);
-  const alreadyLive = new Set(
-    (liveBids || []).map((b: any) => b.solicitation_number?.trim()).filter(Boolean)
-  );
-  if (alreadyLive.size > 0) {
-    console.log(`Skipping ${alreadyLive.size} rows — Abe already has live LamLinks bids on those sol#s.`);
+  let alreadyLive = new Set<string>();
+  if (!PREVIEW) {
+    const { data: liveBids } = await sb
+      .from("abe_bids_live")
+      .select("solicitation_number")
+      .in("solicitation_number", solNos);
+    alreadyLive = new Set(
+      (liveBids || []).map((b: any) => b.solicitation_number?.trim()).filter(Boolean)
+    );
+    if (alreadyLive.size > 0) {
+      console.log(`Skipping ${alreadyLive.size} rows — Abe already has live LamLinks bids on those sol#s.`);
+    }
+  } else {
+    console.log("PREVIEW mode — bypassing abe-live guard. Generated SQL is for review ONLY, will not be marked submitted.");
   }
 
   const pool = await sql.connect(config);

@@ -5,24 +5,139 @@ import ExcelJS from "exceljs";
 /**
  * POST /api/orders/dmf-lines
  *
- * Body: { poIds: number[] }
+ * Matches Yosef's 4-15-26 "PO LINES - DD219 - IMPORT" DMF template:
+ * sheet "Purchase_order_lines_V2", 134 columns. Populates only the
+ * fields DIBS knows; everything else blank so the DMF project's
+ * configured defaults fill in.
  *
- * Generates a DMF-format xlsx matching Yosef's 4-13-26
- * Purchase_order_lines_V2 template:
- *
- *   PURCHASEORDERNUMBER | LINENUMBER | ITEMNUMBER |
- *   ORDEREDPURCHASEQUANTITY | PURCHASEPRICE |
- *   PURCHASEUNITSYMBOL | RECEIVINGWAREHOUSEID
- *
- * All column headers UPPERCASE, sheet named "Purchase_order_lines_V2".
- * Values follow the template exactly:
- *   - PURCHASEUNITSYMBOL is lowercased
- *   - RECEIVINGWAREHOUSEID hardcoded 'W01' for DIBS POs (per Yosef)
+ * Column source (from sample row):
+ *   PURCHASEORDERNUMBER  — the AX-assigned header number (DIBS picks
+ *                          this up from poll-ax after header import)
+ *   LINENUMBER           — sequential within PO
+ *   BARCODE              — raw NSN digits (no dashes, 13 chars)
+ *   BARCODESETUPID       — 'NSN' per Yosef's DD219 template
+ *   ITEMNUMBER           — AX internal item #
+ *   LINEAMOUNT           — qty × price (pre-computed)
+ *   LINEDESCRIPTION      — item desc
+ *   ORDEREDPURCHASEQUANTITY
+ *   PURCHASEPRICE        — unit cost (6 decimals in sample)
+ *   PURCHASEPRICEQUANTITY — always 1 (price is per-each)
+ *   PURCHASEUNITSYMBOL   — lowercase ('ea', 'pg', etc.)
+ *   RECEIVINGSITEID='S01', RECEIVINGWAREHOUSEID='W01'
+ *   CALCULATELINEAMOUNT='Yes', SALESTAXGROUPCODE='NY-Exempt',
+ *     SALESTAXITEMGROUPCODE='Taxable',
+ *     VENDORINVOICEMATCHINGPOLICY='ThreeWayMatch'
+ *   PURCHASEORDERLINECREATIONMETHOD='Purchase'
+ *   FIXEDASSETTRANSACTIONTYPE='Acquisition'
+ *   ORDEREDINVENTORYSTATUSID='Available'
+ *   WORKFLOWSTATE='NotSubmitted'
+ *   SKIPCREATEAUTOCHARGES='Yes'
  *
  * Precondition: each PO must have ax_po_number populated (header
- * import already ran). Skips any PO without one and reports it in
- * the response.
+ * DMF import already ran + DIBS polled for the number).
  */
+
+const ALL_LINE_COLS = [
+  "PURCHASEORDERNUMBER","LINENUMBER","ACCOUNTINGDISTRIBUTIONTEMPLATENAME","ALLOWEDOVERDELIVERYPERCENTAGE",
+  "ALLOWEDUNDERDELIVERYPERCENTAGE","BARCODE","BARCODESETUPID","BOMID","BUDGETRESERVATIONDOCUMENTNUMBER",
+  "BUDGETRESERVATIONLINENUMBER","CALCULATELINEAMOUNT","CATCHWEIGHTUNITSYMBOL","CONFIRMEDDELIVERYDATE",
+  "CONFIRMEDSHIPPINGDATE","CUSTOMERREFERENCE","CUSTOMERREQUISITIONNUMBER","DEFAULTLEDGERDIMENSIONDISPLAYVALUE",
+  "DELIVERYADDRESSCITY","DELIVERYADDRESSCOUNTRYREGIONID","DELIVERYADDRESSCOUNTRYREGIONISOCODE",
+  "DELIVERYADDRESSCOUNTYID","DELIVERYADDRESSDESCRIPTION","DELIVERYADDRESSDISTRICTNAME",
+  "DELIVERYADDRESSDUNSNUMBER","DELIVERYADDRESSLATITUDE","DELIVERYADDRESSLOCATIONID","DELIVERYADDRESSLONGITUDE",
+  "DELIVERYADDRESSNAME","DELIVERYADDRESSPOSTBOX","DELIVERYADDRESSSTATEID","DELIVERYADDRESSSTREET",
+  "DELIVERYADDRESSSTREETNUMBER","DELIVERYADDRESSTIMEZONE","DELIVERYADDRESSZIPCODE","DELIVERYBUILDINGCOMPLIMENT",
+  "DLVMODE","DLVTERM","EXTERNALITEMNUMBER","FINTAGDISPLAYVALUE","FIXEDASSETGROUPID","FIXEDASSETNUMBER",
+  "FIXEDASSETTRANSACTIONTYPE","FIXEDASSETVALUEMODELID","FIXEDPRICECHARGES","FORMATTEDDELVERYADDRESS",
+  "INTRASTATCOMMODITYCODE","INTRASTATPORTID","INTRASTATSTATISTICSPROCEDURECODE","INTRASTATTRANSACTIONCODE",
+  "INTRASTATTRANSPORTMODECODE","INVENTORYLOTID","ISADDEDBYCHANNEL","ISDELETED","ISDELIVERYADDRESSORDERSPECIFIC",
+  "ISDELIVERYADDRESSPRIVATE","ISINTRASTATTRIANGULARDEAL","ISLINESTOPPED","ISNEWFIXEDASSET","ISPARTIALDELIVERYPREVENTED",
+  "ISPROJECTPAYWHENPAID","ISTAX1099GTRADEORBUSINESSINCOME","ISTAX1099SPROPERTYORSERVICES","ITEMBATCHNUMBER",
+  "ITEMNUMBER","ITEMSERIALNUMBER","ITEMWITHHOLDINGTAXGROUPCODE","LINEAMOUNT","LINEDESCRIPTION","LINEDISCOUNTAMOUNT",
+  "LINEDISCOUNTPERCENTAGE","MAINACCOUNTIDDISPLAYVALUE","MULTILINEDISCOUNTAMOUNT","MULTILINEDISCOUNTPERCENTAGE",
+  "ORDEREDCATCHWEIGHTQUANTITY","ORDEREDINVENTORYSTATUSID","ORDEREDPURCHASEQUANTITY","ORIGINCOUNTRYREGIONID",
+  "ORIGINSTATEID","OVERRIDESALESTAX","PLANNINGPRIORITY","PROCUREMENTPRODUCTCATEGORYNAME","PRODUCTCOLORID",
+  "PRODUCTCONFIGURATIONID","PRODUCTSIZEID","PRODUCTSTYLEID","PRODUCTVERSIONID","PROJECTACTIVITYNUMBER",
+  "PROJECTCATEGORYID","PROJECTID","PROJECTLINEPROPERTYID","PROJECTSALESCURRENCYCODE","PROJECTSALESPRICE",
+  "PROJECTSALESUNITSYMBOL","PROJECTTAXGROUPCODE","PROJECTTAXITEMGROUPCODE","PROJECTWORKERPERSONNELNUMBER",
+  "PURCHASEORDERLINECREATIONMETHOD","PURCHASEORDERLINESTATUS","PURCHASEPRICE","PURCHASEPRICEQUANTITY",
+  "PURCHASEREBATEVENDORGROUPID","PURCHASEREQUISITIONID","PURCHASEUNITSYMBOL","RECEIVINGSITEID",
+  "RECEIVINGWAREHOUSEID","RECEIVINGWAREHOUSELOCATIONID","REQUESTEDDELIVERYDATE","REQUESTEDSHIPPINGDATE",
+  "REQUESTERPERSONNELNUMBER","RETAILPRODUCTVARIANTNUMBER","ROUTEID","SALESTAXGROUPCODE","SALESTAXITEMGROUPCODE",
+  "SHIPCALENDARID","SKIPCREATEAUTOCHARGES","TAX1099AMOUNT","TAX1099BOXID","TAX1099GSTATETAXWITHHELDAMOUNT",
+  "TAX1099GTAXYEAR","TAX1099GVENDORSTATEID","TAX1099GVENDORSTATETAXID","TAX1099SADDRESSORLEGALDESCRIPTION",
+  "TAX1099SBUYERPARTOFREALESTATETAXAMOUNT","TAX1099SCLOSINGDATE","TAX1099STATEAMOUNT","TAX1099STATEID",
+  "TAX1099TYPE","UNITWEIGHT","VENDORINVOICEMATCHINGPOLICY","VENDORRETENTIONTERMRULEDESCRIPTION",
+  "VENDORRETENTIONTERMRULEID","WILLPRODUCTRECEIVINGCROSSDOCKPRODUCTS","WITHHOLDINGTAXGROUPCODE","WORKFLOWSTATE",
+];
+
+const LINE_CONSTANTS: Record<string, any> = {
+  ALLOWEDOVERDELIVERYPERCENTAGE: 0,
+  ALLOWEDUNDERDELIVERYPERCENTAGE: 0,
+  BARCODESETUPID: "NSN",
+  BUDGETRESERVATIONLINENUMBER: 0,
+  CALCULATELINEAMOUNT: "Yes",
+  CONFIRMEDDELIVERYDATE: "1900-01-01",
+  CONFIRMEDSHIPPINGDATE: "1900-01-01",
+  DELIVERYADDRESSCITY: "Brooklyn",
+  DELIVERYADDRESSCOUNTRYREGIONID: "USA",
+  DELIVERYADDRESSCOUNTRYREGIONISOCODE: "US",
+  DELIVERYADDRESSDESCRIPTION: "SZY Brooklyn",
+  DELIVERYADDRESSLATITUDE: 0,
+  DELIVERYADDRESSLOCATIONID: "000000203",
+  DELIVERYADDRESSLONGITUDE: 0,
+  DELIVERYADDRESSNAME: "SZY Brooklyn",
+  DELIVERYADDRESSSTATEID: "NY",
+  DELIVERYADDRESSSTREET: "300 Liberty Avenue",
+  DELIVERYADDRESSZIPCODE: "11207",
+  FIXEDASSETTRANSACTIONTYPE: "Acquisition",
+  FIXEDPRICECHARGES: 0,
+  FORMATTEDDELVERYADDRESS: "300 Liberty Avenue\nBrooklyn, NY 11207\nUSA",
+  ISADDEDBYCHANNEL: "No",
+  ISDELETED: "No",
+  ISDELIVERYADDRESSORDERSPECIFIC: "No",
+  ISDELIVERYADDRESSPRIVATE: "No",
+  ISINTRASTATTRIANGULARDEAL: "No",
+  ISLINESTOPPED: "No",
+  ISNEWFIXEDASSET: "No",
+  ISPARTIALDELIVERYPREVENTED: "No",
+  ISPROJECTPAYWHENPAID: "No",
+  ISTAX1099GTRADEORBUSINESSINCOME: "No",
+  ISTAX1099SPROPERTYORSERVICES: "No",
+  LINEDISCOUNTAMOUNT: 0,
+  LINEDISCOUNTPERCENTAGE: 0,
+  MULTILINEDISCOUNTAMOUNT: 0,
+  MULTILINEDISCOUNTPERCENTAGE: 0,
+  ORDEREDCATCHWEIGHTQUANTITY: 0,
+  ORDEREDINVENTORYSTATUSID: "Available",
+  OVERRIDESALESTAX: "No",
+  PLANNINGPRIORITY: 0,
+  PROJECTSALESPRICE: 0,
+  PURCHASEORDERLINECREATIONMETHOD: "Purchase",
+  PURCHASEPRICEQUANTITY: 1,
+  RECEIVINGSITEID: "S01",
+  RECEIVINGWAREHOUSEID: "W01",
+  REQUESTEDSHIPPINGDATE: "1900-01-01",
+  SALESTAXGROUPCODE: "NY-Exempt",
+  SALESTAXITEMGROUPCODE: "Taxable",
+  SKIPCREATEAUTOCHARGES: "Yes",
+  TAX1099AMOUNT: 0,
+  TAX1099GSTATETAXWITHHELDAMOUNT: 0,
+  TAX1099GTAXYEAR: 0,
+  TAX1099SBUYERPARTOFREALESTATETAXAMOUNT: 0,
+  TAX1099SCLOSINGDATE: "1900-01-01",
+  TAX1099STATEAMOUNT: 0,
+  UNITWEIGHT: 0,
+  VENDORINVOICEMATCHINGPOLICY: "ThreeWayMatch",
+  WILLPRODUCTRECEIVINGCROSSDOCKPRODUCTS: "No",
+  WORKFLOWSTATE: "NotSubmitted",
+};
+
+function nsnToBarcode(nsn: string | null | undefined): string {
+  if (!nsn) return "";
+  return nsn.replace(/-/g, "");
+}
+
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -35,14 +150,15 @@ export async function POST(req: NextRequest) {
 
   const { data: pos, error } = await supabase
     .from("purchase_orders")
-    .select("id, po_number, supplier, ax_po_number, po_lines(id, nsn, quantity, unit_of_measure, unit_cost, vendor_item_number)")
+    .select("id, po_number, supplier, ax_po_number, po_lines(id, nsn, description, quantity, unit_of_measure, unit_cost, vendor_item_number)")
     .in("id", poIds);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!pos?.length) return NextResponse.json({ error: "no POs found" }, { status: 404 });
 
   const missing: number[] = [];
-  const rows: any[] = [];
-  for (const po of pos) {
+  const rowsOut: any[] = [];
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  for (const po of pos || []) {
     if (!po.ax_po_number) {
       missing.push(po.id);
       continue;
@@ -50,55 +166,51 @@ export async function POST(req: NextRequest) {
     const lines = (po.po_lines || []).slice().sort((a: any, b: any) => a.id - b.id);
     let lineNo = 1;
     for (const l of lines) {
-      rows.push({
+      const qty = l.quantity || 1;
+      const price = l.unit_cost || 0;
+      const row: Record<string, any> = {
+        ...LINE_CONSTANTS,
         PURCHASEORDERNUMBER: po.ax_po_number,
         LINENUMBER: lineNo++,
+        BARCODE: nsnToBarcode(l.nsn),
         ITEMNUMBER: l.vendor_item_number || "",
-        ORDEREDPURCHASEQUANTITY: l.quantity || 0,
-        PURCHASEPRICE: l.unit_cost || 0,
+        LINEAMOUNT: qty * price,
+        LINEDESCRIPTION: l.description || "",
+        ORDEREDPURCHASEQUANTITY: qty,
+        PURCHASEPRICE: price,
         PURCHASEUNITSYMBOL: (l.unit_of_measure || "EA").toLowerCase(),
-        RECEIVINGWAREHOUSEID: "W01",
-      });
+        REQUESTEDDELIVERYDATE: todayIso,
+      };
+      rowsOut.push(row);
     }
   }
 
-  if (missing.length === pos.length) {
+  if (missing.length === (pos || []).length) {
     return NextResponse.json(
-      {
-        error: "No POs have ax_po_number set. Run the header DMF import first.",
-        missing_ax_po_number: missing,
-      },
+      { error: "No POs have ax_po_number set. Run the header DMF import first.", missing },
       { status: 400 }
     );
   }
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "DIBS";
-  wb.created = new Date();
   const ws = wb.addWorksheet("Purchase_order_lines_V2");
+  ws.addRow(ALL_LINE_COLS);
+  for (const r of rowsOut) ws.addRow(ALL_LINE_COLS.map((c) => r[c] ?? ""));
+  ws.columns.forEach((c) => (c.width = 20));
 
-  const cols = [
-    "PURCHASEORDERNUMBER",
-    "LINENUMBER",
-    "ITEMNUMBER",
-    "ORDEREDPURCHASEQUANTITY",
-    "PURCHASEPRICE",
-    "PURCHASEUNITSYMBOL",
-    "RECEIVINGWAREHOUSEID",
-  ];
-  ws.addRow(cols);
-  for (const r of rows) ws.addRow(cols.map((c) => r[c]));
-  ws.columns.forEach((c, i) => {
-    c.width = [22, 10, 20, 22, 14, 18, 20][i] || 16;
-  });
+  // Advance state
+  await supabase
+    .from("purchase_orders")
+    .update({ dmf_state: "awaiting_lines_import" })
+    .in("id", (pos || []).filter((p) => p.ax_po_number).map((p) => p.id));
 
   const buf = new Uint8Array((await wb.xlsx.writeBuffer()) as ArrayBuffer);
-  const stamp = new Date().toISOString().slice(0, 10);
   return new NextResponse(new Blob([buf as BlobPart]), {
     status: 200,
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="dibs-po-lines-${stamp}.xlsx"`,
+      "Content-Disposition": `attachment; filename="dibs-po-lines-${todayIso}.xlsx"`,
       "X-Skipped-POs": missing.join(","),
     },
   });

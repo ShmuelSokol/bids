@@ -67,22 +67,36 @@ async function main() {
   if (kadRows.length === 0) return;
 
   // Load the most recent event per kad_id we've already seen.
-  // Paginate — 30d can exceed 1K events.
+  // Supabase caps .select() at 1000 rows by default even when an .in()
+  // filter is present — so a chunk of 500 kad_ids with an avg of 2-3
+  // events each would hit the cap and drop older-kad coverage
+  // silently. Paginate by range() to get every event in the chunk.
   const kadIds = kadRows.map((r) => r.idnkad_kad);
   const lastSeen = new Map<number, string>();
   for (let i = 0; i < kadIds.length; i += 500) {
     const chunk = kadIds.slice(i, i + 500);
-    const { data } = await sb
-      .from("invoice_state_events")
-      .select("kad_id, to_state, detected_at")
-      .in("kad_id", chunk)
-      .order("detected_at", { ascending: false });
-    for (const row of data || []) {
-      if (!lastSeen.has(row.kad_id)) {
-        lastSeen.set(row.kad_id, row.to_state);
+    for (let page = 0; page < 10; page++) {
+      const { data, error } = await sb
+        .from("invoice_state_events")
+        .select("kad_id, to_state, detected_at")
+        .in("kad_id", chunk)
+        .order("detected_at", { ascending: false })
+        .range(page * 1000, (page + 1) * 1000 - 1);
+      if (error) {
+        console.error(`lookup page ${page} error: ${error.message}`);
+        break;
       }
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        const key = Number(row.kad_id); // normalize: PostgREST may give int or string
+        if (!lastSeen.has(key)) {
+          lastSeen.set(key, (row.to_state || "").trim());
+        }
+      }
+      if (data.length < 1000) break;
     }
   }
+  console.log(`  known state for ${lastSeen.size} / ${kadIds.length} kad_ids`);
 
   // Diff
   const newEvents: any[] = [];
@@ -91,7 +105,7 @@ async function main() {
   for (const r of kadRows) {
     const state = (r.cinsta_kad || "").trim();
     if (!state) continue;
-    const prev = lastSeen.get(r.idnkad_kad);
+    const prev = lastSeen.get(Number(r.idnkad_kad));
     if (!prev) {
       newEvents.push({
         kad_id: r.idnkad_kad,
