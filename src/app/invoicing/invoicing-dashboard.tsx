@@ -259,6 +259,12 @@ export function InvoicingDashboard({
         </div>
         <div className="flex gap-2">
           <a
+            href="/invoicing/followups"
+            className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2 text-sm font-medium hover:bg-gray-50"
+          >
+            Follow-ups
+          </a>
+          <a
             href="/invoicing/monitor"
             className="flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2 text-sm font-medium hover:bg-gray-50"
           >

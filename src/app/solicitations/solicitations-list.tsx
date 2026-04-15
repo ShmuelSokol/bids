@@ -130,6 +130,12 @@ export function SolicitationsList({
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [qtyFilter, setQtyFilter] = useState<string>("all");
   const [valueFilter, setValueFilter] = useState<string>("all");
+  // Default to DIBBS-prefixed solicitations only. Per Abe 2026-04-16:
+  // LamLinks pulls from multiple procurement systems. SPE* = DIBBS
+  // (bidable through LamLinks). W* = Army DoD (not in DIBBS, can't
+  // bid through this path). Without this filter Abe sees noise.
+  // Toggle exposed in filter bar to show everything.
+  const [dibbsOnly, setDibbsOnly] = useState<boolean>(true);
   const [valueMin, setValueMin] = useState<string>(""); // custom range, blank = no limit
   const [valueMax, setValueMax] = useState<string>("");
   const [selectedSourceable, setSelectedSourceable] = useState<Set<number>>(new Set());
@@ -600,6 +606,13 @@ export function SolicitationsList({
     if (fscFilter !== "all") items = items.filter((s) => s.fsc === fscFilter);
     if (fobFilter !== "all") items = items.filter((s) => fobFilter === "D" ? s.fob === "D" : fobFilter === "O" ? s.fob === "O" : !s.fob);
     if (sourceFilter !== "all") items = items.filter((s) => s.source === sourceFilter);
+    // DIBBS-only filter: solicitation numbers starting with SPE are
+    // the ones we can actually quote through LamLinks. Other prefixes
+    // (W* etc) come through the LamLinks feed but are Army/DoD
+    // non-DIBBS solicitations we can't act on from DIBS.
+    if (dibbsOnly) {
+      items = items.filter((s) => s.solicitation_number?.trim().toUpperCase().startsWith("SPE"));
+    }
     if (marginFilter === "high") items = items.filter((s) => (s.margin_pct || 0) >= 20);
     else if (marginFilter === "mid") items = items.filter((s) => (s.margin_pct || 0) >= 10 && (s.margin_pct || 0) < 20);
     else if (marginFilter === "low") items = items.filter((s) => (s.margin_pct || 0) > 0 && (s.margin_pct || 0) < 10);
@@ -685,7 +698,7 @@ export function SolicitationsList({
     });
 
     return items;
-  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter, fscFilter, scoreFilter, fobFilter, marginFilter, sourceFilter, qtyFilter, valueFilter, valueMin, valueMax]);
+  }, [solicitations, filter, sortField, sortAsc, searchQuery, dateFilter, fscFilter, scoreFilter, fobFilter, marginFilter, sourceFilter, qtyFilter, valueFilter, valueMin, valueMax, dibbsOnly]);
 
   const filteredTotalValue = useMemo(() => {
     return filtered.reduce((sum, s) => sum + ((s as any)._potentialValue || s.est_value || 0), 0);
@@ -965,7 +978,14 @@ export function SolicitationsList({
             className="w-14 outline-none bg-transparent text-[10px]"
           />
         </div>
-        {(searchQuery || dateFilter !== "all" || fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all" || valueMin || valueMax) && (
+        <label
+          className="text-[11px] inline-flex items-center gap-1 cursor-pointer select-none"
+          title="SPE* prefix = DIBBS solicitations (bidable through LamLinks). Other prefixes (W*, etc.) are DoD but not DIBBS — can't be bid from this system. Default on per Abe 2026-04-16."
+        >
+          <input type="checkbox" checked={dibbsOnly} onChange={(e) => setDibbsOnly(e.target.checked)} className="rounded" />
+          DIBBS only
+        </label>
+        {(searchQuery || dateFilter !== "all" || fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all" || valueMin || valueMax || !dibbsOnly) && (
           <span className="text-xs text-muted">{filtered.length} results</span>
         )}
         {(fscFilter !== "all" || scoreFilter !== "all" || fobFilter !== "all" || marginFilter !== "all" || sourceFilter !== "all" || qtyFilter !== "all" || valueFilter !== "all" || valueMin || valueMax) && (
