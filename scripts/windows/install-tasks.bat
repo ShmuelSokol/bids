@@ -140,6 +140,20 @@ schtasks /create /tn "DIBS - AX PO Poll" ^
 echo.
 
 REM -----------------------------------------------------------------------
+REM Invoice state monitor — every 15 min, 6am-8pm. Watches LamLinks
+REM kad_tab.cinsta_kad for state transitions so DIBS surfaces "Abe
+REM posted invoice X at 3:47 PM" same-day, without touching WAWF.
+REM See /invoicing/monitor for the UI and docs/flows/mill-strip-research.md
+REM for the broader visibility plan.
+REM -----------------------------------------------------------------------
+schtasks /create /tn "DIBS - Invoice State Sync" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" sync-invoice-states\"" ^
+    /sc daily /st 06:00 ^
+    /ri 15 /du 14:00 ^
+    /ru "%RUN_AS_USER%" /it /f
+echo.
+
+REM -----------------------------------------------------------------------
 REM Daily briefing — 7:00am ET weekdays, after the morning imports land.
 REM Sends WhatsApp summary + PDF.
 REM -----------------------------------------------------------------------
