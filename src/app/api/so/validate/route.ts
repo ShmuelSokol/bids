@@ -4,32 +4,19 @@ import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
 /**
  * POST /api/so/validate
  *
- * Pre-validates a batch of awards against AX before they flow through
- * Yosef's MPI Sales Order page. Surfaces two error types that Abe
- * currently only discovers AFTER running the MPI import:
+ * Pre-validates a batch of LamLinks awards (from so_awards_intake)
+ * against AX + the DIBS dodaac_map cache before Abe runs the MPI
+ * Sales Order import. Flags two classes of issue upfront so DIBS
+ * catches them before MPI does:
  *
- *   1. DODAAC not mapped to a Dynamics address_id yet
- *   2. NSN has no matching ItemNumber in AX barcode table (or no
- *      valid UoM conversion)
+ *   1. SHIP_TO_DODAAC not in dodaac_map → Abe needs to add the
+ *      DODAAC→address_id mapping in AX (bottom of DODAAC list,
+ *      click New, paste) AND in DIBS (so next validate passes).
+ *   2. NSN with no matching ItemNumber in AX ProductBarcodesV3 →
+ *      Abe creates the item via NPI or attaches NSN to existing.
  *
- * Input: { awardIds: number[] }  — defaults to all awards newer than
- *                                   last SO creation if omitted.
- *
- * Output:
- *   {
- *     ready: Award[],       — all green
- *     dodaac_missing: [{ dodaac, awards: [...] }],
- *     nsn_missing:    [{ nsn,    awards: [...], part_number_hint }]
- *   }
- *
- * Uses AX OData for the lookup (service principal is read-only and
- * DMF writes happen via Yosef's UI, so no write needed here).
- *
- * Note: awards table today doesn't carry DODAAC — that lives in the
- * LamLinks awards Excel file Abe downloads. For a full pre-validation
- * we'd need to either (a) pull DODAAC into the nightly k81 import or
- * (b) have DIBS auto-fetch Lamblinks' awards download. This route is
- * the scaffolding; column + population change coming next session.
+ * Input: { batch_id: string } — the upload batch to validate.
+ *        OR omit batch_id to validate the most recent batch.
  */
 
 async function getAxToken() {
@@ -55,84 +42,97 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceClient();
   const body = await req.json().catch(() => ({}));
 
-  let awardsQ = supabase
-    .from("awards")
-    .select("id, contract_number, fsc, niin, unit_price, quantity, unit_of_measure, award_date")
-    .eq("cage", "0AG09")
-    .order("award_date", { ascending: false });
-  if (Array.isArray(body.awardIds) && body.awardIds.length > 0) {
-    awardsQ = awardsQ.in("id", body.awardIds);
-  } else {
-    awardsQ = awardsQ.limit(200);
+  // Resolve which batch to validate. Default: most recent.
+  let batchId: string | null = body.batch_id || null;
+  if (!batchId) {
+    const { data: latest } = await supabase
+      .from("so_awards_intake")
+      .select("batch_id")
+      .order("uploaded_at", { ascending: false })
+      .limit(1);
+    batchId = latest?.[0]?.batch_id || null;
   }
-  const { data: awards, error } = await awardsQ;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!awards?.length) return NextResponse.json({ ready: [], dodaac_missing: [], nsn_missing: [] });
-
-  // 1. NSN check against AX ProductBarcodesV3 (BarcodeSetupId='NSN')
-  const token = await getAxToken();
-  const D365_URL = process.env.AX_D365_URL!;
-
-  // Chunk the NSN filter (AX OData has a URL length limit)
-  const nsnMap = new Map<string, { fsc: string; niin: string; digits: string; barcodeFormatted: string }>();
-  for (const a of awards) {
-    if (!a.fsc || !a.niin) continue;
-    const digits = `${a.fsc}${a.niin.replace(/-/g, "")}`;
-    nsnMap.set(`${a.fsc}-${a.niin}`, {
-      fsc: a.fsc,
-      niin: a.niin,
-      digits,
-      barcodeFormatted: digits,
-    });
+  if (!batchId) {
+    return NextResponse.json({ ready: [], dodaac_missing: [], nsn_missing: [], checked: 0, note: "No batches uploaded yet. Upload a LamLinks awards file first." });
   }
-  const digitsSet = new Set(Array.from(nsnMap.values()).map((x) => x.digits));
+
+  // Pull rows for this batch (paginate — can exceed 1K)
+  const rows: any[] = [];
+  for (let p = 0; p < 10; p++) {
+    const { data } = await supabase
+      .from("so_awards_intake")
+      .select("*")
+      .eq("batch_id", batchId)
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < 1000) break;
+  }
+
+  if (rows.length === 0) {
+    return NextResponse.json({ ready: [], dodaac_missing: [], nsn_missing: [], checked: 0 });
+  }
+
+  // 1. DODAAC check against dodaac_map
+  const dodaacsOnFile = new Set(rows.map((r) => (r.ship_to_dodaac || "").trim()).filter(Boolean));
+  const { data: knownDodaacRows } = await supabase
+    .from("dodaac_map")
+    .select("dodaac")
+    .in("dodaac", Array.from(dodaacsOnFile));
+  const knownDodaacs = new Set((knownDodaacRows || []).map((r: any) => r.dodaac));
+
+  // 2. NSN check against AX ProductBarcodesV3
+  const nsnsOnFile = new Set(rows.map((r) => (r.nsn || "").trim()).filter(Boolean));
+  const digitsMap = new Map<string, string>(); // digits → display nsn
+  for (const nsn of nsnsOnFile) {
+    const digits = nsn.replace(/-/g, "");
+    if (digits.length === 13) digitsMap.set(digits, nsn);
+  }
   const foundNsns = new Set<string>();
-  const digitsArr = Array.from(digitsSet);
-
-  for (let i = 0; i < digitsArr.length; i += 40) {
-    const chunk = digitsArr.slice(i, i + 40);
-    const filter = chunk.map((d) => `Barcode eq '${d}'`).join(" or ");
-    const url = `${D365_URL}/data/ProductBarcodesV3?cross-company=true&$filter=BarcodeSetupId eq 'NSN' and (${encodeURIComponent(filter)})&$select=Barcode,ItemNumber`;
-    try {
+  try {
+    const token = await getAxToken();
+    const D = process.env.AX_D365_URL!;
+    const digitsArr = Array.from(digitsMap.keys());
+    for (let i = 0; i < digitsArr.length; i += 40) {
+      const chunk = digitsArr.slice(i, i + 40);
+      const filter = chunk.map((d) => `Barcode eq '${d}'`).join(" or ");
+      const url = `${D}/data/ProductBarcodesV3?cross-company=true&$filter=BarcodeSetupId eq 'NSN' and (${encodeURIComponent(filter)})&$select=Barcode,ItemNumber`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) continue;
       const d: any = await r.json();
-      for (const row of d.value || []) {
-        if (row.Barcode) foundNsns.add(row.Barcode);
-      }
-    } catch (e) {
-      // log + continue so one bad chunk doesn't sink the whole check
-      console.error("AX NSN chunk failed:", (e as any)?.message);
+      for (const row of d.value || []) if (row.Barcode) foundNsns.add(row.Barcode);
     }
+  } catch (e: any) {
+    console.error("AX NSN lookup failed:", e?.message);
   }
 
-  // 2. DODAAC check — skipped for now because awards table doesn't
-  //    carry DODAAC yet. Stub the structure so the UI can show both
-  //    buckets; wire it up once we're pulling DODAAC from the
-  //    LamLinks awards download (next feature).
-  const dodaacMissing: any[] = [];
-
-  const nsnMissing: Record<string, { nsn: string; awards: any[] }> = {};
+  // Bucket the awards
+  const dodaacMissing: Record<string, { dodaac: string; awards: any[] }> = {};
+  const nsnMissing: Record<string, { nsn: string; awards: any[]; part_no_hint: string | null }> = {};
   const ready: any[] = [];
-  for (const a of awards) {
-    const nsn = `${a.fsc}-${a.niin}`;
-    const info = nsnMap.get(nsn);
-    if (!info) {
-      // No fsc+niin on award row, skip silently
-      continue;
+
+  for (const a of rows) {
+    const dodaac = (a.ship_to_dodaac || "").trim();
+    const nsn = (a.nsn || "").trim();
+    const digits = nsn.replace(/-/g, "");
+    const dodaacOk = !dodaac || knownDodaacs.has(dodaac);
+    const nsnOk = !nsn || foundNsns.has(digits);
+    if (!dodaacOk) {
+      if (!dodaacMissing[dodaac]) dodaacMissing[dodaac] = { dodaac, awards: [] };
+      dodaacMissing[dodaac].awards.push(a);
     }
-    if (foundNsns.has(info.digits)) {
-      ready.push(a);
-    } else {
-      if (!nsnMissing[nsn]) nsnMissing[nsn] = { nsn, awards: [] };
+    if (!nsnOk) {
+      if (!nsnMissing[nsn]) nsnMissing[nsn] = { nsn, awards: [], part_no_hint: a.part_no || null };
       nsnMissing[nsn].awards.push(a);
     }
+    if (dodaacOk && nsnOk) ready.push(a);
   }
 
   return NextResponse.json({
+    batch_id: batchId,
+    checked: rows.length,
     ready,
-    dodaac_missing: dodaacMissing,
+    dodaac_missing: Object.values(dodaacMissing),
     nsn_missing: Object.values(nsnMissing),
-    checked: awards.length,
   });
 }
