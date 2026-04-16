@@ -216,7 +216,9 @@ The cookie-write is in a try/catch because `cookies().set()` throws in page/rend
 
 **Resolution:** dedup keys on EXACT `solicitation_number` — having 30d of stale bids in the table is safe. A bid on sol X thirty days ago correctly dedups today's open sol X. Views that display "today's activity" (`/bids/today`, dashboard "Bids Today" panel) still apply their own per-view `bid_time >= today` filter; they're display filters, not dedup filters.
 
-**Lesson:** the shape of the data matters more than the staleness. Dedup by identity field, display by time field.
+**Burned again (2026-04-16):** the 2026-04-15 fix updated `/solicitations` but missed the dashboard (`src/app/page.tsx`). Dashboard was still using `.gte("bid_time", today)` for dedup, so 290 items Abe bid on in the past 30 days (but not today) still showed as sourceable on the dashboard. Result: dashboard said 345, /solicitations said 55. Fix: dashboard now uses the same 30-day window.
+
+**Lesson:** the shape of the data matters more than the staleness. Dedup by identity field, display by time field. And when you fix a shared-logic bug on one page, grep for every other page that does the same query — the dashboard and /solicitations BOTH dedup against abe_bids_live and both must use the same window.
 
 ## Why we don't add native packages to package.json
 
