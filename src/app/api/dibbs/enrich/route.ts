@@ -112,19 +112,31 @@ export async function POST(req: Request) {
     costPage++;
   }
 
-  // Load award history for pricing (last award price per NSN) — paginate
+  // Load award history for pricing — separate our wins from competitor wins.
+  // pricingMap = most recent award per NSN (any winner, for general anchor)
+  // competitorWinMap = most recent competitor win per NSN (cage != 0AG09)
+  // ourWinMap = most recent OUR win per NSN (cage = 0AG09)
   const pricingMap = new Map<string, number>();
+  const competitorWinMap = new Map<string, number>();
+  const ourWinMap = new Map<string, number>();
   let awardPage = 0;
   while (true) {
     const { data: awards } = await supabase
       .from("awards")
-      .select("fsc, niin, unit_price")
+      .select("fsc, niin, unit_price, cage")
       .order("award_date", { ascending: false })
       .range(awardPage * 1000, (awardPage + 1) * 1000 - 1);
     if (!awards || awards.length === 0) break;
     for (const a of awards) {
+      if (!a.unit_price || a.unit_price <= 0) continue;
       const nsn = `${a.fsc}-${a.niin}`;
       if (!pricingMap.has(nsn)) pricingMap.set(nsn, a.unit_price);
+      const cage = a.cage?.trim();
+      if (cage === "0AG09") {
+        if (!ourWinMap.has(nsn)) ourWinMap.set(nsn, a.unit_price);
+      } else if (cage) {
+        if (!competitorWinMap.has(nsn)) competitorWinMap.set(nsn, a.unit_price);
+      }
     }
     if (awards.length < 1000) break;
     awardPage++;
@@ -289,65 +301,72 @@ export async function POST(req: Request) {
     const costSource = costData?.source || null;
     const lastAward = pricingMap.get(nsn);
 
-    // Pricing logic — winning history takes priority over generic markup
+    // Pricing logic — three tiers of history:
+    //   1. Our own winning price (strongest signal)
+    //   2. Competitor winning price (market price ceiling)
+    //   3. Cost × bracket markup (blind bid)
     let suggestedPrice: number | null = null;
     let priceSource: string | null = null;
-    const lastWinPrice = pricingMap.get(nsn); // our last winning bid price
+    const ourLastWin = ourWinMap.get(nsn);
+    const compLastWin = competitorWinMap.get(nsn);
+    const lastWinPrice = pricingMap.get(nsn); // any winner's last price
 
-    // Suspicious-cost guardrail: if our cost data is wildly off vs the
-    // last winning price, trust history over cost. Recalibration against
-    // Abe's last 14 days showed a cluster of bids where cost was clearly
-    // wrong (cost $210, Abe bid $6) — those broke the model. Ratio >10 or
-    // <0.1 means one of the two numbers is lying; the winning-bid price
-    // is usually the truth since it cleared the market.
     const costLooksWrong =
       cost && cost > 0 && lastWinPrice && lastWinPrice > 0 &&
       (cost / lastWinPrice > 10 || cost / lastWinPrice < 0.1);
 
-    if (lastWinPrice && lastWinPrice > 0 && cost && cost > 0 && !costLooksWrong) {
-      // We won before — use last winning price if it's profitable
-      const winMargin = (lastWinPrice - cost) / lastWinPrice;
+    if (ourLastWin && ourLastWin > 0 && cost && cost > 0 && !costLooksWrong) {
+      // Tier 1: We won before — anchor to our winning price
+      const winMargin = (ourLastWin - cost) / ourLastWin;
       if (winMargin > 0.05) {
-        // Last win was profitable (>5% margin) — bid same or slightly adjusted
-        suggestedPrice = Math.round(lastWinPrice * 100) / 100;
-        priceSource = `Last winning bid ($${lastWinPrice.toFixed(2)}) — ${Math.round(winMargin * 100)}% margin on $${cost.toFixed(2)} cost`;
+        suggestedPrice = Math.round(ourLastWin * 100) / 100;
+        priceSource = `Our last win ($${ourLastWin.toFixed(2)}) — ${Math.round(winMargin * 100)}% margin`;
       } else {
-        // Margin was thin — anchor to the winning price + a token bump,
-        // and floor at cost × 1.15 so we always have SOME margin.
-        // Previous version collapsed to cost × 1.10 which undershot by
-        // a median of ~30% vs Abe's actual bids (he doesn't slash to
-        // bare-minimum margin just because the last win was thin).
         const flooredAtCost = cost * 1.15;
-        const anchoredAtLastWin = lastWinPrice * 1.01;
+        const anchoredAtLastWin = ourLastWin * 1.01;
         const safePrice = Math.max(flooredAtCost, anchoredAtLastWin);
         suggestedPrice = Math.round(safePrice * 100) / 100;
-        priceSource = `Last win $${lastWinPrice.toFixed(2)} +1% or cost × 1.15 (thin-margin fallback)`;
+        priceSource = `Our last win $${ourLastWin.toFixed(2)} +1% or cost × 1.15 (thin-margin fallback)`;
+      }
+      withCostCount++;
+    } else if (compLastWin && compLastWin > 0 && cost && cost > 0 && !costLooksWrong) {
+      // Tier 2: Competitor won — anchor just below their price if profitable
+      const compMargin = (compLastWin - cost) / compLastWin;
+      if (compMargin > 0.08) {
+        // Undercut competitor by 2% — we need to beat their price to win
+        suggestedPrice = Math.round(compLastWin * 0.98 * 100) / 100;
+        priceSource = `Competitor won at $${compLastWin.toFixed(2)}, undercut -2% (${Math.round(((suggestedPrice! - cost) / suggestedPrice!) * 100)}% margin)`;
+      } else if (compMargin > 0) {
+        // Tight margin vs competitor — bid at cost + 10% minimum
+        suggestedPrice = Math.round(cost * 1.10 * 100) / 100;
+        priceSource = `Competitor won at $${compLastWin.toFixed(2)}, margin tight → cost × 1.10`;
+      } else {
+        // Competitor won below our cost — can't compete on price, use markup
+        const markup = interpolateMarkup(cost);
+        suggestedPrice = Math.round(cost * markup * 100) / 100;
+        priceSource = `Competitor won at $${compLastWin.toFixed(2)} (below our cost $${cost.toFixed(2)}) → ${markup.toFixed(3)}x markup`;
       }
       withCostCount++;
     } else if (costLooksWrong && lastWinPrice && lastWinPrice > 0) {
-      // Cost data looks wrong — trust history. Price off last winning
-      // bid + 2% increment (same pattern as the no-cost branch below).
       suggestedPrice = Math.round(lastWinPrice * 1.02 * 100) / 100;
-      priceSource = `Last winning bid $${lastWinPrice.toFixed(2)} +2% (cost $${cost!.toFixed(2)} looked wrong, ignored)`;
+      priceSource = `Last award $${lastWinPrice.toFixed(2)} +2% (cost $${cost!.toFixed(2)} looked wrong)`;
       withCostCount++;
     } else if (cost && cost > 0) {
-      // No winning history — use bracket markup with linear interpolation
-      // between adjacent brackets instead of a hard step.
-      //
-      // Empirical brackets (fit against 2,591 historical wins):
-      //   cost $0-25   → 1.64x
-      //   cost $25-100 → 1.36x
-      //   cost $100-500 → 1.21x
-      //   cost $500+   → 1.16x
-      //
-      // A hard step produces ugly jumps: cost $24.99 → 1.64x = $40.98
-      // vs cost $25.01 → 1.36x = $34.01 (a 17% suggested-price drop
-      // from a 1¢ cost change). That's a real bug we hit in production.
-      // Interpolate within a $5 band on each side of the boundary so
-      // nearby costs produce nearby suggested prices.
+      // Tier 3: No win history at all — bracket markup
       const markup = interpolateMarkup(cost);
       suggestedPrice = Math.round(cost * markup * 100) / 100;
-      priceSource = `${costSource} × ${markup.toFixed(3)}x markup (no win history)`;
+      // Cap at competitor win if available (e.g. loaded from pricingMap but no cage data)
+      if (compLastWin && compLastWin > 0 && suggestedPrice > compLastWin * 0.98) {
+        const capped = Math.round(compLastWin * 0.98 * 100) / 100;
+        if (capped > cost * 1.05) {
+          suggestedPrice = capped;
+          priceSource = `Capped at competitor win $${compLastWin.toFixed(2)} -2% (markup would've been $${(cost * markup).toFixed(2)})`;
+        } else {
+          priceSource = `${costSource} × ${markup.toFixed(3)}x markup (competitor won below margin floor)`;
+        }
+      } else {
+        priceSource = `${costSource} × ${markup.toFixed(3)}x markup (no win history)`;
+      }
       withCostCount++;
     } else if (lastAward) {
       let increment: number;
