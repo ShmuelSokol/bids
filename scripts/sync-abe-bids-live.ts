@@ -98,11 +98,33 @@ async function main() {
 
   console.log(`${bids.length} bids in last 30d (${bids.filter(b => b.bid_status === 'submitted').length} submitted, ${bids.filter(b => b.bid_status === 'pending').length} pending)`);
 
-  // Upsert to Supabase
+  // Upsert to abe_bids_live (live display)
   if (bids.length > 0) {
     for (let i = 0; i < bids.length; i += 100) {
       const batch = bids.slice(i, i + 100);
       await sb.from("abe_bids_live").upsert(batch, { onConflict: "bid_id" });
+    }
+  }
+
+  // Also upsert to abe_bids (historical, used by enrichment for
+  // already_bid flag and by /api/awards/search for bid timeline).
+  // Previously abe_bids was a one-time import capped at 10K rows.
+  // This keeps it in sync with every run.
+  const histRows = bids.map((b: any) => ({
+    nsn: b.nsn,
+    solicitation_number: b.solicitation_number,
+    bid_price: b.bid_price,
+    bid_qty: b.bid_qty,
+    bid_date: b.bid_time,
+    lead_time_days: b.lead_days,
+    fob: b.fob,
+  })).filter((b: any) => b.nsn && b.solicitation_number);
+  if (histRows.length > 0) {
+    for (let i = 0; i < histRows.length; i += 100) {
+      const batch = histRows.slice(i, i + 100);
+      await sb.from("abe_bids").upsert(batch, { onConflict: "solicitation_number,nsn" }).then(({ error }) => {
+        if (error) console.error(`  abe_bids upsert error: ${error.message}`);
+      });
     }
   }
 

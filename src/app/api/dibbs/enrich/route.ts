@@ -221,21 +221,30 @@ export async function POST(req: Request) {
     fobPage++;
   }
 
-  // Load Abe's bids by exact solicitation number
+  // Load Abe's bids by exact solicitation number — check BOTH tables.
+  // abe_bids = historical (updated by sync script, was one-time capped at 10K)
+  // abe_bids_live = last 30 days from LamLinks (synced every 5 min)
   const bidsBySol = new Map<string, { price: number; date: string }>();
-  let bidPage = 0;
-  while (true) {
-    const { data: bids } = await supabase
-      .from("abe_bids")
-      .select("solicitation_number, bid_price, bid_date")
-      .range(bidPage * 1000, (bidPage + 1) * 1000 - 1);
-    if (!bids || bids.length === 0) break;
-    bids.forEach((b) => {
-      if (b.solicitation_number) {
-        bidsBySol.set(b.solicitation_number, { price: b.bid_price, date: b.bid_date });
-      }
-    });
-    bidPage++;
+  for (const table of ["abe_bids", "abe_bids_live"] as const) {
+    const dateCol = table === "abe_bids" ? "bid_date" : "bid_time";
+    const priceCol = table === "abe_bids" ? "bid_price" : "bid_price";
+    const solCol = "solicitation_number";
+    let bidPage = 0;
+    while (true) {
+      const { data: bids } = await supabase
+        .from(table)
+        .select(`${solCol}, ${priceCol}, ${dateCol}`)
+        .range(bidPage * 1000, (bidPage + 1) * 1000 - 1);
+      if (!bids || bids.length === 0) break;
+      bids.forEach((b: any) => {
+        const sol = b[solCol];
+        if (sol && !bidsBySol.has(sol)) {
+          bidsBySol.set(sol, { price: b[priceCol], date: b[dateCol] });
+        }
+      });
+      if (bids.length < 1000) break;
+      bidPage++;
+    }
   }
 
   // Get unenriched solicitations. Cap the batch size to stay well under
