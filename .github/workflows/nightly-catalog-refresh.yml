@@ -1,0 +1,51 @@
+name: Nightly Catalog Refresh
+
+on:
+  schedule:
+    - cron: "0 8 * * *"  # 4 AM ET (UTC-4)
+  workflow_dispatch:  # manual trigger
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh nsn_catalog from AX
+        env:
+          AX_TENANT_ID: ${{ secrets.AX_TENANT_ID }}
+          AX_CLIENT_ID: ${{ secrets.AX_CLIENT_ID }}
+          AX_CLIENT_SECRET: ${{ secrets.AX_CLIENT_SECRET }}
+          AX_D365_URL: ${{ secrets.AX_D365_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/refresh-all-catalogs.ts --only nsn_catalog
+
+      - name: Rebuild nsn_costs + vendor prices from AX
+        env:
+          AX_TENANT_ID: ${{ secrets.AX_TENANT_ID }}
+          AX_CLIENT_ID: ${{ secrets.AX_CLIENT_ID }}
+          AX_CLIENT_SECRET: ${{ secrets.AX_CLIENT_SECRET }}
+          AX_D365_URL: ${{ secrets.AX_D365_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/populate-nsn-costs-from-ax.ts
+
+      - name: Run PO-Award linker
+        env:
+          AX_TENANT_ID: ${{ secrets.AX_TENANT_ID }}
+          AX_CLIENT_ID: ${{ secrets.AX_CLIENT_ID }}
+          AX_CLIENT_SECRET: ${{ secrets.AX_CLIENT_SECRET }}
+          AX_D365_URL: ${{ secrets.AX_D365_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/sync-po-award-links.ts

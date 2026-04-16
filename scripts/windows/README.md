@@ -75,6 +75,18 @@ is timestamped so you can see when a task last did something useful.
 uninstall-tasks.bat
 ```
 
+## GitHub Actions Nightly Jobs (AX-only, no LamLinks dependency)
+
+These jobs run on GitHub Actions because they only need AX OAuth (no LamLinks Windows Auth):
+
+| Workflow | Scripts | Schedule |
+|----------|---------|----------|
+| `nightly-catalog-refresh.yml` | `refresh-all-catalogs.ts --only nsn_catalog` | 4 AM ET daily |
+| (same workflow) | `populate-nsn-costs-from-ax.ts` | 4 AM ET daily |
+| (same workflow) | `sync-po-award-links.ts` | 4 AM ET daily |
+
+GitHub secrets needed: `AX_TENANT_ID`, `AX_CLIENT_ID`, `AX_CLIENT_SECRET`, `AX_D365_URL` (all set).
+
 ## Notes
 
 - **Laptop sleep**: Task Scheduler won't wake a sleeping machine by default.
