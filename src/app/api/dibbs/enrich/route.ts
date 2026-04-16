@@ -334,17 +334,25 @@ export async function POST(req: Request) {
       (cost / lastWinPrice > 10 || cost / lastWinPrice < 0.1);
 
     if (ourLastWin && ourLastWin > 0 && cost && cost > 0 && !costLooksWrong) {
-      // Tier 1: We won before — anchor to our winning price
-      const winMargin = (ourLastWin - cost) / ourLastWin;
-      if (winMargin > 0.05) {
-        suggestedPrice = Math.round(ourLastWin * 100) / 100;
-        priceSource = `Our last win ($${ourLastWin.toFixed(2)}) — ${Math.round(winMargin * 100)}% margin`;
+      // Tier 1: We won before — anchor to our winning price.
+      // Safety: if cost went UP since we last won, our old winning
+      // price might be below cost. Don't bid at a loss.
+      if (ourLastWin <= cost) {
+        // Our last win is now below cost — bid at cost + 15% minimum
+        suggestedPrice = Math.round(cost * 1.15 * 100) / 100;
+        priceSource = `Cost increased to $${cost.toFixed(2)} — last win $${ourLastWin.toFixed(2)} is now below cost, using cost × 1.15`;
       } else {
-        const flooredAtCost = cost * 1.15;
-        const anchoredAtLastWin = ourLastWin * 1.01;
-        const safePrice = Math.max(flooredAtCost, anchoredAtLastWin);
-        suggestedPrice = Math.round(safePrice * 100) / 100;
-        priceSource = `Our last win $${ourLastWin.toFixed(2)} +1% or cost × 1.15 (thin-margin fallback)`;
+        const winMargin = (ourLastWin - cost) / ourLastWin;
+        if (winMargin > 0.05) {
+          suggestedPrice = Math.round(ourLastWin * 100) / 100;
+          priceSource = `Our last win ($${ourLastWin.toFixed(2)}) — ${Math.round(winMargin * 100)}% margin on $${cost.toFixed(2)} cost`;
+        } else {
+          const flooredAtCost = cost * 1.15;
+          const anchoredAtLastWin = ourLastWin * 1.01;
+          const safePrice = Math.max(flooredAtCost, anchoredAtLastWin);
+          suggestedPrice = Math.round(safePrice * 100) / 100;
+          priceSource = `Our last win $${ourLastWin.toFixed(2)} +1% or cost × 1.15 (thin-margin fallback)`;
+        }
       }
       withCostCount++;
     } else if (compLastWin && compLastWin > 0 && cost && cost > 0 && !costLooksWrong) {
