@@ -73,6 +73,9 @@ export function AwardsList({
   const [vendorPrices, setVendorPrices] = useState<any[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [addingSupplier, setAddingSupplier] = useState(false);
+  const [newVendorCode, setNewVendorCode] = useState("");
+  const [newVendorPrice, setNewVendorPrice] = useState("");
   const [downloadingId, setDownloadingId] = useState<number | "all" | null>(null);
   const [validateResult, setValidateResult] = useState<{
     checked: number;
@@ -229,6 +232,37 @@ export function AwardsList({
       setMessage("Switch failed");
     } finally {
       setSwitching(false);
+    }
+  }
+
+  async function handleAddSupplier() {
+    if (!switchingLine || !newVendorCode.trim()) return;
+    setAddingSupplier(true);
+    try {
+      const res = await fetch("/api/orders/add-supplier", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nsn: switchingLine.nsn,
+          vendor: newVendorCode.trim().toUpperCase(),
+          price: newVendorPrice ? parseFloat(newVendorPrice) : null,
+          line_id: switchingLine.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setMessage(`Added ${newVendorCode.trim().toUpperCase()} and switched. Refreshing...`);
+        setSwitchingLine(null);
+        setNewVendorCode("");
+        setNewVendorPrice("");
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        setMessage(data.error || "Failed to add supplier");
+      }
+    } catch {
+      setMessage("Failed to add supplier");
+    } finally {
+      setAddingSupplier(false);
     }
   }
 
@@ -924,7 +958,41 @@ export function AwardsList({
                 </div>
               )}
             </div>
-            <div className="px-6 py-3 border-t border-card-border">
+            <div className="px-6 py-4 border-t border-card-border space-y-3">
+              <div className="text-xs font-medium text-muted">Add a new supplier for this NSN</div>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="text-[10px] text-muted">Vendor code</label>
+                  <input
+                    type="text"
+                    value={newVendorCode}
+                    onChange={(e) => setNewVendorCode(e.target.value)}
+                    placeholder="e.g. SEABERG"
+                    className="w-full px-2 py-1.5 border border-card-border rounded text-sm font-mono"
+                  />
+                </div>
+                <div className="w-28">
+                  <label className="text-[10px] text-muted">Price (optional)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newVendorPrice}
+                    onChange={(e) => setNewVendorPrice(e.target.value)}
+                    placeholder="$0.00"
+                    className="w-full px-2 py-1.5 border border-card-border rounded text-sm font-mono"
+                  />
+                </div>
+                <button
+                  onClick={handleAddSupplier}
+                  disabled={addingSupplier || !newVendorCode.trim()}
+                  className="px-3 py-1.5 rounded bg-purple-600 text-white text-xs font-medium hover:bg-purple-700 disabled:opacity-50 whitespace-nowrap"
+                >
+                  {addingSupplier ? "Adding..." : "Add & Switch"}
+                </button>
+              </div>
+              <p className="text-[10px] text-muted">
+                Adds this vendor to nsn_vendor_prices so it appears on future orders. Also create the trade agreement in AX so the cost pulls through automatically.
+              </p>
               <button onClick={() => setSwitchingLine(null)} className="text-sm text-muted hover:text-foreground">
                 Cancel
               </button>
