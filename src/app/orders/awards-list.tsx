@@ -927,12 +927,23 @@ export function AwardsList({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm font-medium">{v.vendor}</span>
+                          {v.axItemNumber && (
+                            <span className="text-[10px] text-muted bg-blue-50 px-1 rounded" title="AX Item Number">
+                              AX: {v.axItemNumber}
+                            </span>
+                          )}
                           {v.lastPoDate && (
                             <span className="text-[10px] text-muted bg-gray-100 px-1 rounded">
                               Last PO: {formatDateShort(v.lastPoDate)}
                             </span>
                           )}
                         </div>
+                        {v.vendorPartNumber && (
+                          <div className="text-[10px] text-purple-700 mt-0.5">
+                            Vendor P/N: <span className="font-mono">{v.vendorPartNumber}</span>
+                            {v.vendorDescription && <span className="text-muted ml-2">{v.vendorDescription}</span>}
+                          </div>
+                        )}
                         <div className="text-xs text-muted mt-0.5">
                           {v.sources.map((s: any) => (
                             <span key={s.source} className="mr-3">

@@ -192,6 +192,51 @@ async function refreshUsaspending() {
   }
 }
 
+async function refreshVendorParts(token: string) {
+  console.log("\n=== 4. vendor_parts (AX VendorProductDescriptionsV2) ===");
+  const D = process.env.AX_D365_URL!;
+  const { rows, truncated } = await fetchAxPaginated(token,
+    `${D}/data/VendorProductDescriptionsV2?cross-company=true&$select=ItemNumber,VendorAccountNumber,VendorProductNumber,VendorProductDescription`,
+    { maxRows: 500000, label: "VendorProductDescriptionsV2" });
+  console.log(`  Pulled ${rows.length} vendor-part mappings from AX`);
+  if (truncated) console.warn("  ⚠ Truncation detected");
+
+  // Build NSN lookup from nsn_catalog
+  const nsnByItem = new Map<string, string>();
+  for (let p = 0; p < 30; p++) {
+    const { data } = await sb.from("nsn_catalog").select("nsn, source").range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      const item = r.source?.replace("AX:", "") || null;
+      if (item && r.nsn) nsnByItem.set(item, r.nsn);
+    }
+    if (data.length < 1000) break;
+  }
+  console.log(`  NSN lookup: ${nsnByItem.size} item→NSN mappings`);
+
+  const upserts = rows.map((r: any) => ({
+    item_number: r.ItemNumber?.trim(),
+    vendor_account: r.VendorAccountNumber?.trim(),
+    vendor_part_number: r.VendorProductNumber?.trim() || null,
+    vendor_description: r.VendorProductDescription?.trim() || null,
+    nsn: nsnByItem.get(r.ItemNumber?.trim()) || null,
+    updated_at: new Date().toISOString(),
+  })).filter((r: any) => r.item_number && r.vendor_account);
+
+  let saved = 0;
+  for (let i = 0; i < upserts.length; i += 500) {
+    const { error } = await sb.from("vendor_parts").upsert(upserts.slice(i, i + 500), { onConflict: "item_number,vendor_account" });
+    if (error) console.error(`  batch ${i} error:`, error.message);
+    else saved += upserts.slice(i, i + 500).length;
+    if (i % 10000 === 0 && i > 0) console.log(`  ...${saved} saved`);
+  }
+  console.log(`  Upserted ${saved} rows to vendor_parts`);
+  const withNsn = upserts.filter((r: any) => r.nsn).length;
+  console.log(`  ${withNsn} have NSN mappings (${Math.round(withNsn / upserts.length * 100)}%)`);
+
+  await sb.from("sync_log").insert({ action: "vendor_parts_refresh", details: { pulled: rows.length, upserted: saved, with_nsn: withNsn } });
+}
+
 async function main() {
   console.log("=== CATALOG REFRESH ===");
   console.log("Time:", new Date().toISOString());
@@ -202,6 +247,7 @@ async function main() {
   if (!ONLY || ONLY === "nsn_catalog") await refreshNsnCatalog(token);
   if (!ONLY || ONLY === "publog") await refreshPublog();
   if (!ONLY || ONLY === "usaspending") await refreshUsaspending();
+  if (!ONLY || ONLY === "vendor_parts") await refreshVendorParts(token);
 
   console.log("\nDone!");
 }

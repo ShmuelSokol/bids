@@ -40,6 +40,16 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npx tsx scripts/populate-nsn-costs-from-ax.ts
 
+      - name: Refresh vendor parts from AX
+        env:
+          AX_TENANT_ID: ${{ secrets.AX_TENANT_ID }}
+          AX_CLIENT_ID: ${{ secrets.AX_CLIENT_ID }}
+          AX_CLIENT_SECRET: ${{ secrets.AX_CLIENT_SECRET }}
+          AX_D365_URL: ${{ secrets.AX_D365_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/refresh-all-catalogs.ts --only vendor_parts
+
       - name: Run PO-Award linker
         env:
           AX_TENANT_ID: ${{ secrets.AX_TENANT_ID }}

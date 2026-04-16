@@ -114,7 +114,7 @@ Everything else — dashboard, solicitations, orders, wiki — requires login.
 | `/solicitations` | Abe's working list — Sourceable/Quoted/Submitted/Skipped tabs. Default: DIBBS-only (SPE\* prefix). Toggle to show all including W\* (Army, not bidable via LamLinks). |
 | `/solicitations/[id]` | Detail panel — cost waterfall, award history, bid form |
 | `/bids/today` | Abe's bids placed today (display-only, reads abe_bids_live) |
-| `/orders` | Awards → PO generation. Group by supplier, supplier-switch per line, add new supplier to an NSN |
+| `/orders` | Awards → PO generation. Group by supplier, supplier-switch with vendor P/N + AX item # from 152K vendor_parts, add new supplier |
 | `/orders/followups` | PO follow-up surface |
 | `/invoicing` | Invoice state monitor — tracks LamLinks kad_tab state transitions |
 | `/invoicing/followups` | **New 2026-04-16.** Three panels: (1) posted invoices awaiting DLA payment (amber 21-30d / red >30d), (2) award↔PO linkage buckets (no PO / backorder / received / shipped), (3) open DD219 government POs in AX |

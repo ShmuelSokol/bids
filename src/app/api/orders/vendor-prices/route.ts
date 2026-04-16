@@ -13,19 +13,14 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServiceClient();
 
-  const { data: prices } = await supabase
-    .from("nsn_vendor_prices")
-    .select("vendor, price, price_source, item_number, updated_at")
-    .eq("nsn", nsn)
-    .order("price", { ascending: true });
-
-  // Also get last PO dates from abe_bids for this NSN (bid_date as proxy for PO activity)
-  const { data: bids } = await supabase
-    .from("abe_bids")
-    .select("bid_date")
-    .eq("nsn", nsn)
-    .order("bid_date", { ascending: false })
-    .limit(1);
+  const [pricesRes, bidsRes, partsRes] = await Promise.all([
+    supabase.from("nsn_vendor_prices").select("vendor, price, price_source, item_number, updated_at").eq("nsn", nsn).order("price", { ascending: true }),
+    supabase.from("abe_bids").select("bid_date").eq("nsn", nsn).order("bid_date", { ascending: false }).limit(1),
+    supabase.from("vendor_parts").select("vendor_account, vendor_part_number, vendor_description, item_number").eq("nsn", nsn),
+  ]);
+  const prices = pricesRes.data;
+  const bids = bidsRes.data;
+  const vendorParts = partsRes.data || [];
 
   if (!prices || prices.length === 0) {
     return NextResponse.json({ vendors: [] });
@@ -67,9 +62,22 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const vendors = Array.from(byVendor.values()).sort(
-    (a, b) => a.cheapest - b.cheapest
-  );
+  // Enrich with vendor part numbers from AX VendorProductDescriptionsV2
+  const partsByVendor = new Map<string, { partNumber: string | null; description: string | null; axItem: string | null }>();
+  for (const vp of vendorParts) {
+    partsByVendor.set(vp.vendor_account, {
+      partNumber: vp.vendor_part_number,
+      description: vp.vendor_description,
+      axItem: vp.item_number,
+    });
+  }
+
+  const vendors = Array.from(byVendor.values()).map(v => ({
+    ...v,
+    vendorPartNumber: partsByVendor.get(v.vendor)?.partNumber || null,
+    vendorDescription: partsByVendor.get(v.vendor)?.description || null,
+    axItemNumber: partsByVendor.get(v.vendor)?.axItem || v.sources[0]?.item || null,
+  })).sort((a, b) => a.cheapest - b.cheapest);
 
   return NextResponse.json({
     vendors,
