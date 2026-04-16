@@ -23,7 +23,7 @@
  */
 import "./env";
 import { createClient } from "@supabase/supabase-js";
-import { fetchAxPaginated } from "./ax-fetch";
+import { fetchAxPaginated, fetchAxByMonth } from "./ax-fetch";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -130,29 +130,85 @@ async function main() {
     return;
   }
 
-  console.log("3. Pulling PurchasePriceAgreements (asking prices + UoM)...");
+  // 3a. Pull PO line history — actual transacted costs with real vendors.
+  // This is the most reliable cost source: if we bought it from vendor X
+  // at $19 last month, that's what we should use for the next PO.
+  console.log("3a. Pulling PurchaseOrderLinesV2 (actual PO history)...");
+  const poLines = await fetchAllPages(
+    token,
+    `${D365_URL}/data/PurchaseOrderLinesV2?cross-company=true&$select=ItemNumber,PurchasePrice,PurchaseUnitSymbol,RequestedDeliveryDate,PurchaseOrderLineStatus,PurchaseOrderNumber`,
+    "PO Lines"
+  );
+  console.log(`   ${poLines.length.toLocaleString()} PO lines\n`);
+
+  // 3b. Pull PO headers for vendor assignment
+  console.log("3b. Pulling PurchaseOrderHeadersV2 (vendor per PO)...");
+  const { rows: poHeaders } = await fetchAxByMonth(token, {
+    D365_URL,
+    entity: "PurchaseOrderHeadersV2",
+    dateField: "AccountingDate",
+    monthsBack: 12,
+    select: ["PurchaseOrderNumber", "OrderVendorAccountNumber", "AccountingDate"],
+  });
+  console.log(`   ${poHeaders.length.toLocaleString()} PO headers (12 months)\n`);
+  const vendorByPo = new Map<string, string>();
+  for (const h of poHeaders) {
+    if (h.PurchaseOrderNumber && h.OrderVendorAccountNumber)
+      vendorByPo.set(h.PurchaseOrderNumber, h.OrderVendorAccountNumber.trim());
+  }
+
+  console.log("3c. Pulling PurchasePriceAgreements (asking prices + UoM)...");
   const priceAgreements = await fetchAllPages(
     token,
-    `${D365_URL}/data/PurchasePriceAgreements?cross-company=true&$select=ItemNumber,Price,QuantityUnitSymbol,VendorAccountNumber`
+    `${D365_URL}/data/PurchasePriceAgreements?cross-company=true&$select=ItemNumber,Price,QuantityUnitSymbol,VendorAccountNumber`,
+    "PriceAgreements"
   );
   console.log(`   ${priceAgreements.length.toLocaleString()} price agreements\n`);
 
-  // Build candidate buckets per NSN, with vendor + UoM attached.
-  console.log("4. Bucketing by NSN...");
+  // Build candidate buckets per NSN from ALL sources.
+  console.log("4. Bucketing by NSN (PO history + price agreements)...");
   const byNsn = new Map<string, CostCandidate[]>();
+  const now = Date.now();
 
+  // 4a. PO lines — bucketed by recency
+  let poMatched = 0;
+  for (const line of poLines) {
+    const nsn = itemToNsn.get(line.ItemNumber);
+    if (!nsn || !line.PurchasePrice || line.PurchasePrice <= 0) continue;
+    // Need the PO number to get vendor — but PO lines don't have it in this select.
+    // Use RequestedDeliveryDate for recency bucketing.
+    const deliveryDate = line.RequestedDeliveryDate;
+    const source = bucketForPO(deliveryDate);
+    // Vendor comes from the line's UoM field naming convention or we skip vendor for now
+    // and let the price agreement fill it. Actually PO lines don't carry vendor —
+    // that's on the header. We'd need PurchaseOrderNumber on the line.
+    // For now, use price as cost evidence without vendor assignment.
+    // The price agreement step below will provide vendor.
+    const vendor = vendorByPo.get(line.PurchaseOrderNumber) || null;
+    if (!byNsn.has(nsn)) byNsn.set(nsn, []);
+    byNsn.get(nsn)!.push({
+      cost: line.PurchasePrice,
+      source,
+      vendor,
+      uom: line.PurchaseUnitSymbol?.trim() || null,
+      itemNumber: line.ItemNumber,
+    });
+    poMatched++;
+  }
+  console.log(`   ${poMatched.toLocaleString()} PO lines matched to NSNs`);
+
+  // 4b. Price agreements
   for (const p of priceAgreements) {
     const nsn = itemToNsn.get(p.ItemNumber);
     if (!nsn || !p.Price || p.Price <= 0) continue;
-    const cand: CostCandidate = {
+    if (!byNsn.has(nsn)) byNsn.set(nsn, []);
+    byNsn.get(nsn)!.push({
       cost: p.Price,
       source: "AX price agreement (cheapest vendor)",
       vendor: p.VendorAccountNumber || null,
       uom: p.QuantityUnitSymbol?.trim() || null,
       itemNumber: p.ItemNumber,
-    };
-    if (!byNsn.has(nsn)) byNsn.set(nsn, []);
-    byNsn.get(nsn)!.push(cand);
+    });
   }
   console.log(`   ${byNsn.size.toLocaleString()} NSNs have ≥1 candidate\n`);
 

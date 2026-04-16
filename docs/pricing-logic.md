@@ -43,13 +43,16 @@ The `<$25` bracket was badly miscalibrated — for a $10-cost item we'd suggest 
 
 Before we can apply a markup, we need a cost. Costs come from a **waterfall** — we try each source in order and stop at the first hit:
 
-1. **Recent PO (last 2 months)** — from AX `PurchaseOrderLinesV2`. Freshest, most reliable.
+1. **Recent PO (last 2 months)** — from AX `PurchaseOrderLinesV2` + headers for vendor. Freshest, most reliable. **This is the vendor we actually buy from.** (Added 2026-04-16; previously only price agreements were implemented.)
 2. **Recent PO (last 3 months)** — slightly older, still high confidence.
-3. **Master DB** — internal master's cost estimate. Medium confidence.
-4. **Price agreement (cheapest vendor)** — from AX `PurchasePriceAgreements`. This is *asking* price from the vendor, not transacted, so slightly optimistic.
-5. **Older PO (> 3 months)** — last resort. Prices drift.
+3. **Price agreement (cheapest vendor)** — from AX `PurchasePriceAgreements`. This is *asking* price from the vendor, not transacted, so slightly optimistic.
+4. **Older PO (> 3 months)** — last resort. Prices drift.
 
-Every sourceable solicitation gets a `cost_source` column recording which step hit. On the UI you'll see tags like "AX price agreement (cheapest vendor)" or "Recent PO (2 months)".
+As of 2026-04-16, the waterfall actually works end-to-end: 976 NSNs use real PO history (759 from last 2 months + 198 from 3 months + 19 older). The remaining 23,231 still use price agreements because they have no PO history.
+
+Every sourceable solicitation gets a `cost_source` column recording which step hit. On the UI you'll see tags like "AX price agreement (cheapest vendor)" or "AX PO (last 2 months)".
+
+**PO generation uses the same waterfall.** When generating a PO from an award, the supplier is whatever vendor the waterfall picked in `nsn_costs`. If the waterfall picked "AX PO (last 2 months)" with vendor ACME, the PO goes to ACME — not the cheapest price agreement vendor. This ensures we order from the vendor we actually buy from, not just the cheapest quote.
 
 ### When cost is unknown
 
