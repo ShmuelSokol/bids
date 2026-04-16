@@ -24,6 +24,14 @@ When you learn something new that future sessions would benefit from, add it to 
 - **Always run `npm run build` locally before pushing** to catch errors.
 - **After pushing, verify with Playwright** that the page actually loads data (build passing ≠ working).
 
+## AX ODATA RULES (learned the hard way)
+- **AX OData silently caps filtered queries at 1,000 rows** — no `@odata.nextLink`, no error, no warning. Unfiltered bulk pulls paginate fine; the cap only bites on `$filter`'d queries.
+- **NEVER write raw `fetch()` against AX with a `$filter`** — use the shared helpers: `scripts/ax-fetch.ts` (node scripts) or `src/lib/ax-fetch.ts` (API routes).
+- **`fetchAxPaginated(token, url, opts)`** — follows nextLink, warns + returns `truncated=true` when the cap heuristic fires (exactly 1000 rows + no nextLink + has $filter).
+- **`fetchAxByMonth(token, opts)`** — auto-chunks by a date field in monthly slices; auto-narrows to weekly if a month exceeds the cap. Use this when expected results may exceed 1000.
+- **DD219 = `CustomerRequisitionNumber`** on PO lines (field `purchline.custreq`). Case variants exist — always use `toupper(CustomerRequisitionNumber) eq 'DD219'` or an OR filter.
+- See `docs/gotchas.md` for full details on discovery and the detection heuristic.
+
 ## SUPABASE QUERY RULES (learned the hard way)
 - **Supabase default limit is 1,000 rows** — `.limit(5000)` does NOT work, you MUST paginate with `.range()` or use parallel range queries.
 - **NEVER use `unstable_cache`** — it breaks silently on Railway serverless (returns empty data, no error).
