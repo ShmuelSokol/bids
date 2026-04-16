@@ -12,7 +12,8 @@ How the pieces actually fit together, what runs where, and why.
 - **D365 / AX** — OData API, OAuth2 client credentials. Source for NSN→item mappings and pricing history.
 - **Master DB** — FastAPI service at `masterdb.everreadygroup.com`. 405K item records.
 - **Chrome headless** — local PDF generation (daily briefings).
-- **Twilio WhatsApp** — daily briefing delivery.
+- **Twilio WhatsApp** — daily briefing delivery + auto-fix error notifications.
+- **Playwright** (CI only) — visual regression tests on staging deploys.
 
 ## Why Next.js, not a separate API
 
@@ -69,9 +70,12 @@ This constraint drove several design decisions:
 
 ## Deployment
 
-- **GitHub**: `ShmuelSokol/bids` (private), master branch.
-- **Railway**: auto-deploys on every push to master. Build command is the default Next.js build. Environment variables are set in Railway's dashboard (not in the repo). Deploy typically finishes in ~60 seconds.
-- **Verify**: after every push, hit the live URL with Playwright to confirm the feature actually works. Build passing ≠ working. We've been burned by `unstable_cache` returning empty data silently on Railway (fine locally), by computed columns in `.select()` causing silent failures, and by timezone bugs that only manifest after 7pm UTC.
+- **GitHub**: `ShmuelSokol/bids` (private), master branch (production) + staging branch.
+- **Production Railway**: auto-deploys from `master` at `https://dibs-gov-production.up.railway.app`. Supabase project: `jzgvdfzboknpcrhymjob`.
+- **Staging Railway**: auto-deploys from `staging` at `https://dibs-gov-staging-staging.up.railway.app`. Supabase project: `envwajwgsmuyskmtwsxv` (dibs-staging).
+- **Workflow**: feature branch → PR to staging → merge → Railway deploys staging → Playwright visual tests run → PR to master → merge → production deploys.
+- **Playwright visual regression** runs automatically on every staging push (GitHub Actions). Screenshots 8 key pages, checks for error boundaries, compares against baselines.
+- **Verify**: after every push, hit the live URL with Playwright to confirm the feature actually works. Build passing ≠ working.
 
 **Never `railway up`.** Push to GitHub. Railway watches the repo.
 

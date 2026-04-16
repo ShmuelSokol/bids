@@ -61,29 +61,36 @@ Sometimes we have an NSN match but no cost data — usually for items we've neve
 
 The rationale: if the last winning bid for this NSN was $45, and FSC inflation + our margin preferences push us to $46, we've priced into the winning zone without needing to know our cost.
 
-## Winning history takes priority
+## Three-tier pricing: our wins → competitor wins → bracket markup
 
-This is the subtle part that took us a while to get right. Consider:
+Pricing uses a three-tier waterfall, added 2026-04-16 after bug #16 revealed that blind bracket markup ignores market reality. The enrichment route (`src/app/api/dibbs/enrich/route.ts`) builds three maps during startup:
 
-- NSN `6510-01-676-3176` (a gauze bandage) — AX price agreement says cost is $3.01.
-- Naive bracket math: `$3.01 × 1.64 = $4.94` suggested bid.
-- But we **won** the most recent 4 bids on this NSN at **$3.27**. So $4.94 is clearly too high — we'd lose.
+- **ourWinMap** — most recent price WE won at (cage=0AG09)
+- **competitorWinMap** — most recent price a COMPETITOR won at (cage≠0AG09, from 106K kc4_tab awards)
+- **pricingMap** — most recent award from ANY winner
 
-**Rule:** if we have recent winning-bid history for this exact NSN, that price wins over generic bracket markup.
+### Tier 1: Our winning history
 
-The re-pricing logic lives in `src/app/api/dibbs/reprice/route.ts`. The logic is:
+If we won this NSN before, anchor to that price. It cleared the market once, it'll likely clear again.
 
-```typescript
-if (recentWinningBids.length >= 2) {
-  // Use winning history — averaged with slight variance
-  suggestedPrice = median(recentWinningBids) * 1.005;
-} else {
-  // Fall back to bracket math
-  suggestedPrice = cost * bracketMultiplier(cost);
-}
-```
+- Margin > 5%? → use our winning price as-is
+- Margin thin? → max(cost × 1.15, last win + 1%)
 
-The re-pricer runs as part of enrichment and can also be triggered manually via the "Reprice" button.
+### Tier 2: Competitor winning history (NEW, 2026-04-16)
+
+If we never won but a competitor did, their winning price IS the market price. Bidding above it guarantees a loss.
+
+- Margin > 8% at competitor price -2%? → **undercut competitor by 2%**
+- Margin tight? → bid at cost × 1.10 minimum
+- Competitor won below our cost? → can't compete on price, fall through to bracket
+
+**Example (bug #16):** NSN 5905-01-571-0556, cost $19.86, competitor CAGE 75Q65 won at $27.14. Old logic: $19.86 × 1.64 = **$32.57** (would lose). New logic: $27.14 × 0.98 = **$26.60** (25% margin, competitive).
+
+### Tier 3: Bracket markup (no history)
+
+When we have no award history at all, apply the empirical bracket markup. But even here, if a competitor win exists, **cap the suggestion at competitor price -2%** so we don't blindly overshoot the market.
+
+The re-pricing logic lives in `src/app/api/dibbs/enrich/route.ts` (enrichment) and `src/app/api/dibbs/reprice/route.ts` (manual trigger).
 
 ## Shipping adjustment for FOB Destination
 
@@ -129,7 +136,7 @@ Abe has the final word — the UI always lets him override.
 
 ## What the pricing engine is NOT
 
-- **Not a market simulator.** We don't model competitor behavior. The empirical brackets implicitly encode competition but don't predict it.
+- **Not a market simulator.** We now anchor to competitor wins when available (tier 2), but we don't predict competitor strategy — we just try to undercut their last winning price.
 - **Not a margin optimizer.** We price for the observed win point, not the theoretical profit-maximizing point. A 25% win rate at 40% margin may be worse than 50% win rate at 23% margin depending on volume. We haven't optimized that tradeoff yet.
 - **Not forward-looking.** It doesn't account for rising vendor costs or changing demand. We recompute when data changes, not on a schedule.
 
