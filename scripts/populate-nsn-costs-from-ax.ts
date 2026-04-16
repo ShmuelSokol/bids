@@ -57,7 +57,7 @@ async function fetchAllPages(token: string, url: string, label?: string): Promis
   // Uses the shared helper so the AX silent-1000-cap is detected and
   // warned (see scripts/ax-fetch.ts). If we ever hit the cap on a
   // filtered query here, the log will flag it.
-  const { rows } = await fetchAxPaginated(token, url, { label });
+  const { rows } = await fetchAxPaginated(token, url, { maxRows: 500000, label });
   return rows;
 }
 
