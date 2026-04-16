@@ -1143,8 +1143,8 @@ export function SolicitationsList({
                             )}
                             <div className="text-xs truncate max-w-[180px]">{s.nomenclature || "—"}</div>
                             {s.already_bid && (
-                              <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium" title={`Abe already bid on this solicitation in LamLinks${s.last_bid_price ? ` — $${s.last_bid_price.toFixed(2)} on ${formatDateShort(s.last_bid_date)}` : ""}`}>
-                                Already Bid{s.last_bid_price ? ` @$${s.last_bid_price.toFixed(2)}` : ""}
+                              <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium">
+                                Already Bid{s.last_bid_price ? ` @$${s.last_bid_price.toFixed(2)}` : ""}{s.last_bid_date ? ` on ${formatDateShort(s.last_bid_date)}` : ""}
                               </span>
                             )}
                             {s.procurement_type && s.procurement_type !== "RFQ" && (
@@ -1161,8 +1161,8 @@ export function SolicitationsList({
                                 (s as any).nsn_match.confidence === "HIGH" ? "bg-green-100 text-green-700" :
                                 (s as any).nsn_match.confidence === "MEDIUM" ? "bg-yellow-100 text-yellow-700" :
                                 "bg-gray-100 text-gray-600"
-                              }`} title={`Matched by part number: ${(s as any).nsn_match.matched_part_number || "?"} — ${(s as any).nsn_match.matched_description || "?"} (${(s as any).nsn_match.confidence} confidence)`}>
-                                {(s as any).nsn_match.confidence === "HIGH" ? "P/N Match" : "Possible Match"}
+                              }`}>
+                                {(s as any).nsn_match.confidence === "HIGH" ? "P/N" : "~P/N"}: {(s as any).nsn_match.matched_part_number || "?"}
                               </span>
                             )}
                             {(s.award_count ?? 0) > 0 && (
