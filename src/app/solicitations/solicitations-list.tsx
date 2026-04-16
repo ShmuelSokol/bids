@@ -1044,12 +1044,13 @@ export function SolicitationsList({
       {/* Solicitation Table */}
       <div className="rounded-xl border border-card-border bg-card-bg shadow-sm overflow-hidden">
         <div className="px-3 py-1.5 text-[10px] text-muted bg-gray-50 border-b border-card-border flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="font-semibold">Data sources:</span>
-          <span><span className="px-1 rounded bg-cyan-50 text-cyan-700 font-medium">LL</span> = LamLinks import</span>
-          <span><span className="px-1 rounded bg-gray-100 text-gray-600">no LL badge</span> = DIBBS scrape</span>
-          <span>Cost source shown under $ — <span className="text-green-700">AX price agreement</span> / Recent PO / MDB</span>
-          <span><span className="px-1 rounded bg-green-100 text-green-700">P/N Match</span> = PUB LOG match</span>
-          <span><span className="px-1 rounded bg-purple-100 text-purple-700">Bid in LL</span> = Abe already bid via LamLinks</span>
+          <span className="font-semibold">Badges:</span>
+          <span><span className="px-1 rounded bg-cyan-50 text-cyan-700 font-medium">LL</span> = from LamLinks (our subscribed FSCs)</span>
+          <span>No LL badge = scraped from DIBBS website</span>
+          <span><span className="px-1 rounded bg-green-100 text-green-700">P/N Match</span> = we found this item by matching the manufacturer part number (high confidence)</span>
+          <span><span className="px-1 rounded bg-yellow-100 text-yellow-700">~Match</span> = possible part number match (lower confidence — verify before bidding)</span>
+          <span><span className="px-1 rounded bg-purple-100 text-purple-700">Bid in LL</span> = Abe already placed a bid on this exact solicitation in LamLinks</span>
+          <span>Cost under $ = where the cost came from: <span className="text-green-700">AX price agreement</span> / <span className="text-blue-700">Recent PO</span> / <span className="text-purple-700">Competitor won at</span></span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1142,8 +1143,8 @@ export function SolicitationsList({
                             )}
                             <div className="text-xs truncate max-w-[180px]">{s.nomenclature || "—"}</div>
                             {s.already_bid && (
-                              <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium" title={`Last bid: $${s.last_bid_price?.toFixed(2)} on ${formatDateShort(s.last_bid_date)}`}>
-                                Bid in LL ${s.last_bid_price ? `@$${s.last_bid_price.toFixed(2)}` : ''}
+                              <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium" title={`Abe already bid on this solicitation in LamLinks${s.last_bid_price ? ` — $${s.last_bid_price.toFixed(2)} on ${formatDateShort(s.last_bid_date)}` : ""}`}>
+                                Already Bid{s.last_bid_price ? ` @$${s.last_bid_price.toFixed(2)}` : ""}
                               </span>
                             )}
                             {s.procurement_type && s.procurement_type !== "RFQ" && (
@@ -1160,8 +1161,8 @@ export function SolicitationsList({
                                 (s as any).nsn_match.confidence === "HIGH" ? "bg-green-100 text-green-700" :
                                 (s as any).nsn_match.confidence === "MEDIUM" ? "bg-yellow-100 text-yellow-700" :
                                 "bg-gray-100 text-gray-600"
-                              }`} title={`${(s as any).nsn_match.match_type}: ${(s as any).nsn_match.matched_part_number} — ${(s as any).nsn_match.matched_description}`}>
-                                {(s as any).nsn_match.confidence === "HIGH" ? "P/N Match" : "~Match"}
+                              }`} title={`Matched by part number: ${(s as any).nsn_match.matched_part_number || "?"} — ${(s as any).nsn_match.matched_description || "?"} (${(s as any).nsn_match.confidence} confidence)`}>
+                                {(s as any).nsn_match.confidence === "HIGH" ? "P/N Match" : "Possible Match"}
                               </span>
                             )}
                             {(s.award_count ?? 0) > 0 && (
