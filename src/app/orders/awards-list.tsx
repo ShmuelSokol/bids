@@ -71,6 +71,7 @@ export function AwardsList({
   const [showOnlyNew, setShowOnlyNew] = useState(true);
   const [switchingLine, setSwitchingLine] = useState<{ id: number; nsn: string; currentSupplier: string } | null>(null);
   const [vendorPrices, setVendorPrices] = useState<any[]>([]);
+  const [poReceipts, setPoReceipts] = useState<any[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [addingSupplier, setAddingSupplier] = useState(false);
@@ -209,8 +210,10 @@ export function AwardsList({
       const res = await fetch(`/api/orders/vendor-prices?nsn=${encodeURIComponent(nsn)}`);
       const data = await res.json();
       setVendorPrices(data.vendors || []);
+      setPoReceipts(data.receipts || []);
     } catch {
       setVendorPrices([]);
+      setPoReceipts([]);
     } finally {
       setLoadingVendors(false);
     }
@@ -969,6 +972,42 @@ export function AwardsList({
                 </div>
               )}
             </div>
+            {poReceipts.length > 0 && (
+              <div className="px-6 py-3 border-t border-card-border">
+                <div className="text-xs font-medium text-blue-700 mb-2">Recent PO History from AX ({poReceipts.length})</div>
+                <div className="max-h-48 overflow-auto">
+                  <table className="w-full text-[11px]">
+                    <thead className="text-muted sticky top-0 bg-white">
+                      <tr>
+                        <th className="text-left px-2 py-1">Vendor</th>
+                        <th className="text-left px-2 py-1">PO #</th>
+                        <th className="text-right px-2 py-1">Price</th>
+                        <th className="text-right px-2 py-1">Qty</th>
+                        <th className="text-left px-2 py-1">UoM</th>
+                        <th className="text-left px-2 py-1">Delivery</th>
+                        <th className="text-left px-2 py-1">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {poReceipts.map((r: any, i: number) => (
+                        <tr key={i} className="border-t border-card-border/30">
+                          <td className="px-2 py-1 font-mono font-medium">{r.vendor}</td>
+                          <td className="px-2 py-1 font-mono text-muted">{r.po_number}</td>
+                          <td className="px-2 py-1 text-right font-mono">${r.purchase_price?.toFixed(2)}</td>
+                          <td className="px-2 py-1 text-right">{r.quantity || "—"}</td>
+                          <td className="px-2 py-1">{r.uom || "—"}</td>
+                          <td className="px-2 py-1 text-muted">{r.delivery_date && r.delivery_date !== "1900-01-01T12:00:00Z" ? formatDateShort(r.delivery_date) : "—"}</td>
+                          <td className="px-2 py-1">
+                            <span className={`text-[9px] px-1 rounded ${r.line_status === "Received" ? "bg-green-100 text-green-700" : r.line_status === "Backorder" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-600"}`}>{r.line_status || "—"}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div className="px-6 py-4 border-t border-card-border space-y-3">
               <div className="text-xs font-medium text-muted">Add a new supplier for this NSN</div>
               <div className="flex gap-2 items-end">

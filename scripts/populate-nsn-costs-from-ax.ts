@@ -268,6 +268,30 @@ async function main() {
   });
   console.log(`   ${vendorPriceRows.length.toLocaleString()} nsn_vendor_prices rows built\n`);
 
+  // 6b. Build po_receipt_history — the last 10 PO entries per NSN so the
+  // supplier switch modal shows real purchase history without querying AX.
+  console.log("6b. Building PO receipt history...");
+  const receiptRows: any[] = [];
+  for (const line of poLines) {
+    const nsn = itemToNsn.get(line.ItemNumber);
+    if (!nsn || !line.PurchasePrice || line.PurchasePrice <= 0) continue;
+    const vendor = vendorByPo.get(line.PurchaseOrderNumber);
+    if (!vendor) continue;
+    receiptRows.push({
+      nsn,
+      item_number: line.ItemNumber,
+      vendor,
+      purchase_price: line.PurchasePrice,
+      quantity: line.OrderedPurchaseQuantity || null,
+      uom: line.PurchaseUnitSymbol?.trim() || null,
+      po_number: line.PurchaseOrderNumber,
+      delivery_date: line.RequestedDeliveryDate || null,
+      line_status: line.PurchaseOrderLineStatus || null,
+      updated_at: new Date().toISOString(),
+    });
+  }
+  console.log(`   ${receiptRows.length.toLocaleString()} PO receipt rows with vendor + NSN\n`);
+
   // Report
   const sourceCounts: Record<string, number> = {};
   for (const r of nsnCostsRows) sourceCounts[r.cost_source] = (sourceCounts[r.cost_source] || 0) + 1;
@@ -311,11 +335,34 @@ async function main() {
   }
   console.log(`   ${vWritten.toLocaleString()} written\n`);
 
+  // Dedup receipt rows before insert (same NSN+vendor+PO can have
+  // multiple lines — keep the one with the highest price as representative)
+  console.log("11. Writing po_receipt_history...");
+  await sb.from("po_receipt_history").delete().not("nsn", "is", null);
+  const receiptDedup = new Map<string, any>();
+  for (const r of receiptRows) {
+    const key = `${r.nsn}|${r.vendor}|${r.po_number}|${r.delivery_date || ""}`;
+    const existing = receiptDedup.get(key);
+    if (!existing || (r.purchase_price > existing.purchase_price)) {
+      receiptDedup.set(key, r);
+    }
+  }
+  const dedupedReceipts = Array.from(receiptDedup.values());
+  let rWritten = 0;
+  for (let i = 0; i < dedupedReceipts.length; i += 500) {
+    const batch = dedupedReceipts.slice(i, i + 500);
+    const { error } = await sb.from("po_receipt_history").insert(batch);
+    if (error) console.error(`   batch ${i} error: ${error.message}`);
+    else rWritten += batch.length;
+  }
+  console.log(`   ${rWritten.toLocaleString()} written (${receiptRows.length - dedupedReceipts.length} dupes removed)\n`);
+
   await sb.from("sync_log").insert({
     action: "nsn_costs_rebuild",
     details: {
       nsn_costs_written: written,
       nsn_vendor_prices_written: vWritten,
+      po_receipts_written: rWritten,
       source_distribution: sourceCounts,
     },
   });

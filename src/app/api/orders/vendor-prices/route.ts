@@ -13,14 +13,16 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServiceClient();
 
-  const [pricesRes, bidsRes, partsRes] = await Promise.all([
+  const [pricesRes, bidsRes, partsRes, receiptsRes] = await Promise.all([
     supabase.from("nsn_vendor_prices").select("vendor, price, price_source, item_number, updated_at").eq("nsn", nsn).order("price", { ascending: true }),
     supabase.from("abe_bids").select("bid_date").eq("nsn", nsn).order("bid_date", { ascending: false }).limit(1),
     supabase.from("vendor_parts").select("vendor_account, vendor_part_number, vendor_description, item_number").eq("nsn", nsn),
+    supabase.from("po_receipt_history").select("vendor, purchase_price, quantity, uom, po_number, delivery_date, line_status").eq("nsn", nsn).order("delivery_date", { ascending: false }).limit(20),
   ]);
   const prices = pricesRes.data;
   const bids = bidsRes.data;
   const vendorParts = partsRes.data || [];
+  const receipts = receiptsRes.data || [];
 
   if (!prices || prices.length === 0) {
     return NextResponse.json({ vendors: [] });
@@ -81,6 +83,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     vendors,
+    receipts,
     lastBidDate: bids?.[0]?.bid_date || null,
   });
 }
