@@ -40,6 +40,34 @@ type TimelineEvent = {
   our_bid_for_this?: LinkedBid | null;
 };
 
+type AxSupplier = {
+  vendor: string;
+  vendor_part_number: string | null;
+  vendor_description: string | null;
+  ax_item: string | null;
+  price: number | null;
+  price_source: string | null;
+  uom: string | null;
+};
+
+type AxReceipt = {
+  vendor: string;
+  purchase_price: number | null;
+  quantity: number | null;
+  uom: string | null;
+  po_number: string | null;
+  delivery_date: string | null;
+  line_status: string | null;
+};
+
+type AxData = {
+  item_number: string | null;
+  description: string | null;
+  waterfall_cost: { cost: number; source: string; vendor: string; uom: string } | null;
+  suppliers: AxSupplier[];
+  receipts: AxReceipt[];
+};
+
 type ApiResponse = {
   awards: any[];
   competitor_awards?: any[];
@@ -47,6 +75,7 @@ type ApiResponse = {
   timeline?: TimelineEvent[];
   itemSpec: ItemSpec;
   matches: Match[];
+  ax?: AxData;
 };
 
 const cache = new Map<string, ApiResponse>();
@@ -132,6 +161,86 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
           )}
           {data.itemSpec.cage_code && <span> · CAGE {data.itemSpec.cage_code}</span>}
           {data.itemSpec.unit_price != null && <span> · ref ${data.itemSpec.unit_price.toFixed(2)}</span>}
+        </div>
+      )}
+
+      {/* AX Data — SKU, suppliers, receipts */}
+      {data.ax && (data.ax.item_number || data.ax.suppliers.length > 0 || data.ax.receipts.length > 0) && (
+        <div className="rounded border border-blue-200 bg-blue-50/30 overflow-hidden">
+          <div className="px-3 py-1.5 bg-blue-100/50 text-xs font-bold text-blue-800 border-b border-blue-200">
+            AX / D365 Data
+            {data.ax.item_number && <span className="font-mono ml-2 font-normal">SKU: {data.ax.item_number}</span>}
+            {data.ax.waterfall_cost && (
+              <span className="ml-2 font-normal">
+                · Best cost: <span className="font-mono font-medium">${data.ax.waterfall_cost.cost.toFixed(2)}</span>
+                {" "}from {data.ax.waterfall_cost.vendor} ({data.ax.waterfall_cost.source})
+              </span>
+            )}
+          </div>
+
+          {data.ax.suppliers.length > 0 && (
+            <div className="border-b border-blue-200">
+              <div className="px-3 py-1 text-[10px] font-semibold text-blue-700">Suppliers ({data.ax.suppliers.length})</div>
+              <table className="w-full text-[11px]">
+                <thead className="text-muted bg-blue-50/50">
+                  <tr>
+                    <th className="px-2 py-1 text-left font-medium">Vendor</th>
+                    <th className="px-2 py-1 text-left font-medium">Vendor P/N</th>
+                    <th className="px-2 py-1 text-left font-medium">Description</th>
+                    <th className="px-2 py-1 text-right font-medium">Price</th>
+                    <th className="px-2 py-1 text-left font-medium">UoM</th>
+                    <th className="px-2 py-1 text-left font-medium">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.ax.suppliers.map((s, i) => (
+                    <tr key={i} className="border-t border-blue-100">
+                      <td className="px-2 py-1 font-mono font-medium">{s.vendor}</td>
+                      <td className="px-2 py-1 font-mono">{s.vendor_part_number || "—"}</td>
+                      <td className="px-2 py-1 text-muted truncate max-w-[180px]">{s.vendor_description || "—"}</td>
+                      <td className="px-2 py-1 text-right font-mono">{s.price ? `$${s.price.toFixed(2)}` : "—"}</td>
+                      <td className="px-2 py-1">{s.uom || "—"}</td>
+                      <td className="px-2 py-1 text-muted text-[9px]">{s.price_source || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {data.ax.receipts.length > 0 && (
+            <div>
+              <div className="px-3 py-1 text-[10px] font-semibold text-blue-700">Recent PO Receipts ({data.ax.receipts.length})</div>
+              <table className="w-full text-[11px]">
+                <thead className="text-muted bg-blue-50/50">
+                  <tr>
+                    <th className="px-2 py-1 text-left font-medium">Vendor</th>
+                    <th className="px-2 py-1 text-left font-medium">PO #</th>
+                    <th className="px-2 py-1 text-right font-medium">Price</th>
+                    <th className="px-2 py-1 text-right font-medium">Qty</th>
+                    <th className="px-2 py-1 text-left font-medium">UoM</th>
+                    <th className="px-2 py-1 text-left font-medium">Delivery</th>
+                    <th className="px-2 py-1 text-left font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.ax.receipts.map((r, i) => (
+                    <tr key={i} className="border-t border-blue-100">
+                      <td className="px-2 py-1 font-mono font-medium">{r.vendor}</td>
+                      <td className="px-2 py-1 font-mono text-muted">{r.po_number || "—"}</td>
+                      <td className="px-2 py-1 text-right font-mono">{r.purchase_price ? `$${r.purchase_price.toFixed(2)}` : "—"}</td>
+                      <td className="px-2 py-1 text-right">{r.quantity || "—"}</td>
+                      <td className="px-2 py-1">{r.uom || "—"}</td>
+                      <td className="px-2 py-1 text-muted">{r.delivery_date && r.delivery_date !== "1900-01-01T12:00:00Z" ? formatDateShort(r.delivery_date) : "—"}</td>
+                      <td className="px-2 py-1">
+                        <span className={`text-[9px] px-1 rounded ${r.line_status === "Received" ? "bg-green-100 text-green-700" : r.line_status === "Invoiced" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>{r.line_status || "—"}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
