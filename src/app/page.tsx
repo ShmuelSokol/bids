@@ -53,14 +53,7 @@ async function getData() {
 
   const ctx = buildFilterContext(liveBids, decisions);
 
-  const sourceableAll = all.filter((s) => isSourceableOpen(s, ctx));
-  // Match the /solicitations default: DIBBS-only (SPE* prefix).
-  // Show both counts so the dashboard doesn't mislead.
-  const sourceableDibbs = sourceableAll.filter(
-    (s: any) => s.solicitation_number?.trim().toUpperCase().startsWith("SPE")
-  );
-  const sourceable = sourceableDibbs;
-  const sourceableNonDibbs = sourceableAll.length - sourceableDibbs.length;
+  const sourceable = all.filter((s) => isSourceableOpen(s, ctx));
 
   const quoted = all.filter(
     (s) => decisionMap.get(`${s.solicitation_number}_${s.nsn}`) === "quoted"
@@ -95,7 +88,6 @@ async function getData() {
   return {
     total: totalCount || 0,
     sourceable: sourceable.length,
-    sourceableNonDibbs,
     quoted: quoted.length,
     submitted: submitted.length,
     noSource: noSource,
@@ -124,7 +116,7 @@ export default async function Dashboard() {
         <Link href="/solicitations?filter=sourceable&sort=value" className="block mb-4 rounded-xl border-2 border-green-300 bg-gradient-to-r from-green-50 to-emerald-50 p-5 flex items-center justify-between hover:border-green-500 transition-colors">
           <div>
             <div className="text-sm font-medium text-green-700">Total Open Bid Potential</div>
-            <div className="text-xs text-green-600 mt-0.5">{data.sourceable} DIBBS sourceable{data.sourceableNonDibbs > 0 ? ` (+${data.sourceableNonDibbs} non-DIBBS)` : ""} ready to bid →</div>
+            <div className="text-xs text-green-600 mt-0.5">{data.sourceable} sourceable solicitations ready to bid on →</div>
           </div>
           <div className="text-3xl md:text-4xl font-bold font-mono text-green-700">
             ${data.totalPotentialValue >= 1e6
