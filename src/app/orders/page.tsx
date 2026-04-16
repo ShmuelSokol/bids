@@ -5,16 +5,14 @@ import { computeMarginPct } from "@/lib/margin";
 async function getData() {
   const supabase = createServiceClient();
 
-  // Load recent awards (last 90 days). Paginate to avoid the Supabase
-  // 1000-row default limit — we've seen >1000 awards in 90 days.
-  const sinceIso = new Date(Date.now() - 90 * 86400000).toISOString();
+  // Load ALL our awards — no arbitrary date cutoff. Abe needs to see
+  // awards from months ago that might still need POs or follow-up.
   const awards: any[] = [];
-  for (let p = 0; p < 20; p++) {
+  for (let p = 0; p < 100; p++) {
     const { data } = await supabase
       .from("awards")
       .select("*")
       .eq("cage", "0AG09")
-      .gte("award_date", sinceIso)
       .order("award_date", { ascending: false })
       .range(p * 1000, (p + 1) * 1000 - 1);
     if (!data || data.length === 0) break;

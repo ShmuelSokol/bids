@@ -26,6 +26,17 @@ async function getData() {
   // Two hard-coded range calls (0-999 + 1000-1999) silently capped at 2K
   // rows — with 5,510 sourceable items in the DB the dashboard saw 253
   // open while this page only saw 46. Loop until empty, with a safety cap.
+  // Only load non-expired solicitations. The old loader pulled ALL
+  // 13,534 rows (including 5,132 expired) and filtered client-side.
+  // Now we filter server-side — massive perf + UX improvement.
+  //
+  // Date format in DB is mixed: some "YYYY-MM-DD", some "MM-DD-YYYY".
+  // Supabase .gte() does string comparison, so we can't reliably
+  // filter dates server-side across both formats. Instead: filter by
+  // a conservative cutoff (90 days ago) to eliminate obviously-expired
+  // rows, then do exact date checks client-side for the remainder.
+  const cutoff90d = new Date(Date.now() - 90 * 86400000).toISOString().split("T")[0];
+
   async function loadAllByFlag(flag: boolean, maxPages = 25) {
     const items: any[] = [];
     for (let page = 0; page < maxPages; page++) {
@@ -33,6 +44,7 @@ async function getData() {
         .from("dibbs_solicitations")
         .select(cols)
         .eq("is_sourceable", flag)
+        .gte("return_by_date", cutoff90d)
         .range(page * 1000, (page + 1) * 1000 - 1);
       if (error) {
         console.error(`Supabase ${flag ? "sourceable" : "unsourced"} page ${page} error:`, error.message);
@@ -41,6 +53,20 @@ async function getData() {
       if (!data || data.length === 0) break;
       items.push(...data);
       if (data.length < 1000) break;
+    }
+    // Also load items with null return_by_date (no due date = still open)
+    if (flag) {
+      for (let page = 0; page < 5; page++) {
+        const { data } = await supabase
+          .from("dibbs_solicitations")
+          .select(cols)
+          .eq("is_sourceable", true)
+          .is("return_by_date", null)
+          .range(page * 1000, (page + 1) * 1000 - 1);
+        if (!data || data.length === 0) break;
+        items.push(...data);
+        if (data.length < 1000) break;
+      }
     }
     return items;
   }

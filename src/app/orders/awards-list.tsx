@@ -366,7 +366,7 @@ export function AwardsList({
           </button>
           <div className="rounded-lg border border-card-border bg-card-bg p-3 text-left">
             <div className="text-lg font-bold text-foreground">{shipStats.total.toLocaleString()}</div>
-            <div className="text-[10px] text-muted">Total (90 days)</div>
+            <div className="text-[10px] text-muted">Total</div>
           </div>
         </div>
       )}
@@ -375,7 +375,7 @@ export function AwardsList({
         <div>
           <h1 className="text-2xl font-bold mb-1">Orders & Purchase Orders</h1>
           <p className="text-muted text-sm">
-            {awards.filter((a) => !a.po_generated).length} awards without POs (of {awards.length} total in 90 days),{" "}
+            {awards.filter((a) => !a.po_generated).length} awards without DIBS POs (of {awards.length} total),{" "}
             {purchaseOrders.length} POs created
             {shipFilter && <span className="ml-2 text-accent font-medium">· Filtered: {shipFilter.replace("_", " ")}</span>}
           </p>
