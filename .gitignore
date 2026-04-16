@@ -1,5 +1,9 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Claude Code (lock files are local-only, settings + hooks are shared)
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+
 # dependencies
 /node_modules
 /.pnp
