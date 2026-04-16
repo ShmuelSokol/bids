@@ -582,42 +582,30 @@ export function SolicitationsList({
       return true;
     });
 
-    // Date filter
+    // Date filter — uses normalized ISO dates from return_by_date_iso / issue_date_iso
     if (dateFilter !== "all") {
       const now = new Date();
-      const today = now.toISOString().split("T")[0];
-      const yesterday = new Date(now.getTime() - 86400000).toISOString().split("T")[0];
-      const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split("T")[0];
+      const todayIso = now.toISOString().split("T")[0];
+      const yesterdayIso = new Date(now.getTime() - 86400000).toISOString().split("T")[0];
+      const weekAgoIso = new Date(now.getTime() - 7 * 86400000).toISOString().split("T")[0];
+      const threeDaysIso = new Date(now.getTime() + 3 * 86400000).toISOString().split("T")[0];
+      const weekFromNowIso = new Date(now.getTime() + 7 * 86400000).toISOString().split("T")[0];
+
+      function toIso(d: string | null): string | null {
+        if (!d) return null;
+        const parts = d.split("-");
+        if (parts.length === 3 && parts[2].length === 4) return `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
+        return d;
+      }
 
       items = items.filter((s) => {
-        const issueDate = s.issue_date || "";
-        const dueDate = s.return_by_date || "";
-        if (dateFilter === "today") {
-          return issueDate.includes(today.replace(/-/g, "-").slice(5)) || issueDate.includes(today.slice(5).replace("-", "-"));
-        }
-        if (dateFilter === "yesterday") {
-          return issueDate.includes(yesterday.slice(5).replace(/-0?/, "-")) || issueDate.includes(today.slice(5).replace(/-0?/, "-"));
-        }
-        if (dateFilter === "this_week") {
-          // Compare MM-DD-YYYY format
-          const parseDate = (d: string) => {
-            const parts = d.split("-");
-            if (parts.length === 3 && parts[2].length === 4) return new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
-            return new Date(d);
-          };
-          const issued = parseDate(issueDate);
-          return issued >= new Date(weekAgo);
-        }
-        if (dateFilter === "closing_soon") {
-          const parseDate = (d: string) => {
-            const parts = d.split("-");
-            if (parts.length === 3 && parts[2].length === 4) return new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
-            return new Date(d);
-          };
-          const due = parseDate(dueDate);
-          const threeDays = new Date(now.getTime() + 3 * 86400000);
-          return due <= threeDays && due >= now;
-        }
+        const posted = (s as any).return_by_date_iso || toIso(s.issue_date);
+        const due = (s as any).return_by_date_iso || toIso(s.return_by_date);
+        if (dateFilter === "posted_today") return posted === todayIso;
+        if (dateFilter === "posted_2d") return posted && posted >= yesterdayIso;
+        if (dateFilter === "posted_week") return posted && posted >= weekAgoIso;
+        if (dateFilter === "due_soon") return due && due >= todayIso && due <= threeDaysIso;
+        if (dateFilter === "due_week") return due && due >= todayIso && due <= weekFromNowIso;
         return true;
       });
     }
@@ -931,10 +919,11 @@ export function SolicitationsList({
         <div className="flex gap-1">
           {[
             { key: "all", label: "All Dates" },
-            { key: "today", label: "Today" },
-            { key: "yesterday", label: "Today+Yesterday" },
-            { key: "this_week", label: "This Week" },
-            { key: "closing_soon", label: "Closing Soon" },
+            { key: "posted_today", label: "Posted Today" },
+            { key: "posted_2d", label: "Posted 2d" },
+            { key: "posted_week", label: "Posted This Week" },
+            { key: "due_soon", label: "Due in 3d" },
+            { key: "due_week", label: "Due This Week" },
           ].map((d) => (
             <button
               key={d.key}
