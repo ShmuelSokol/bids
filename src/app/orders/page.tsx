@@ -23,20 +23,22 @@ async function getData() {
     if (data.length < 1000) break;
   }
 
-  // Load cost data for margin calculation — paginate (24K+ rows)
+  // Load cost data with vendor for margin + supplier assignment preview
   const allCosts: any[] = [];
   for (let p = 0; p < 30; p++) {
     const { data } = await supabase
       .from("nsn_costs")
-      .select("nsn, cost, cost_source")
+      .select("nsn, cost, cost_source, vendor")
       .range(p * 1000, (p + 1) * 1000 - 1);
     if (!data || data.length === 0) break;
     allCosts.push(...data);
     if (data.length < 1000) break;
   }
   const costMap = new Map<string, number>();
+  const vendorMap = new Map<string, string>();
   for (const c of allCosts) {
     if (c.cost > 0) costMap.set(c.nsn, c.cost);
+    if (c.vendor) vendorMap.set(c.nsn, c.vendor);
   }
 
   // Load existing POs — paginate to avoid 1000-row cap
@@ -56,11 +58,13 @@ async function getData() {
   const enriched = awards.map((a: any) => {
     const nsn = `${a.fsc}-${a.niin}`;
     const cost = costMap.get(nsn);
+    const vendor = a.bid_vendor || vendorMap.get(nsn) || null;
     return {
       ...a,
       nsn,
       our_cost: cost || null,
       margin_pct: computeMarginPct(a.unit_price, cost),
+      assigned_vendor: vendor,
     };
   });
 

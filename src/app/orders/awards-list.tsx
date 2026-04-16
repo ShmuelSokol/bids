@@ -534,6 +534,7 @@ export function AwardsList({
                       Margin
                     </th>
                     <th className="px-3 py-2 font-medium">FOB</th>
+                    <th className="px-3 py-2 font-medium">Supplier</th>
                     <th className="px-3 py-2 font-medium">Status</th>
                     <th className="px-3 py-2 font-medium">Award Date</th>
                   </tr>
@@ -613,6 +614,13 @@ export function AwardsList({
                           </span>
                         ) : (
                           "—"
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {a.assigned_vendor ? (
+                          <span className="text-[10px] px-1 rounded bg-green-50 text-green-700 font-mono">{a.assigned_vendor}</span>
+                        ) : (
+                          <span className="text-[10px] px-1 rounded bg-red-50 text-red-600">UNASSIGNED</span>
                         )}
                       </td>
                       <td className="px-3 py-2">
