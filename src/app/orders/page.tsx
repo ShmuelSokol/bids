@@ -5,21 +5,36 @@ import { computeMarginPct } from "@/lib/margin";
 async function getData() {
   const supabase = createServiceClient();
 
-  // Load recent awards only (last 90 days) — avoid Railway timeout on 74K rows
-  const { data: awards } = await supabase
-    .from("awards")
-    .select("*")
-    .eq("cage", "0AG09")
-    .gte("award_date", new Date(Date.now() - 90 * 86400000).toISOString())
-    .order("award_date", { ascending: false })
-    .limit(1000);
+  // Load recent awards (last 90 days). Paginate to avoid the Supabase
+  // 1000-row default limit — we've seen >1000 awards in 90 days.
+  const sinceIso = new Date(Date.now() - 90 * 86400000).toISOString();
+  const awards: any[] = [];
+  for (let p = 0; p < 20; p++) {
+    const { data } = await supabase
+      .from("awards")
+      .select("*")
+      .eq("cage", "0AG09")
+      .gte("award_date", sinceIso)
+      .order("award_date", { ascending: false })
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    awards.push(...data);
+    if (data.length < 1000) break;
+  }
 
-  // Load cost data for margin calculation
-  const { data: costs } = await supabase
-    .from("nsn_costs")
-    .select("nsn, cost, cost_source");
+  // Load cost data for margin calculation — paginate (24K+ rows)
+  const allCosts: any[] = [];
+  for (let p = 0; p < 30; p++) {
+    const { data } = await supabase
+      .from("nsn_costs")
+      .select("nsn, cost, cost_source")
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allCosts.push(...data);
+    if (data.length < 1000) break;
+  }
   const costMap = new Map<string, number>();
-  for (const c of costs || []) {
+  for (const c of allCosts) {
     if (c.cost > 0) costMap.set(c.nsn, c.cost);
   }
 
@@ -32,7 +47,7 @@ async function getData() {
     .order("created_at", { ascending: false });
 
   // Enrich awards with cost/margin
-  const enriched = (awards || []).map((a) => {
+  const enriched = awards.map((a: any) => {
     const nsn = `${a.fsc}-${a.niin}`;
     const cost = costMap.get(nsn);
     return {
