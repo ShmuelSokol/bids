@@ -9,7 +9,7 @@ How the pieces actually fit together, what runs where, and why.
 - **Railway** — hosts the Next.js app, auto-deploys from GitHub pushes to `master`.
 - **GitHub Actions** — runs the cron-based scrapers (DIBBS scrape 2x/day, job processor every 10 min).
 - **LamLinks SQL Server** (NYEVRVSQL001/llk_db1) — read-only mirror of the vendor's internal DB. Windows Auth only, accessible from the local Windows box.
-- **D365 / AX** — OData API, OAuth2 client credentials. Source for NSN→item mappings and pricing history.
+- **D365 / AX** — OData API, OAuth2 client credentials. All AX data is cached in Supabase tables nightly (nsn_catalog, nsn_costs, vendor_parts, po_receipt_history, dd219_open_pos). Only one live AX query remains (DMF PO polling).
 - **Master DB** — FastAPI service at `masterdb.everreadygroup.com`. 405K item records.
 - **Chrome headless** — local PDF generation (daily briefings).
 - **Twilio WhatsApp** — daily briefing delivery + auto-fix error notifications.
