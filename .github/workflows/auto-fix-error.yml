@@ -1,0 +1,94 @@
+name: Auto-Fix Production Error
+
+on:
+  repository_dispatch:
+    types: [production-error]
+
+jobs:
+  investigate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Notify WhatsApp — investigation starting
+        run: |
+          ERROR_MSG="${{ github.event.client_payload.error_message }}"
+          ERROR_URL="${{ github.event.client_payload.url }}"
+          SESSION_ID="${{ github.event.client_payload.session_id }}"
+          curl -s -X POST "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}/rest/v1/rpc" \
+            -H "apikey: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" || true
+          # WhatsApp notification via the app's own endpoint
+          curl -s -X POST "${{ secrets.SITE_URL }}/api/whatsapp/send" \
+            -H "Content-Type: application/json" \
+            -H "X-Internal-Secret: ${{ secrets.INTERNAL_SECRET }}" \
+            -d "{\"message\": \"🔍 Auto-fix triggered: ${ERROR_MSG:0:200} on ${ERROR_URL}. Investigating...\"}" || true
+
+      - name: Run Claude Code investigation
+        id: investigate
+        run: |
+          ERROR_MSG="${{ github.event.client_payload.error_message }}"
+          ERROR_STACK="${{ github.event.client_payload.error_stack }}"
+          ERROR_URL="${{ github.event.client_payload.url }}"
+          ERROR_TYPE="${{ github.event.client_payload.error_type }}"
+          ERROR_ID="${{ github.event.client_payload.error_id }}"
+
+          PROMPT="A production error was reported on the DIBS site.
+
+          Error: ${ERROR_MSG}
+          URL: ${ERROR_URL}
+          Type: ${ERROR_TYPE}
+          Stack: ${ERROR_STACK}
+
+          Read .claude/auto-fix-context.md for critical context.
+
+          1. Find the root cause in the codebase. Search for the file and function in the stack trace.
+          2. Determine if this is a straightforward fix (data cap, missing pagination, wrong query) or needs human attention.
+          3. If fixable: create a branch auto-fix/${ERROR_ID}, commit the fix, push, and create a PR.
+          4. If not fixable: explain what you found and what a human needs to do.
+
+          Be concise. Report your findings in under 200 words."
+
+          # Run Claude Code in non-interactive print mode
+          RESULT=$(claude --print "$PROMPT" 2>&1 || echo "Claude investigation failed")
+
+          # Save result for next steps
+          echo "FINDINGS<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESULT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Update session status in Supabase
+        if: always()
+        run: |
+          ERROR_ID="${{ github.event.client_payload.error_id }}"
+          FINDINGS="${{ steps.investigate.outputs.FINDINGS }}"
+          # Truncate for JSON safety
+          SAFE_FINDINGS=$(echo "$FINDINGS" | head -c 2000 | sed 's/"/\\"/g' | tr '\n' ' ')
+          curl -s -X POST "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}/rest/v1/auto_fix_sessions" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "{\"error_id\": ${ERROR_ID:-0}, \"error_signature\": \"${{ github.event.client_payload.error_signature }}\", \"status\": \"completed\", \"findings\": \"${SAFE_FINDINGS}\", \"completed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" || true
+
+      - name: Notify WhatsApp — results
+        if: always()
+        run: |
+          FINDINGS="${{ steps.investigate.outputs.FINDINGS }}"
+          SHORT=$(echo "$FINDINGS" | head -c 500)
+          curl -s -X POST "${{ secrets.SITE_URL }}/api/whatsapp/send" \
+            -H "Content-Type: application/json" \
+            -H "X-Internal-Secret: ${{ secrets.INTERNAL_SECRET }}" \
+            -d "{\"message\": \"🤖 Auto-fix result: ${SHORT}\"}" || true
