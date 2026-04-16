@@ -87,11 +87,11 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // For each NSN, pick the waterfall-winner cost from nsn_costs.
-  // (nsn_costs has already applied the waterfall across PO history +
-  // price agreements, and stores one row per NSN with the winning
-  // source + vendor + UoM.)
-  const nsns = [...new Set(eligible.map((a) => a.nsn).filter(Boolean))];
+  // For each award, pick vendor using this priority:
+  //   1. bid_vendor on the award itself (stored at enrichment time —
+  //      this is the vendor the bid was BASED ON, frozen at bid time)
+  //   2. Fallback: current nsn_costs waterfall winner (for awards that
+  //      were imported before we started storing bid_vendor)
   type CostRow = {
     cost: number;
     source: string | null;
@@ -99,12 +99,17 @@ export async function POST(req: NextRequest) {
     uom: string | null;
     itemNumber: string | null;
   };
+
+  // Fallback: load current nsn_costs for awards without bid_vendor
+  const nsnsNeedingFallback = [...new Set(
+    eligible.filter((a: any) => !a.bid_vendor).map((a: any) => a.nsn).filter(Boolean)
+  )];
   const waterfallByNsn = new Map<string, CostRow>();
-  if (nsns.length > 0) {
+  if (nsnsNeedingFallback.length > 0) {
     const { data: costs } = await supabase
       .from("nsn_costs")
       .select("nsn, cost, cost_source, vendor, unit_of_measure, item_number")
-      .in("nsn", nsns)
+      .in("nsn", nsnsNeedingFallback)
       .gt("cost", 0);
     for (const c of costs || []) {
       waterfallByNsn.set(c.nsn, {
@@ -117,13 +122,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Group by waterfall-winner vendor. UoM-mismatch and no-match cases
-  // both fall through to UNASSIGNED so Abe's Switch-Supplier flow can
-  // fix them. The only thing that lands on a real supplier PO is a
-  // line where we have a real vendor AND the UoM matches between the
-  // award line and the vendor's price.
   function sameUom(a: string | null | undefined, b: string | null | undefined): boolean {
-    if (!a || !b) return false; // require both sides to be known
+    if (!a || !b) return false;
     return a.trim().toUpperCase() === b.trim().toUpperCase();
   }
 
@@ -132,19 +132,42 @@ export async function POST(req: NextRequest) {
   const bySupplier = new Map<string, any[]>();
 
   for (const award of eligible) {
-    const cost = waterfallByNsn.get(award.nsn);
     let routing: Routing;
-    if (!cost || !cost.vendor) {
-      routing = { supplier: "UNASSIGNED", reason: "no cost/vendor in nsn_costs", cost: cost ?? null };
-    } else if (!sameUom(award.unit_of_measure, cost.uom)) {
-      routing = {
-        supplier: "UNASSIGNED",
-        reason: `UoM mismatch: award=${award.unit_of_measure || "?"} vs vendor=${cost.uom || "?"}`,
-        cost,
+
+    if (award.bid_vendor) {
+      // Priority 1: use the vendor stored at enrichment/bid time
+      const cost: CostRow = {
+        cost: award.bid_cost || 0,
+        source: `bid-time vendor (${award.bid_vendor})`,
+        vendor: award.bid_vendor,
+        uom: award.bid_uom || null,
+        itemNumber: award.bid_item_number || null,
       };
+      if (!sameUom(award.unit_of_measure, cost.uom) && cost.uom) {
+        routing = {
+          supplier: "UNASSIGNED",
+          reason: `UoM mismatch: award=${award.unit_of_measure || "?"} vs bid-vendor=${cost.uom}`,
+          cost,
+        };
+      } else {
+        routing = { supplier: cost.vendor!.trim(), reason: cost.source!, cost };
+      }
     } else {
-      routing = { supplier: cost.vendor.trim(), reason: cost.source || "nsn_costs", cost };
+      // Fallback: current waterfall from nsn_costs
+      const cost = waterfallByNsn.get(award.nsn);
+      if (!cost || !cost.vendor) {
+        routing = { supplier: "UNASSIGNED", reason: "no cost/vendor in nsn_costs", cost: cost ?? null };
+      } else if (!sameUom(award.unit_of_measure, cost.uom)) {
+        routing = {
+          supplier: "UNASSIGNED",
+          reason: `UoM mismatch: award=${award.unit_of_measure || "?"} vs vendor=${cost.uom || "?"}`,
+          cost,
+        };
+      } else {
+        routing = { supplier: cost.vendor.trim(), reason: cost.source || "nsn_costs fallback", cost };
+      }
     }
+
     routingByAward.set(award.id, routing);
     const key = routing.supplier;
     if (!bySupplier.has(key)) bySupplier.set(key, []);

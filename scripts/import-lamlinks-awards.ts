@@ -109,6 +109,36 @@ async function main() {
   console.log(`\nDone! ${saved} of our awards imported to Supabase`);
   console.log(`These will show as CAGE 0AG09 (WON) in bid history`);
 
+  // Backfill bid_vendor on awards from dibbs_solicitations.
+  // When we bid on a solicitation, enrichment stores the vendor/cost/item
+  // that the bid was based on. Copy that to the award so PO generation
+  // uses the SAME vendor, not a re-queried waterfall.
+  console.log("\nBackfilling bid_vendor on awards from solicitations...");
+  const nsns = [...new Set(deduped.map((a: any) => `${a.fsc}-${a.niin}`))];
+  let backfilled = 0;
+  for (let i = 0; i < nsns.length; i += 200) {
+    const chunk = nsns.slice(i, i + 200);
+    const { data: sols } = await sb.from("dibbs_solicitations")
+      .select("nsn, bid_vendor, bid_item_number, bid_cost, bid_uom")
+      .in("nsn", chunk)
+      .not("bid_vendor", "is", null);
+    if (!sols) continue;
+    const vendorByNsn = new Map<string, any>();
+    for (const s of sols) {
+      if (s.bid_vendor && !vendorByNsn.has(s.nsn)) vendorByNsn.set(s.nsn, s);
+    }
+    for (const [nsn, sol] of vendorByNsn) {
+      const [fsc, ...niinParts] = nsn.split("-");
+      const niin = niinParts.join("-");
+      const { data: updated } = await sb.from("awards")
+        .update({ bid_vendor: sol.bid_vendor, bid_item_number: sol.bid_item_number, bid_cost: sol.bid_cost, bid_uom: sol.bid_uom })
+        .eq("fsc", fsc).eq("niin", niin).eq("cage", "0AG09").is("bid_vendor", null)
+        .select("id");
+      backfilled += updated?.length || 0;
+    }
+  }
+  console.log(`  Backfilled bid_vendor on ${backfilled} awards`);
+
   await sb.from("sync_log").insert({
     action: "lamlinks_awards_import",
     details: { total_raw: rawAwards.length, saved },

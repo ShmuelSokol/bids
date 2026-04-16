@@ -97,17 +97,19 @@ export async function POST(req: Request) {
     catalogPage++;
   }
 
-  // Load NSN costs (also paginate)
-  const costMap = new Map<string, { cost: number; source: string }>();
+  // Load NSN costs with vendor + item_number + UoM (also paginate).
+  // These fields get stored on the solicitation so PO generation uses
+  // the SAME vendor the bid was based on, not a re-queried waterfall.
+  const costMap = new Map<string, { cost: number; source: string; vendor: string | null; itemNumber: string | null; uom: string | null }>();
   let costPage = 0;
   while (true) {
     const { data } = await supabase
       .from("nsn_costs")
-      .select("nsn, cost, cost_source")
+      .select("nsn, cost, cost_source, vendor, item_number, unit_of_measure")
       .range(costPage * 1000, (costPage + 1) * 1000 - 1);
     if (!data || data.length === 0) break;
     data.forEach((c) => {
-      if (c.cost > 0) costMap.set(c.nsn, { cost: c.cost, source: c.cost_source });
+      if (c.cost > 0) costMap.set(c.nsn, { cost: c.cost, source: c.cost_source, vendor: c.vendor || null, itemNumber: c.item_number || null, uom: c.unit_of_measure || null });
     });
     costPage++;
   }
@@ -438,6 +440,11 @@ export async function POST(req: Request) {
         already_bid: !!recentBid,
         last_bid_price: recentBid?.price || null,
         last_bid_date: recentBid?.date || null,
+        bid_vendor: costData?.vendor || null,
+        bid_item_number: costData?.itemNumber || null,
+        bid_cost: cost,
+        bid_cost_source: costSource,
+        bid_uom: costData?.uom || null,
       })
       .eq("id", sol.id);
 
