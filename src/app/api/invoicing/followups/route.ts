@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
+import { fetchAxByMonth } from "@/lib/ax-fetch";
 
 /**
  * GET /api/invoicing/followups
@@ -88,6 +89,7 @@ export async function GET() {
   // ---- Section 2: AX government POs (DD219-marked) ----
   let axPos: any[] = [];
   let axError: string | null = null;
+  let axTruncated = false;
   try {
     const token = await getAxToken();
     const D = process.env.AX_D365_URL!;
@@ -95,14 +97,27 @@ export async function GET() {
     // Filter to Backorder status so we see open/unreceived only.
     // Case-insensitive match — observed 'DD219' + 'dd219' variants in
     // a 1000-row sample; toupper() catches both.
-    const url = `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=toupper(CustomerRequisitionNumber) eq 'DD219' and PurchaseOrderLineStatus eq 'Backorder'&$select=PurchaseOrderNumber,LineNumber,ItemNumber,LineDescription,OrderedPurchaseQuantity,PurchasePrice,RequestedDeliveryDate,ConfirmedDeliveryDate,PurchaseOrderLineStatus&$top=1000`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) {
-      axError = `AX HTTP ${r.status}`;
-    } else {
-      const d: any = await r.json();
+    //
+    // AX OData has a hidden 1000-row cap per filtered query with no
+    // @odata.nextLink beyond that (see docs/gotchas.md). Walk by month
+    // on CreatedDateTime so each slice stays under the cap. 24 months
+    // covers the oldest still-open Backorder line we're likely to see.
+    const { rows: lines, truncated } = await fetchAxByMonth(token, {
+      D365_URL: D,
+      entity: "PurchaseOrderLinesV2",
+      dateField: "CreatedDateTime",
+      monthsBack: 24,
+      baseFilter: "toupper(CustomerRequisitionNumber) eq 'DD219' and PurchaseOrderLineStatus eq 'Backorder'",
+      select: [
+        "PurchaseOrderNumber","LineNumber","ItemNumber","LineDescription",
+        "OrderedPurchaseQuantity","PurchasePrice","RequestedDeliveryDate",
+        "ConfirmedDeliveryDate","PurchaseOrderLineStatus","CreatedDateTime",
+      ],
+    });
+    axTruncated = truncated;
+    {
       const byPO: Record<string, any> = {};
-      for (const line of d.value || []) {
+      for (const line of lines) {
         const pn = line.PurchaseOrderNumber;
         if (!byPO[pn]) {
           byPO[pn] = {
@@ -198,6 +213,7 @@ export async function GET() {
     ax_government_pos: axPos,
     ax_po_count: axPos.length,
     ax_error: axError,
+    ax_truncated: axTruncated,
     // award↔PO buckets (shipped awards excluded from action buckets)
     awards_total: awardsRows.length,
     awards_shipped_count: awardsShipped.length,

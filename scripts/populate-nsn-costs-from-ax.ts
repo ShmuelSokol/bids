@@ -23,6 +23,7 @@
  */
 import "./env";
 import { createClient } from "@supabase/supabase-js";
+import { fetchAxPaginated } from "./ax-fetch";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -52,21 +53,12 @@ async function getToken(): Promise<string> {
   return data.access_token;
 }
 
-async function fetchAllPages(token: string, url: string): Promise<any[]> {
-  const all: any[] = [];
-  let nextUrl: string | null = url;
-  while (nextUrl) {
-    const resp = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } });
-    if (!resp.ok) {
-      console.error(`  ERROR ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-      break;
-    }
-    const data: any = await resp.json();
-    all.push(...(data.value || []));
-    nextUrl = data["@odata.nextLink"] || null;
-    if (all.length % 5000 < 500) console.log(`    ...${all.length.toLocaleString()} fetched`);
-  }
-  return all;
+async function fetchAllPages(token: string, url: string, label?: string): Promise<any[]> {
+  // Uses the shared helper so the AX silent-1000-cap is detected and
+  // warned (see scripts/ax-fetch.ts). If we ever hit the cap on a
+  // filtered query here, the log will flag it.
+  const { rows } = await fetchAxPaginated(token, url, { label });
+  return rows;
 }
 
 /**
@@ -80,7 +72,8 @@ async function fetchAllPages(token: string, url: string): Promise<any[]> {
 async function loadItemToNsnMap(token: string): Promise<Map<string, string>> {
   const all = await fetchAllPages(
     token,
-    `${D365_URL}/data/ProductBarcodesV3?cross-company=true&$select=ItemNumber,Barcode,BarcodeSetupId&$filter=BarcodeSetupId eq 'NSN'`
+    `${D365_URL}/data/ProductBarcodesV3?cross-company=true&$select=ItemNumber,Barcode,BarcodeSetupId&$filter=BarcodeSetupId eq 'NSN'`,
+    "ProductBarcodesV3 NSN"
   );
   const map = new Map<string, string>();
   for (const r of all) {

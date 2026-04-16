@@ -23,6 +23,7 @@
  */
 import "./env";
 import { createClient } from "@supabase/supabase-js";
+import { fetchAxByMonth, fetchAxPaginated } from "./ax-fetch";
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,19 +47,10 @@ async function getToken() {
 }
 
 async function fetchAll(token: string, url: string, max = 10000) {
-  const all: any[] = [];
-  let next: string | null = url;
-  while (next && all.length < max) {
-    const r = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) {
-      console.error(`  HTTP ${r.status} on ${next.slice(0, 100)}`);
-      break;
-    }
-    const d: any = await r.json();
-    all.push(...(d.value || []));
-    next = d["@odata.nextLink"] || null;
-  }
-  return all;
+  // Thin shim to the shared helper, which also detects the AX silent
+  // 1000-row cap on filtered queries (see scripts/ax-fetch.ts).
+  const { rows } = await fetchAxPaginated(token, url, { maxRows: max });
+  return rows;
 }
 
 async function main() {
@@ -67,22 +59,18 @@ async function main() {
   const D = process.env.AX_D365_URL!;
 
   // 1. AX OData silently caps any single filter at 1000 rows (no
-  //    nextLink beyond that). Walk history by MONTH so each request's
-  //    result set stays well under the cap. Go back 24 months.
-  console.log("1. Pulling headers by month (AX OData has a hidden 1000-row cap per filter)...");
-  const headers: any[] = [];
-  for (let monthsBack = 0; monthsBack < 24; monthsBack++) {
-    const end = new Date();
-    end.setUTCDate(1); end.setUTCHours(0, 0, 0, 0);
-    end.setUTCMonth(end.getUTCMonth() - monthsBack);
-    const start = new Date(end);
-    start.setUTCMonth(end.getUTCMonth() - 1);
-    const url = `${D}/data/PurchaseOrderHeadersV2?cross-company=true&$top=1000&$orderby=AccountingDate desc&$filter=AccountingDate ge ${start.toISOString()} and AccountingDate lt ${end.toISOString()}&$select=PurchaseOrderNumber,OrderVendorAccountNumber,AccountingDate`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) continue;
-    const d: any = await r.json();
-    headers.push(...(d.value || []));
-  }
+  //    nextLink beyond that). fetchAxByMonth auto-chunks by month so
+  //    each request stays under the cap, and flags truncated=true if
+  //    any single month exceeds 1000.
+  console.log("1. Pulling PO headers by month (24 months)...");
+  const { rows: headers, truncated: hdrTruncated } = await fetchAxByMonth(token, {
+    D365_URL: D,
+    entity: "PurchaseOrderHeadersV2",
+    dateField: "AccountingDate",
+    monthsBack: 24,
+    select: ["PurchaseOrderNumber", "OrderVendorAccountNumber", "AccountingDate"],
+  });
+  if (hdrTruncated) console.warn("   ⚠ One or more months exceeded 1000 headers — narrow chunk window.");
   console.log(`   ${headers.length} headers pulled across 24 months`);
 
   // Walk chunks of 40 PO numbers, pull their DD219 lines

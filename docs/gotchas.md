@@ -2,6 +2,23 @@
 
 Things that broke, how we noticed, and what we learned. If you're about to touch one of these areas, read the relevant section first or you'll repeat our mistakes.
 
+## AX OData silent 1000-row cap on filtered queries
+
+> Symptom: `PurchaseOrderLinesV2` with `$filter=toupper(CustomerRequisitionNumber) eq 'DD219'` returned exactly 1000 rows with no `@odata.nextLink`. We thought that was the complete set. It wasn't — the real count via `@odata.count` was 8,533. We were silently losing 88% of DD219 PO history, which broke the DD219 PO ↔ award linker.
+
+AX OData V2 enforces a hidden ceiling of exactly **1000 rows per filtered query** and does **not** emit `@odata.nextLink` once you hit it. There is no error, no warning, no header — the response just stops. Unfiltered pulls (e.g. full `ProductBarcodesV3`) paginate normally via nextLink and go to completion; the cap only bites on `$filter`'d queries.
+
+**Detection heuristic:** a response of exactly 1000 rows on a filtered query with no nextLink is almost certainly truncated.
+
+**Fix in place:** two shared helpers handle this for us:
+- `scripts/ax-fetch.ts` (node scripts) and `src/lib/ax-fetch.ts` (API routes)
+- `fetchAxPaginated(token, url, { label })` — follows nextLink normally, warns + returns `truncated=true` when the cap heuristic fires
+- `fetchAxByMonth(token, { entity, dateField, monthsBack, baseFilter, select })` — auto-chunks a filtered query by a date field so each slice stays under the cap; use this whenever the expected result set may exceed 1000
+
+**Rule:** any new AX OData caller that uses `$filter` MUST go through one of these helpers. Never write a raw `fetch()` against an AX entity with a filter — you won't see the truncation until someone notices data is missing months later.
+
+Callers already migrated: `src/app/api/invoicing/followups/route.ts` (DD219 Backorder pull), `scripts/sync-po-award-links.ts` (PO headers by month), `scripts/populate-nsn-costs-from-ax.ts` (NSN barcodes). Unfiltered bulk pullers (`pull-d365-products.ts`, `pull-d365-costs.ts`, `pull-ax-vendor-parts.ts`) are fine as-is.
+
 ## `npm install X` wipes native --no-save deps and kills scheduled tasks
 
 > Symptom: scheduled task `DIBS - Abe Bids Sync` returned `total:0` every 5 min for half a day. Abe had placed 105+ real bids in LamLinks that never reached the DIBS dashboard. Root cause only visible in the dispatcher log (`C:\tmp\dibs-logs\sync-abe-bids-live.log`) as `Cannot find module 'mssql/msnodesqlv8'`.
