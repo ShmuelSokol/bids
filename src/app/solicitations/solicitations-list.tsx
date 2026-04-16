@@ -527,6 +527,37 @@ export function SolicitationsList({
     }
   }
 
+  async function handleUnquoteSelected() {
+    if (selectedQuoted.size === 0) return;
+    const toUnquote = solicitations.filter(
+      (s) => s.bid_status === "quoted" && selectedQuoted.has(s.id)
+    );
+    if (!confirm(`Undo ${toUnquote.length} quoted bids? They'll go back to Sourceable.`)) return;
+    setSubmitting(true);
+    try {
+      const items = toUnquote.map((s) => ({ solicitation_number: s.solicitation_number, nsn: s.nsn }));
+      const res = await fetch("/api/bids/decide", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json();
+      setSolicitations((prev) =>
+        prev.map((s) => {
+          if (!selectedQuoted.has(s.id) || s.bid_status !== "quoted") return s;
+          return { ...s, bid_status: null };
+        })
+      );
+      setSelectedQuoted(new Set());
+      setMessage(`${result.deleted} bids unquoted — moved back to Sourceable`);
+    } catch (err: any) {
+      setMessage(`Unquote failed: ${err?.message || "unknown"}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   function handleSort(field: SortField) {
     if (sortField === field) setSortAsc(!sortAsc);
     else { setSortField(field); setSortAsc(false); }
@@ -800,14 +831,24 @@ export function SolicitationsList({
                 {selectedQuoted.size > 0 ? "Deselect All" : "Select All"}
               </button>
               {selectedQuoted.size > 0 && (
-                <button
-                  onClick={handleSubmitAll}
-                  disabled={submitting}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white disabled:opacity-50"
-                >
-                  {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                  Submit {selectedQuoted.size} Bids
-                </button>
+                <>
+                  <button
+                    onClick={handleSubmitAll}
+                    disabled={submitting}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white disabled:opacity-50"
+                  >
+                    {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                    Submit {selectedQuoted.size} Bids
+                  </button>
+                  <button
+                    onClick={handleUnquoteSelected}
+                    disabled={submitting}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    <X className="h-3 w-3" />
+                    Undo {selectedQuoted.size} Quoted
+                  </button>
+                </>
               )}
             </>
           )}

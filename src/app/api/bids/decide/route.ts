@@ -161,3 +161,44 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ success: true });
 }
+
+export async function DELETE(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const body = await req.json();
+  const items: Array<{ solicitation_number: string; nsn: string }> = body.items || [];
+  if (items.length === 0) {
+    // Single item
+    const { solicitation_number, nsn } = body;
+    if (solicitation_number && nsn) items.push({ solicitation_number, nsn });
+  }
+  if (items.length === 0) return NextResponse.json({ error: "No items to unquote" }, { status: 400 });
+
+  const supabase = createServiceClient();
+  const decidedBy = user.profile?.full_name || user.user.email || "unknown";
+  let deleted = 0;
+
+  for (const item of items) {
+    const { error } = await supabase
+      .from("bid_decisions")
+      .delete()
+      .eq("solicitation_number", item.solicitation_number)
+      .eq("nsn", item.nsn);
+    if (!error) deleted++;
+  }
+
+  const { ip, userAgent } = requestContext(req);
+  trackEvent({
+    userId: user.user.id,
+    userName: decidedBy,
+    eventType: "bid",
+    eventAction: "unquote",
+    page: "/solicitations",
+    details: { count: deleted, requested: items.length },
+    ip,
+    userAgent,
+  });
+
+  return NextResponse.json({ success: true, deleted });
+}
