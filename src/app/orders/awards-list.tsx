@@ -338,7 +338,7 @@ export function AwardsList({
           <ChevronLeft className="h-4 w-4" /> Dashboard
         </Link>
         <span>/</span>
-        <span className="text-foreground font-medium">Orders & POs</span>
+        <span className="text-foreground font-medium">Awards & POs</span>
       </div>
 
       {/* Ship Status Breakdown */}
@@ -373,7 +373,7 @@ export function AwardsList({
 
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Orders & Purchase Orders</h1>
+          <h1 className="text-2xl font-bold mb-1">Awards & Purchase Orders</h1>
           <p className="text-muted text-sm">
             {awards.filter((a) => !a.po_generated).length} awards without DIBS POs (of {awards.length} total),{" "}
             {purchaseOrders.length} POs created

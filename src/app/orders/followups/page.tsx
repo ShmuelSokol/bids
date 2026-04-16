@@ -88,7 +88,7 @@ export default function FollowupsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">PO Follow-ups</h1>
         <Link href="/orders" className="text-sm text-accent hover:underline">
-          ← back to orders
+          ← back to awards
         </Link>
       </div>
 
