@@ -26,17 +26,19 @@ async function getData() {
   // Two hard-coded range calls (0-999 + 1000-1999) silently capped at 2K
   // rows — with 5,510 sourceable items in the DB the dashboard saw 253
   // open while this page only saw 46. Loop until empty, with a safety cap.
-  // Load all rows and filter expired client-side. Can't filter dates
-  // server-side because return_by_date uses mixed formats (MM-DD-YYYY
-  // and YYYY-MM-DD) — Supabase .gte() does string comparison which
-  // breaks across formats.
-  async function loadAllByFlag(flag: boolean, maxPages = 25) {
+  // Only load OPEN (non-expired) solicitations using the normalized
+  // return_by_date_iso column. Previous approach loaded 13,534 rows
+  // (including 18,781 expired) and filtered client-side.
+  const todayIso = new Date().toISOString().split("T")[0];
+
+  async function loadOpenByFlag(flag: boolean, maxPages = 25) {
     const items: any[] = [];
     for (let page = 0; page < maxPages; page++) {
       const { data, error } = await supabase
         .from("dibbs_solicitations")
-        .select(cols)
+        .select(cols + ", return_by_date_iso")
         .eq("is_sourceable", flag)
+        .gte("return_by_date_iso", todayIso)
         .range(page * 1000, (page + 1) * 1000 - 1);
       if (error) {
         console.error(`Supabase ${flag ? "sourceable" : "unsourced"} page ${page} error:`, error.message);
@@ -50,8 +52,8 @@ async function getData() {
   }
 
   const [sourceableItems, recentItems, decisions, liveBids, lastSync, nsnMatches] = await Promise.all([
-    loadAllByFlag(true),
-    loadAllByFlag(false, 8), // cap unsourced at 8K — UI doesn't need them all
+    loadOpenByFlag(true),
+    loadOpenByFlag(false), // all open unsourced — no cap needed since we filter to non-expired
 
     paginateAll(supabase, "bid_decisions", "*"),
     // Pull last 30 days of bids (not just today) so yesterday's/
