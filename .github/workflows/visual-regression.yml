@@ -1,0 +1,92 @@
+name: Visual Regression Tests
+
+on:
+  push:
+    branches: [staging]
+
+jobs:
+  visual-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install chromium --with-deps
+
+      - name: Wait for Railway staging deploy
+        run: |
+          STAGING_URL="${{ secrets.STAGING_URL }}"
+          echo "Waiting for staging deploy at $STAGING_URL..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/login" 2>/dev/null || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging is up (attempt $i)"
+              break
+            fi
+            echo "  Attempt $i: HTTP $STATUS, waiting 10s..."
+            sleep 10
+          done
+
+      - name: Run Playwright visual tests
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          TEST_EMAIL: ${{ secrets.STAGING_TEST_EMAIL }}
+          TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
+        run: npx playwright test --config=e2e/playwright.config.ts
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          retention-days: 7
+
+      - name: Upload screenshots for baseline update
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-diffs
+          path: e2e/tests/**/*-snapshots/
+          retention-days: 30
+
+      - name: Comment on PR with test results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : '❌';
+            const body = `### ${emoji} Visual Regression Tests: ${status}\n\n` +
+              (status === 'success'
+                ? 'All pages render correctly. No visual regressions detected.'
+                : 'Visual differences or errors detected. Download the `screenshot-diffs` artifact to review.\n\n' +
+                  'To update baselines: download the `playwright-results` artifact, copy new screenshots to `e2e/tests/`, and commit.') +
+              '\n\n_Run: ${context.runId}_';
+
+            // Find PRs targeting master from staging
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:staging`,
+              base: 'master',
+              state: 'open'
+            });
+            for (const pr of prs.data) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body
+              });
+            }
