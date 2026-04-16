@@ -1127,47 +1127,51 @@ export function SolicitationsList({
                         <div className="flex items-center gap-1">
                           {(history.length > 0 || abeBids.length > 0) && (
                             <button onClick={() => setExpandedNsn(expandedNsn === s.nsn ? null : s.nsn)}
-                              className="text-muted hover:text-accent" title={`${abeBids.length} bids, ${history.length} awards`}>
+                              className="text-muted hover:text-accent">
                               <History className="h-3 w-3" />
                               <span className="text-[8px]">{abeBids.length + history.length}</span>
                             </button>
                           )}
                           <div>
-                            <span className="font-mono text-xs text-accent">{s.nsn}</span>
-                            {s.bid_status && (
-                              <span className={`ml-1 text-[10px] px-1 rounded ${
-                                s.bid_status === "quoted" ? "bg-blue-100 text-blue-700" :
-                                s.bid_status === "submitted" ? "bg-purple-100 text-purple-700" :
-                                "bg-gray-100 text-gray-600"
-                              }`}>{s.bid_status.toUpperCase()}</span>
-                            )}
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="font-mono text-xs text-accent">{s.nsn}</span>
+                              {s.bid_status && (
+                                <span className={`text-[10px] px-1 rounded ${
+                                  s.bid_status === "quoted" ? "bg-blue-100 text-blue-700" :
+                                  s.bid_status === "submitted" ? "bg-purple-100 text-purple-700" :
+                                  "bg-gray-100 text-gray-600"
+                                }`}>{s.bid_status.toUpperCase()}</span>
+                              )}
+                              {s.source === "ax" && <span className="text-[8px] px-1 rounded bg-green-50 text-green-600">AX</span>}
+                              {s.source === "masterdb" && <span className="text-[8px] px-1 rounded bg-purple-50 text-purple-600">MDB</span>}
+                              {s.data_source === "lamlinks" && <span className="text-[8px] px-1 rounded bg-cyan-50 text-cyan-700">LL</span>}
+                            </div>
                             <div className="text-xs truncate max-w-[180px]">{s.nomenclature || "—"}</div>
-                            {s.already_bid && (
-                              <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium">
-                                Already Bid{s.last_bid_price ? ` @$${s.last_bid_price.toFixed(2)}` : ""}{s.last_bid_date ? ` on ${formatDateShort(s.last_bid_date)}` : ""}
-                              </span>
-                            )}
-                            {s.procurement_type && s.procurement_type !== "RFQ" && (
-                              <span className="text-[9px] px-1 rounded bg-indigo-100 text-indigo-700 font-medium">{s.procurement_type}</span>
-                            )}
-                            {s.set_aside && !["None", "none", "no", "No", "N/A", ""].includes(s.set_aside?.trim()) && (
-                              <span className="text-[9px] px-1 rounded bg-amber-50 text-amber-700">{s.set_aside}</span>
-                            )}
-                            {s.data_source === "lamlinks" && (
-                              <span className="text-[9px] px-1 rounded bg-cyan-50 text-cyan-700 font-medium">LL</span>
-                            )}
-                            {(s as any).nsn_match && (
-                              <span className={`text-[9px] px-1 rounded font-medium ${
-                                (s as any).nsn_match.confidence === "HIGH" ? "bg-green-100 text-green-700" :
-                                (s as any).nsn_match.confidence === "MEDIUM" ? "bg-yellow-100 text-yellow-700" :
-                                "bg-gray-100 text-gray-600"
-                              }`}>
-                                {(s as any).nsn_match.confidence === "HIGH" ? "P/N" : "~P/N"}: {(s as any).nsn_match.matched_part_number || "?"}
-                              </span>
-                            )}
-                            {(s.award_count ?? 0) > 0 && (
-                              <span className="text-[9px] px-1 rounded bg-orange-50 text-orange-700" title={s.competitor_cage || ""}>{s.award_count} competitors</span>
-                            )}
+                            <div className="flex flex-wrap gap-0.5 mt-0.5">
+                              {s.already_bid && (
+                                <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium">
+                                  Already Bid{s.last_bid_price ? ` @$${s.last_bid_price.toFixed(2)}` : ""}{s.last_bid_date ? ` ${formatDateShort(s.last_bid_date)}` : ""}
+                                </span>
+                              )}
+                              {s.procurement_type && s.procurement_type !== "RFQ" && (
+                                <span className="text-[9px] px-1 rounded bg-indigo-100 text-indigo-700 font-medium">{s.procurement_type}</span>
+                              )}
+                              {s.set_aside && !["None", "none", "no", "No", "N/A", ""].includes(s.set_aside?.trim()) && (
+                                <span className="text-[9px] px-1 rounded bg-amber-50 text-amber-700">{s.set_aside}</span>
+                              )}
+                              {(s as any).nsn_match && (
+                                <span className={`text-[9px] px-1 rounded font-medium ${
+                                  (s as any).nsn_match.confidence === "HIGH" ? "bg-green-100 text-green-700" :
+                                  (s as any).nsn_match.confidence === "MEDIUM" ? "bg-yellow-100 text-yellow-700" :
+                                  "bg-gray-100 text-gray-600"
+                                }`}>
+                                  {(s as any).nsn_match.confidence === "HIGH" ? "P/N" : "~P/N"}: {(s as any).nsn_match.matched_part_number || "?"} via {(s as any).nsn_match.matched_source || "?"}
+                                </span>
+                              )}
+                              {(s.award_count ?? 0) > 0 && (
+                                <span className="text-[9px] px-1 rounded bg-orange-50 text-orange-700">{s.award_count} competitors{s.competitor_cage ? `: ${s.competitor_cage}` : ""}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -1177,12 +1181,12 @@ export function SolicitationsList({
                         {s.our_cost ? `$${s.our_cost.toFixed(2)}` : "—"}
                         {s.cost_source && <div className="text-[9px] text-muted/60 truncate max-w-[80px]">{s.cost_source}</div>}
                       </td>
-                      <td className="px-3 py-2 text-right font-mono font-medium text-green-600" title={s.price_source || ""}>
+                      <td className="px-3 py-2 text-right font-mono font-medium text-green-600">
                         {s.bid_status === "quoted" || s.bid_status === "submitted"
                           ? `$${(s.final_price || 0).toFixed(2)}`
                           : s.suggested_price ? `$${s.suggested_price.toFixed(2)}` : "—"}
-                        {s.price_source && !s.bid_status && (
-                          <div className="text-[9px] text-muted/60 font-normal truncate max-w-[100px]">{s.price_source}</div>
+                        {s.price_source && (
+                          <div className="text-[9px] text-muted/60 font-normal truncate max-w-[120px]">{s.price_source}</div>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">
