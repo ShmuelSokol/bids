@@ -47,7 +47,7 @@ async function getData() {
       for (let p = 0; p < 10; p++) {
         const { data } = await supabase
           .from("abe_bids_live")
-          .select("solicitation_number, bid_time")
+          .select("solicitation_number, bid_time, nsn, item_desc, bid_price, bid_qty, lead_days, bid_status, fob")
           .order("bid_time", { ascending: false })
           .gte("bid_time", since)
           .range(p * 1000, (p + 1) * 1000 - 1);
