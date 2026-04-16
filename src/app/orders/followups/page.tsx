@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Clock, Plus, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, Clock, Plus, Save, Trash2, Package, RefreshCw } from "lucide-react";
+import { formatDateShort } from "@/lib/dates";
 
 type OverduePO = {
   id: number;
@@ -30,17 +31,23 @@ export default function FollowupsPage() {
   const [defaultSla, setDefaultSla] = useState(7);
   const [loading, setLoading] = useState(true);
   const [editRule, setEditRule] = useState<Rule | null>(null);
+  const [axData, setAxData] = useState<any>(null);
+  const [axLoading, setAxLoading] = useState(true);
 
   async function reload() {
     setLoading(true);
-    const [ovRes, rulesRes] = await Promise.all([
+    setAxLoading(true);
+    const [ovRes, rulesRes, axRes] = await Promise.all([
       fetch("/api/orders/followups").then((r) => r.json()),
       fetch("/api/orders/followups/rules").then((r) => r.json()),
+      fetch("/api/invoicing/followups").then((r) => r.ok ? r.json() : null).catch(() => null),
     ]);
     setOverdue(ovRes.overdue || []);
     setDefaultSla(ovRes.default_sla || 7);
     setRules(rulesRes.rules || []);
+    setAxData(axRes);
     setLoading(false);
+    setAxLoading(false);
   }
   useEffect(() => {
     reload();
@@ -187,6 +194,140 @@ export default function FollowupsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Award ↔ PO status from AX */}
+      {axData && (
+        <>
+          <div className="grid grid-cols-4 gap-3">
+            <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+              <div className="text-lg font-bold text-green-700">{axData.awards_shipped_count || 0}</div>
+              <div className="text-[10px] text-green-600">Shipped to DLA</div>
+            </div>
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <div className="text-lg font-bold text-blue-700">{axData.awards_received_pending_count || 0}</div>
+              <div className="text-[10px] text-blue-600">Received from vendor</div>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="text-lg font-bold text-amber-700">{axData.awards_backorder?.length || 0}</div>
+              <div className="text-[10px] text-amber-600">PO Backorder — chase vendor</div>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+              <div className="text-lg font-bold text-red-700">{axData.awards_no_po?.length || 0}</div>
+              <div className="text-[10px] text-red-600">No PO — needs PO or in stock</div>
+            </div>
+          </div>
+
+          {axData.awards_no_po?.length > 0 && (
+            <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
+              <div className="px-6 py-3 bg-red-50 border-b border-card-border">
+                <h2 className="font-semibold text-red-800 flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  Awards without PO ({axData.awards_no_po.length}) — need PO creation or ship from stock
+                </h2>
+              </div>
+              <table className="w-full text-xs">
+                <thead className="text-muted border-b border-card-border">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium">Contract</th>
+                    <th className="px-4 py-2 text-left font-medium">NSN</th>
+                    <th className="px-4 py-2 text-right font-medium">Qty</th>
+                    <th className="px-4 py-2 text-right font-medium">Price</th>
+                    <th className="px-4 py-2 text-left font-medium">Awarded</th>
+                    <th className="px-4 py-2 text-left font-medium">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {axData.awards_no_po.slice(0, 100).map((a: any) => (
+                    <tr key={a.id} className="border-b border-card-border/40">
+                      <td className="px-4 py-1.5 font-mono text-[10px]">{a.contract_number}</td>
+                      <td className="px-4 py-1.5 font-mono">{a.fsc}-{a.niin}</td>
+                      <td className="px-4 py-1.5 text-right">{a.quantity}</td>
+                      <td className="px-4 py-1.5 text-right font-mono">${a.unit_price?.toFixed(2)}</td>
+                      <td className="px-4 py-1.5 text-muted">{formatDateShort(a.award_date)}</td>
+                      <td className="px-4 py-1.5 text-muted truncate max-w-[200px]">{a.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {axData.awards_no_po.length > 100 && <div className="px-6 py-1 text-[10px] text-muted">Showing first 100 of {axData.awards_no_po.length}</div>}
+            </div>
+          )}
+
+          {axData.awards_backorder?.length > 0 && (
+            <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
+              <div className="px-6 py-3 bg-amber-50 border-b border-card-border">
+                <h2 className="font-semibold text-amber-800 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Awards with PO on backorder ({axData.awards_backorder.length}) — chase vendor
+                </h2>
+              </div>
+              <table className="w-full text-xs">
+                <thead className="text-muted border-b border-card-border">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium">Contract</th>
+                    <th className="px-4 py-2 text-left font-medium">NSN</th>
+                    <th className="px-4 py-2 text-right font-medium">Qty</th>
+                    <th className="px-4 py-2 text-left font-medium">AX PO(s)</th>
+                    <th className="px-4 py-2 text-left font-medium">Supplier</th>
+                    <th className="px-4 py-2 text-left font-medium">Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {axData.awards_backorder.slice(0, 100).map((a: any) => (
+                    <tr key={a.id} className="border-b border-card-border/40">
+                      <td className="px-4 py-1.5 font-mono text-[10px]">{a.contract_number}</td>
+                      <td className="px-4 py-1.5 font-mono">{a.fsc}-{a.niin}</td>
+                      <td className="px-4 py-1.5 text-right">{a.quantity}</td>
+                      <td className="px-4 py-1.5 font-mono text-[10px]">
+                        {a.links?.map((l: any) => `${l.ax_po_number}/${l.ax_line_number}`).join(", ")}
+                      </td>
+                      <td className="px-4 py-1.5 font-mono text-[10px]">{a.links?.[0]?.supplier || "—"}</td>
+                      <td className="px-4 py-1.5">
+                        <span className={`text-[10px] px-1 rounded ${a.links?.[0]?.confidence === "high" ? "bg-green-100 text-green-700" : a.links?.[0]?.confidence === "medium" ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-600"}`}>
+                          {a.links?.[0]?.confidence || "?"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {axData.ax_po_count > 0 && (
+            <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">
+              <div className="px-6 py-3 border-b border-card-border">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Package className="h-4 w-4 text-blue-600" />
+                  Open DD219 government POs in AX ({axData.ax_po_count})
+                </h2>
+                <p className="text-[10px] text-muted mt-0.5">DD219-marked PO lines still in Backorder status. Data refreshed nightly from AX.</p>
+              </div>
+              <table className="w-full text-xs">
+                <thead className="text-muted border-b border-card-border">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium">AX PO #</th>
+                    <th className="px-4 py-2 text-right font-medium">Lines</th>
+                    <th className="px-4 py-2 text-right font-medium">Total</th>
+                    <th className="px-4 py-2 text-left font-medium">Earliest delivery</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {axData.ax_government_pos?.slice(0, 50).map((po: any) => (
+                    <tr key={po.po_number} className="border-b border-card-border/40">
+                      <td className="px-4 py-1.5 font-mono">{po.po_number}</td>
+                      <td className="px-4 py-1.5 text-right">{po.line_count}</td>
+                      <td className="px-4 py-1.5 text-right font-mono">${po.total?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-1.5 text-muted">{po.earliest_delivery ? formatDateShort(po.earliest_delivery) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+      {axLoading && !axData && <div className="text-center py-8 text-muted text-sm">Loading AX PO data...</div>}
 
       {editRule && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setEditRule(null)}>
