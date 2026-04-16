@@ -87,7 +87,7 @@ interface Counts {
   skipped: number;
 }
 
-type SortField = "value" | "margin" | "due" | "price" | "quantity" | "score";
+type SortField = "value" | "margin" | "due" | "posted" | "price" | "quantity" | "score";
 
 export function SolicitationsList({
   initialData,
@@ -722,6 +722,7 @@ export function SolicitationsList({
         case "value": return (av._potentialValue - bv._potentialValue) * dir;
         case "margin": return ((a.margin_pct || 0) - (b.margin_pct || 0)) * dir;
         case "due": return ((a.return_by_date || "").localeCompare(b.return_by_date || "")) * dir;
+        case "posted": return ((a.issue_date || "").localeCompare(b.issue_date || "")) * dir;
         case "price": return ((a.suggested_price || 0) - (b.suggested_price || 0)) * dir;
         case "quantity": return ((a.quantity || 0) - (b.quantity || 0)) * dir;
         default: return 0;
@@ -1076,6 +1077,7 @@ export function SolicitationsList({
                 <th className="px-3 py-2 text-center" title="DIBS AI score 0-100: cost confidence + margin quality + win probability (FSC heatmap) + value + timing. See /wiki/bidding-workflow."><SortHeader field="score">Score</SortHeader></th>
                 <th className="px-3 py-2 font-medium" title="Freight terms from DIBBS solicitation line — D=Destination (we pay shipping), O=Origin (buyer pays).">FOB</th>
                 <th className="px-3 py-2" title="Response-by date from DIBBS / LamLinks k10.closes_k10."><SortHeader field="due">Due</SortHeader></th>
+                <th className="px-3 py-2" title="Date DIBBS posted this solicitation (issue_date)."><SortHeader field="posted">Posted</SortHeader></th>
                 <th className="px-3 py-2 font-medium" title="Which data source flagged this solicitation — LL (LamLinks import, covers our subscribed 240 FSCs) or DIBBS (our scrape, covers the other 224).">Channel</th>
                 <th className="px-3 py-2 font-medium w-20"></th>
               </tr>
@@ -1236,6 +1238,7 @@ export function SolicitationsList({
                         )}
                       </td>
                       <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">{s.return_by_date}</td>
+                      <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">{s.issue_date || "—"}</td>
                       <td className="px-3 py-2">
                         <div className="flex flex-col gap-0.5">
                           {s.source === "ax" ? (
@@ -1282,7 +1285,7 @@ export function SolicitationsList({
                     {/* Inline edit row */}
                     {isEditing && (
                       <tr key={`edit-${s.id}`} className="border-b border-card-border bg-green-50/30">
-                        <td colSpan={filter === "quoted" ? 12 : 11} className="px-3 py-2">
+                        <td colSpan={filter === "quoted" ? 13 : 12} className="px-3 py-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-muted">Price:</span>
@@ -1317,7 +1320,7 @@ export function SolicitationsList({
                         used in the detail panel) */}
                     {expandedNsn === s.nsn && (
                       <tr key={`hist-${s.id}`} className="border-b border-card-border bg-blue-50/20">
-                        <td colSpan={filter === "quoted" ? 12 : 11} className="px-3 py-2">
+                        <td colSpan={filter === "quoted" ? 13 : 12} className="px-3 py-2">
                           <NsnHistoryDetail nsn={s.nsn} />
                         </td>
                       </tr>
@@ -1326,7 +1329,7 @@ export function SolicitationsList({
                     {/* Detail / Bid Panel */}
                     {detailId === s.id && (
                       <tr key={`detail-${s.id}`} className="border-b border-card-border bg-white">
-                        <td colSpan={filter === "quoted" ? 12 : 11} className="p-0">
+                        <td colSpan={filter === "quoted" ? 13 : 12} className="p-0">
                           <div className="p-4 border-t-2 border-accent/30">
                             {/* Header */}
                             <div className="flex items-start justify-between mb-3">
@@ -1500,7 +1503,7 @@ export function SolicitationsList({
                     {/* Supplier Search Results */}
                     {supplierSearchId === s.id && (
                       <tr key={`sup-${s.id}`} className="border-b border-card-border bg-indigo-50/20">
-                        <td colSpan={filter === "quoted" ? 12 : 11} className="px-3 py-3">
+                        <td colSpan={filter === "quoted" ? 13 : 12} className="px-3 py-3">
                           {loadingSuppliers ? (
                             <div className="flex items-center gap-2 py-4 justify-center">
                               <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
