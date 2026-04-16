@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
-import { fetchAxByMonth } from "@/lib/ax-fetch";
 
 /**
  * GET /api/invoicing/followups
@@ -24,21 +23,7 @@ import { fetchAxByMonth } from "@/lib/ax-fetch";
  * be manageable; add later if needed).
  */
 
-async function getAxToken() {
-  const params = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: process.env.AX_CLIENT_ID!,
-    client_secret: process.env.AX_CLIENT_SECRET!,
-    scope: `${process.env.AX_D365_URL}/.default`,
-  });
-  const r = await fetch(
-    `https://login.microsoftonline.com/${process.env.AX_TENANT_ID}/oauth2/v2.0/token`,
-    { method: "POST", body: params }
-  );
-  const d: any = await r.json();
-  if (!d.access_token) throw new Error("AX auth failed");
-  return d.access_token;
-}
+
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -86,66 +71,57 @@ export async function GET() {
   }
   postedInvoices.sort((a, b) => b.days_since_posted - a.days_since_posted);
 
-  // ---- Section 2: AX government POs (DD219-marked) ----
+  // ---- Section 2: DD219 government POs (from Supabase cache) ----
+  // Data refreshed nightly from AX by scripts/refresh-all-catalogs.ts.
+  // No more live AX query — faster, no timeout risk, no 1000-row cap.
   let axPos: any[] = [];
   let axError: string | null = null;
   let axTruncated = false;
   try {
-    const token = await getAxToken();
-    const D = process.env.AX_D365_URL!;
-    // Pull lines marked with DD219 customer requisition, group by PO.
-    // Filter to Backorder status so we see open/unreceived only.
-    // Case-insensitive match — observed 'DD219' + 'dd219' variants in
-    // a 1000-row sample; toupper() catches both.
-    //
-    // AX OData has a hidden 1000-row cap per filtered query with no
-    // @odata.nextLink beyond that (see docs/gotchas.md). Walk by month
-    // on CreatedDateTime so each slice stays under the cap. 24 months
-    // covers the oldest still-open Backorder line we're likely to see.
-    const { rows: lines, truncated } = await fetchAxByMonth(token, {
-      D365_URL: D,
-      entity: "PurchaseOrderLinesV2",
-      dateField: "CreatedDateTime",
-      monthsBack: 24,
-      baseFilter: "toupper(CustomerRequisitionNumber) eq 'DD219' and PurchaseOrderLineStatus eq 'Backorder'",
-      select: [
-        "PurchaseOrderNumber","LineNumber","ItemNumber","LineDescription",
-        "OrderedPurchaseQuantity","PurchasePrice","RequestedDeliveryDate",
-        "ConfirmedDeliveryDate","PurchaseOrderLineStatus","CreatedDateTime",
-      ],
-    });
-    axTruncated = truncated;
-    {
-      const byPO: Record<string, any> = {};
-      for (const line of lines) {
-        const pn = line.PurchaseOrderNumber;
-        if (!byPO[pn]) {
-          byPO[pn] = {
-            po_number: pn,
-            line_count: 0,
-            total: 0,
-            earliest_delivery: null as string | null,
-            lines: [] as any[],
-          };
-        }
-        byPO[pn].line_count++;
-        byPO[pn].total += (line.PurchasePrice || 0) * (line.OrderedPurchaseQuantity || 0);
-        const reqDelivery = line.RequestedDeliveryDate;
-        if (reqDelivery && reqDelivery !== "1900-01-01T12:00:00Z") {
-          if (!byPO[pn].earliest_delivery || reqDelivery < byPO[pn].earliest_delivery) {
-            byPO[pn].earliest_delivery = reqDelivery;
-          }
-        }
-        byPO[pn].lines.push(line);
+    const allLines: any[] = [];
+    for (let p = 0; p < 20; p++) {
+      const { data } = await supabase
+        .from("dd219_open_pos")
+        .select("*")
+        .eq("line_status", "Backorder")
+        .range(p * 1000, (p + 1) * 1000 - 1);
+      if (!data || data.length === 0) break;
+      allLines.push(...data);
+      if (data.length < 1000) break;
+    }
+    const byPO: Record<string, any> = {};
+    for (const line of allLines) {
+      const pn = line.po_number;
+      if (!byPO[pn]) {
+        byPO[pn] = { po_number: pn, line_count: 0, total: 0, earliest_delivery: null as string | null, lines: [] as any[] };
       }
-      axPos = Object.values(byPO).sort((a: any, b: any) => {
-        if (!a.earliest_delivery) return 1;
-        if (!b.earliest_delivery) return -1;
-        return a.earliest_delivery.localeCompare(b.earliest_delivery);
+      byPO[pn].line_count++;
+      byPO[pn].total += (line.purchase_price || 0) * (line.ordered_qty || 0);
+      const reqDelivery = line.requested_delivery;
+      if (reqDelivery && reqDelivery !== "1900-01-01T12:00:00Z") {
+        if (!byPO[pn].earliest_delivery || reqDelivery < byPO[pn].earliest_delivery) {
+          byPO[pn].earliest_delivery = reqDelivery;
+        }
+      }
+      byPO[pn].lines.push({
+        PurchaseOrderNumber: line.po_number,
+        LineNumber: line.line_number,
+        ItemNumber: line.item_number,
+        LineDescription: line.line_description,
+        OrderedPurchaseQuantity: line.ordered_qty,
+        PurchasePrice: line.purchase_price,
+        RequestedDeliveryDate: line.requested_delivery,
+        ConfirmedDeliveryDate: line.confirmed_delivery,
+        PurchaseOrderLineStatus: line.line_status,
       });
     }
+    axPos = Object.values(byPO).sort((a: any, b: any) => {
+      if (!a.earliest_delivery) return 1;
+      if (!b.earliest_delivery) return -1;
+      return a.earliest_delivery.localeCompare(b.earliest_delivery);
+    });
   } catch (e: any) {
-    axError = e?.message || "AX lookup failed";
+    axError = e?.message || "DD219 lookup failed";
   }
 
   // ---- Section 3: award ↔ PO linkage status ----

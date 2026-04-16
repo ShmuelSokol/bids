@@ -237,6 +237,58 @@ async function refreshVendorParts(token: string) {
   await sb.from("sync_log").insert({ action: "vendor_parts_refresh", details: { pulled: rows.length, upserted: saved, with_nsn: withNsn } });
 }
 
+async function refreshDd219Pos(token: string) {
+  console.log("\n=== 5. dd219_open_pos (AX DD219 Backorder PO lines) ===");
+  const D = process.env.AX_D365_URL!;
+  // Backorder-status DD219 lines = currently-open POs. Count should be
+  // well under 1000 (only currently unreceived items). If it hits the
+  // cap, fetchAxPaginated will warn and we'll need to month-chunk.
+  // PurchaseOrderLineStatus is a string enum in OData V2 — just use string comparison
+  const filter = encodeURIComponent("(CustomerRequisitionNumber eq 'DD219' or CustomerRequisitionNumber eq 'dd219')");
+  const { rows, truncated } = await fetchAxPaginated(token,
+    `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=${filter}&$select=PurchaseOrderNumber,LineNumber,ItemNumber,LineDescription,OrderedPurchaseQuantity,PurchasePrice,RequestedDeliveryDate,ConfirmedDeliveryDate,PurchaseOrderLineStatus`,
+    { label: "DD219 Backorder lines" });
+  console.log(`  Pulled ${rows.length} DD219 Backorder lines from AX`);
+  if (truncated) console.warn("  ⚠ Truncation detected");
+
+  // Build NSN lookup
+  const nsnByItem = new Map<string, string>();
+  for (let p = 0; p < 30; p++) {
+    const { data } = await sb.from("nsn_catalog").select("nsn, source").range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      const item = r.source?.replace("AX:", "") || null;
+      if (item && r.nsn) nsnByItem.set(item, r.nsn);
+    }
+    if (data.length < 1000) break;
+  }
+
+  await sb.from("dd219_open_pos").delete().not("po_number", "is", null);
+  const upserts = rows.map((r: any) => ({
+    po_number: r.PurchaseOrderNumber,
+    line_number: r.LineNumber?.toString() || null,
+    item_number: r.ItemNumber?.trim() || null,
+    line_description: r.LineDescription?.trim() || null,
+    ordered_qty: r.OrderedPurchaseQuantity || null,
+    purchase_price: r.PurchasePrice || null,
+    requested_delivery: r.RequestedDeliveryDate || null,
+    confirmed_delivery: r.ConfirmedDeliveryDate || null,
+    line_status: r.PurchaseOrderLineStatus || null,
+    nsn: nsnByItem.get(r.ItemNumber?.trim()) || null,
+    created_datetime: r.CreatedDateTime || null,
+    updated_at: new Date().toISOString(),
+  }));
+
+  let saved = 0;
+  for (let i = 0; i < upserts.length; i += 500) {
+    const { error } = await sb.from("dd219_open_pos").insert(upserts.slice(i, i + 500));
+    if (error) console.error(`  batch ${i} error:`, error.message);
+    else saved += upserts.slice(i, i + 500).length;
+  }
+  console.log(`  Saved ${saved} rows to dd219_open_pos`);
+  await sb.from("sync_log").insert({ action: "dd219_open_pos_refresh", details: { pulled: rows.length, saved, truncated } });
+}
+
 async function main() {
   console.log("=== CATALOG REFRESH ===");
   console.log("Time:", new Date().toISOString());
@@ -248,6 +300,7 @@ async function main() {
   if (!ONLY || ONLY === "publog") await refreshPublog();
   if (!ONLY || ONLY === "usaspending") await refreshUsaspending();
   if (!ONLY || ONLY === "vendor_parts") await refreshVendorParts(token);
+  if (!ONLY || ONLY === "dd219") await refreshDd219Pos(token);
 
   console.log("\nDone!");
 }

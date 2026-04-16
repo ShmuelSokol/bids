@@ -19,21 +19,7 @@ import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
  *   - Supabase publog_nsns (item spec)
  */
 
-async function getAxToken() {
-  const params = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: process.env.AX_CLIENT_ID!,
-    client_secret: process.env.AX_CLIENT_SECRET!,
-    scope: `${process.env.AX_D365_URL}/.default`,
-  });
-  const r = await fetch(
-    `https://login.microsoftonline.com/${process.env.AX_TENANT_ID}/oauth2/v2.0/token`,
-    { method: "POST", body: params }
-  );
-  const d: any = await r.json();
-  if (!d.access_token) throw new Error("AX auth failed");
-  return d.access_token;
-}
+
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -59,26 +45,22 @@ export async function GET(req: NextRequest) {
     supabase.from("publog_nsns").select("*").eq("nsn", nsn).maybeSingle(),
   ]);
 
-  // AX live probe
+  // AX data from cached nsn_catalog + vendor_parts (refreshed nightly)
   let axItem: any = null;
   let axError: string | null = null;
-  try {
-    const token = await getAxToken();
-    const D = process.env.AX_D365_URL!;
-    if (digits.length === 13) {
-      const url = `${D}/data/ProductBarcodesV3?cross-company=true&$filter=BarcodeSetupId eq 'NSN' and Barcode eq '${digits}'&$select=Barcode,ItemNumber,ProductDescription,ProductQuantity,ProductQuantityUnitSymbol`;
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (r.ok) {
-        const d: any = await r.json();
-        axItem = d.value?.[0] || null;
-      } else {
-        axError = `AX HTTP ${r.status}`;
-      }
-    } else {
-      axError = `NSN digits length ${digits.length} — expected 13`;
-    }
-  } catch (e: any) {
-    axError = e?.message || "AX lookup failed";
+  const { data: catalogRow } = await supabase.from("nsn_catalog").select("nsn, source, description").eq("nsn", nsn).maybeSingle();
+  if (catalogRow) {
+    const itemNumber = catalogRow.source?.replace("AX:", "") || null;
+    // Get vendor parts for this item
+    const { data: vparts } = await supabase.from("vendor_parts").select("vendor_account, vendor_part_number, vendor_description").eq("nsn", nsn).limit(20);
+    axItem = {
+      Barcode: digits,
+      ItemNumber: itemNumber,
+      ProductDescription: catalogRow.description,
+      vendors: vparts || [],
+    };
+  } else {
+    axError = "Not in nsn_catalog (not matched in AX)";
   }
 
   return NextResponse.json({

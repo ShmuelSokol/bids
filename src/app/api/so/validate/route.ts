@@ -19,21 +19,7 @@ import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
  *        OR omit batch_id to validate the most recent batch.
  */
 
-async function getAxToken() {
-  const params = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: process.env.AX_CLIENT_ID!,
-    client_secret: process.env.AX_CLIENT_SECRET!,
-    scope: `${process.env.AX_D365_URL}/.default`,
-  });
-  const r = await fetch(
-    `https://login.microsoftonline.com/${process.env.AX_TENANT_ID}/oauth2/v2.0/token`,
-    { method: "POST", body: params }
-  );
-  const d: any = await r.json();
-  if (!d.access_token) throw new Error("AX auth failed: " + d.error_description);
-  return d.access_token;
-}
+// AX auth removed — SO validation now uses cached nsn_catalog instead of live AX queries
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -81,29 +67,16 @@ export async function POST(req: NextRequest) {
     .in("dodaac", Array.from(dodaacsOnFile));
   const knownDodaacs = new Set((knownDodaacRows || []).map((r: any) => r.dodaac));
 
-  // 2. NSN check against AX ProductBarcodesV3
-  const nsnsOnFile = new Set(rows.map((r) => (r.nsn || "").trim()).filter(Boolean));
-  const digitsMap = new Map<string, string>(); // digits → display nsn
-  for (const nsn of nsnsOnFile) {
-    const digits = nsn.replace(/-/g, "");
-    if (digits.length === 13) digitsMap.set(digits, nsn);
-  }
+  // 2. NSN check against cached nsn_catalog (refreshed nightly from AX)
+  const nsnsOnFile = [...new Set(rows.map((r) => (r.nsn || "").trim()).filter(Boolean))];
   const foundNsns = new Set<string>();
-  try {
-    const token = await getAxToken();
-    const D = process.env.AX_D365_URL!;
-    const digitsArr = Array.from(digitsMap.keys());
-    for (let i = 0; i < digitsArr.length; i += 40) {
-      const chunk = digitsArr.slice(i, i + 40);
-      const filter = chunk.map((d) => `Barcode eq '${d}'`).join(" or ");
-      const url = `${D}/data/ProductBarcodesV3?cross-company=true&$filter=BarcodeSetupId eq 'NSN' and (${encodeURIComponent(filter)})&$select=Barcode,ItemNumber`;
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) continue;
-      const d: any = await r.json();
-      for (const row of d.value || []) if (row.Barcode) foundNsns.add(row.Barcode);
+  for (let i = 0; i < nsnsOnFile.length; i += 500) {
+    const chunk = nsnsOnFile.slice(i, i + 500);
+    const { data } = await supabase.from("nsn_catalog").select("nsn").in("nsn", chunk);
+    for (const r of data || []) {
+      const digits = r.nsn.replace(/-/g, "");
+      foundNsns.add(digits);
     }
-  } catch (e: any) {
-    console.error("AX NSN lookup failed:", e?.message);
   }
 
   // Bucket the awards
