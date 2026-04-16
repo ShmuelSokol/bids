@@ -102,6 +102,24 @@ Public paths (no auth required):
 
 Everything else — dashboard, solicitations, orders, wiki — requires login.
 
+## Key pages and what they do
+
+| Route | Purpose |
+|-------|---------|
+| `/` (dashboard) | Sourceable count, today's bids, bid potential, sync controls |
+| `/solicitations` | Abe's working list — Sourceable/Quoted/Submitted/Skipped tabs. Default: DIBBS-only (SPE\* prefix). Toggle to show all including W\* (Army, not bidable via LamLinks). |
+| `/solicitations/[id]` | Detail panel — cost waterfall, award history, bid form |
+| `/bids/today` | Abe's bids placed today (display-only, reads abe_bids_live) |
+| `/orders` | Awards → PO generation. Group by supplier, supplier-switch per line |
+| `/orders/followups` | PO follow-up surface |
+| `/invoicing` | Invoice state monitor — tracks LamLinks kad_tab state transitions |
+| `/invoicing/followups` | **New 2026-04-16.** Three panels: (1) posted invoices awaiting DLA payment (amber 21-30d / red >30d), (2) award↔PO linkage buckets (no PO / backorder / received / shipped), (3) open DD219 government POs in AX |
+| `/lookup` | **New 2026-04-16.** NSN probe — enter any NSN, queries every source live: AX barcodes, nsn_costs, vendor prices, awards, bids, solicitations, PUB LOG. Debug tool for "is the bug in DIBS or the source?" |
+| `/so` | Sales order pre-validation — upload awards, check DODAAC + NSN match in AX before handing to Yosef's MPI |
+| `/shipping` | Shipping status tracker |
+| `/settings/*` | Admin: FSC codes, DIBBS sync, import, suppliers, activity log, bugs |
+| `/wiki` | Auto-rendered from `docs/*.md` — overview, architecture, data-sources, pricing, workflow, gotchas |
+
 ## Background jobs
 
 Jobs live in the `background_jobs` Supabase table. The processor at `/api/jobs/process` runs every 10 minutes (via GitHub Actions) and pulls 2 jobs per type (fair rotation):
