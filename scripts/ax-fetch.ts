@@ -73,9 +73,23 @@ export async function fetchAxPaginated(
  *     select: ["PurchaseOrderNumber", "AccountingDate"],
  *   });
  *
- * Returns the union of all rows, with truncated=true if any single
- * month hit the cap (which means a month had >1000 rows).
+ * Auto-narrows: if a monthly chunk hits the 1000-row cap, it
+ * automatically re-fetches that month in weekly slices so no data
+ * is lost.
  */
+
+function buildUrl(
+  D365_URL: string, entity: string, dateField: string,
+  start: Date, end: Date, baseFilter?: string,
+  select?: string[], orderBy?: string,
+): string {
+  const dateClause = `${dateField} ge ${start.toISOString()} and ${dateField} lt ${end.toISOString()}`;
+  const filter = baseFilter ? `(${baseFilter}) and ${dateClause}` : dateClause;
+  const selectPart = select ? `&$select=${select.join(",")}` : "";
+  const orderPart = orderBy ? `&$orderby=${encodeURIComponent(orderBy)}` : "";
+  return `${D365_URL}/data/${entity}?cross-company=true&$top=1000&$filter=${encodeURIComponent(filter)}${selectPart}${orderPart}`;
+}
+
 export async function fetchAxByMonth(
   token: string,
   opts: {
@@ -98,15 +112,32 @@ export async function fetchAxByMonth(
     end.setUTCMonth(end.getUTCMonth() - m);
     const start = new Date(end);
     start.setUTCMonth(end.getUTCMonth() - 1);
-    const dateClause = `${dateField} ge ${start.toISOString()} and ${dateField} lt ${end.toISOString()}`;
-    const filter = baseFilter ? `(${baseFilter}) and ${dateClause}` : dateClause;
-    const selectPart = select ? `&$select=${select.join(",")}` : "";
-    const orderPart = orderBy ? `&$orderby=${encodeURIComponent(orderBy)}` : "";
-    const url = `${D365_URL}/data/${entity}?cross-company=true&$top=1000&$filter=${encodeURIComponent(filter)}${selectPart}${orderPart}`;
-    const result = await fetchAxPaginated(token, url, { label: `${entity} [${start.toISOString().slice(0, 7)}]` });
-    rows.push(...result.rows);
-    if (result.truncated) truncated = true;
-    pageCount += result.pageCount;
+    const label = `${entity} [${start.toISOString().slice(0, 7)}]`;
+    const url = buildUrl(D365_URL, entity, dateField, start, end, baseFilter, select, orderBy);
+    const result = await fetchAxPaginated(token, url, { label });
+
+    if (result.truncated) {
+      // Month exceeded the cap — re-fetch in ~weekly slices
+      console.warn(`  ↻ Auto-narrowing ${label} into weekly slices...`);
+      const msPerWeek = 7 * 86_400_000;
+      let weekStart = start.getTime();
+      const monthEnd = end.getTime();
+      while (weekStart < monthEnd) {
+        const weekEnd = Math.min(weekStart + msPerWeek, monthEnd);
+        const ws = new Date(weekStart);
+        const we = new Date(weekEnd);
+        const weekLabel = `${entity} [${ws.toISOString().slice(0, 10)}→${we.toISOString().slice(0, 10)}]`;
+        const weekUrl = buildUrl(D365_URL, entity, dateField, ws, we, baseFilter, select, orderBy);
+        const weekResult = await fetchAxPaginated(token, weekUrl, { label: weekLabel });
+        rows.push(...weekResult.rows);
+        if (weekResult.truncated) truncated = true;
+        pageCount += weekResult.pageCount;
+        weekStart = weekEnd;
+      }
+    } else {
+      rows.push(...result.rows);
+      pageCount += result.pageCount;
+    }
   }
   return { rows, truncated, pageCount };
 }
