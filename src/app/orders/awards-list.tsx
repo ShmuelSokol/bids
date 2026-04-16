@@ -366,7 +366,7 @@ export function AwardsList({
           </button>
           <div className="rounded-lg border border-card-border bg-card-bg p-3 text-left">
             <div className="text-lg font-bold text-foreground">{shipStats.total.toLocaleString()}</div>
-            <div className="text-[10px] text-muted">Total</div>
+            <div className="text-[10px] text-muted">Total (6 months)</div>
           </div>
         </div>
       )}

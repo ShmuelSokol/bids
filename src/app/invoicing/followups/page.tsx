@@ -29,11 +29,25 @@ export default function InvoiceFollowupsPage() {
   const [loading, setLoading] = useState(true);
   const [expandedPo, setExpandedPo] = useState<string | null>(null);
 
+  const [error, setError] = useState<string | null>(null);
   async function load() {
     setLoading(true);
+    setError(null);
     try {
       const r = await fetch("/api/invoicing/followups");
+      if (!r.ok) {
+        const text = await r.text();
+        setError(`HTTP ${r.status}: ${text.slice(0, 200)}`);
+        return;
+      }
+      const contentType = r.headers.get("content-type") || "";
+      if (!contentType.includes("json")) {
+        setError(`Expected JSON, got ${contentType}. Response may be a login redirect.`);
+        return;
+      }
       setData(await r.json());
+    } catch (e: any) {
+      setError(e?.message || "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -61,6 +75,16 @@ export default function InvoiceFollowupsPage() {
           <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh
         </button>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+          <strong>Error loading follow-ups:</strong> {error}
+        </div>
+      )}
+
+      {loading && !data && !error && (
+        <div className="text-center py-12 text-muted">Loading follow-up data...</div>
+      )}
 
       {data && (
         <>

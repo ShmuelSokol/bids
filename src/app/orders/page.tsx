@@ -5,14 +5,17 @@ import { computeMarginPct } from "@/lib/margin";
 async function getData() {
   const supabase = createServiceClient();
 
-  // Load ALL our awards — no arbitrary date cutoff. Abe needs to see
-  // awards from months ago that might still need POs or follow-up.
+  // Load last 6 months of awards. Older awards without ship_status
+  // (~19K with null) clutter the page. 6 months covers all actionable
+  // items. The date picker on the page lets Abe go further back.
+  const sinceIso = new Date(Date.now() - 180 * 86400000).toISOString();
   const awards: any[] = [];
-  for (let p = 0; p < 100; p++) {
+  for (let p = 0; p < 20; p++) {
     const { data } = await supabase
       .from("awards")
       .select("*")
       .eq("cage", "0AG09")
+      .gte("award_date", sinceIso)
       .order("award_date", { ascending: false })
       .range(p * 1000, (p + 1) * 1000 - 1);
     if (!data || data.length === 0) break;
