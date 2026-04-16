@@ -38,7 +38,25 @@ async function getData() {
     supabase.from("dibbs_solicitations").select("*", { count: "exact", head: true }),
     supabase.from("dibbs_solicitations").select("*", { count: "exact", head: true }).eq("is_sourceable", false),
     supabase.from("bid_decisions").select("solicitation_number, nsn, status").then((r: any) => r.data || []),
-    supabase.from("abe_bids_live").select("*").order("bid_time", { ascending: false }).gte("bid_time", new Date().toISOString().split("T")[0]).then((r: any) => r.data || []),
+    // 30-day window for dedup — must match /solicitations page.
+    // Today-only was missing bids Abe placed yesterday/last week,
+    // inflating the sourceable count by ~290.
+    (async () => {
+      const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const all: any[] = [];
+      for (let p = 0; p < 10; p++) {
+        const { data } = await supabase
+          .from("abe_bids_live")
+          .select("solicitation_number, bid_time")
+          .order("bid_time", { ascending: false })
+          .gte("bid_time", since)
+          .range(p * 1000, (p + 1) * 1000 - 1);
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < 1000) break;
+      }
+      return all;
+    })(),
   ]);
 
   const totalCount = totalCountRes.count || 0;
@@ -82,7 +100,9 @@ async function getData() {
     .select("*", { count: "exact", head: true })
     .eq("bucket", "hot");
 
-  const todayBids = liveBids;
+  // Today's bids for display (separate from 30d dedup set)
+  const todayStr = new Date().toISOString().split("T")[0];
+  const todayBids = liveBids.filter((b: any) => b.bid_time >= todayStr);
   const todayBidValue = todayBids.reduce((s: number, b: any) => s + (b.bid_price || 0) * (b.bid_qty || 1), 0);
 
   return {
