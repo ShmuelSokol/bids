@@ -49,21 +49,28 @@ async function getData() {
     loadAllByFlag(true),
     loadAllByFlag(false, 8), // cap unsourced at 8K — UI doesn't need them all
 
-    supabase.from("bid_decisions").select("*").then((r: any) => r.data || []),
+    paginateAll(supabase, "bid_decisions", "*"),
     // Pull last 30 days of bids (not just today) so yesterday's/
     // Monday's bids correctly dedup solicitations off the Sourceable
-    // list. Before this fix Abe's Monday bid on a 4/17-due sol still
-    // showed as sourceable on Wednesday because the bid_time was
-    // older than today's midnight.
-    supabase
-      .from("abe_bids_live")
-      .select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number")
-      .order("bid_time", { ascending: false })
-      .gte("bid_time", new Date(Date.now() - 30 * 86_400_000).toISOString())
-      .then((r: any) => r.data || []),
+    // list. Paginated — ~50 bids/day × 30 = ~1500, can exceed 1000.
+    (async () => {
+      const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const all: any[] = [];
+      for (let p = 0; p < 10; p++) {
+        const { data } = await supabase
+          .from("abe_bids_live")
+          .select("nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number")
+          .order("bid_time", { ascending: false })
+          .gte("bid_time", since)
+          .range(p * 1000, (p + 1) * 1000 - 1);
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < 1000) break;
+      }
+      return all;
+    })(),
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
-    // NSN matches for unsourceable items
-    supabase.from("nsn_matches").select("nsn, match_type, confidence, matched_part_number, matched_description, matched_source").limit(1000).then((r: any) => r.data || []),
+    paginateAll(supabase, "nsn_matches", "nsn, match_type, confidence, matched_part_number, matched_description, matched_source"),
   ]);
 
   // Merge sourceable + recent unsourceable

@@ -30,20 +30,32 @@ async function getData() {
   }
   const awards = allAwards;
 
-  // PO lines with cost/sell data
-  const { data: poLines } = await supabase
-    .from("po_lines")
-    .select("*, purchase_orders(po_number, supplier, status, created_by)")
-    .order("id", { ascending: false })
-    .limit(1000);
+  // PO lines with cost/sell data — paginate to avoid 1000-row cap
+  const allPoLines: any[] = [];
+  for (let p = 0; p < 20; p++) {
+    const { data } = await supabase
+      .from("po_lines")
+      .select("*, purchase_orders(po_number, supplier, status, created_by)")
+      .order("id", { ascending: false })
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allPoLines.push(...data);
+    if (data.length < 1000) break;
+  }
 
-  // Load bid decisions that were submitted (these map to contracts we need to invoice)
-  const { data: submittedBids } = await supabase
-    .from("bid_decisions")
-    .select("*")
-    .eq("status", "submitted")
-    .order("updated_at", { ascending: false })
-    .limit(500);
+  // Load bid decisions that were submitted — paginate
+  const allSubmitted: any[] = [];
+  for (let p = 0; p < 20; p++) {
+    const { data } = await supabase
+      .from("bid_decisions")
+      .select("*")
+      .eq("status", "submitted")
+      .order("updated_at", { ascending: false })
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allSubmitted.push(...data);
+    if (data.length < 1000) break;
+  }
 
   // Sync log for last invoice generation
   const { data: lastInvoiceSync } = await supabase
@@ -56,8 +68,8 @@ async function getData() {
 
   return {
     awards: awards || [],
-    poLines: poLines || [],
-    submittedBids: submittedBids || [],
+    poLines: allPoLines,
+    submittedBids: allSubmitted,
     lastInvoiceSync,
   };
 }

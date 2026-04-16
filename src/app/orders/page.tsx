@@ -38,13 +38,18 @@ async function getData() {
     if (c.cost > 0) costMap.set(c.nsn, c.cost);
   }
 
-  // Load existing POs (select * brings in the new ax_po_number,
-  // ax_correlation_ref, dmf_state, dmf_last_polled_at, dmf_error,
-  // last_followup_at columns automatically)
-  const { data: pos } = await supabase
-    .from("purchase_orders")
-    .select("*, po_lines(*)")
-    .order("created_at", { ascending: false });
+  // Load existing POs — paginate to avoid 1000-row cap
+  const allPos: any[] = [];
+  for (let p = 0; p < 20; p++) {
+    const { data } = await supabase
+      .from("purchase_orders")
+      .select("*, po_lines(*)")
+      .order("created_at", { ascending: false })
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allPos.push(...data);
+    if (data.length < 1000) break;
+  }
 
   // Enrich awards with cost/margin
   const enriched = awards.map((a: any) => {
@@ -58,7 +63,7 @@ async function getData() {
     };
   });
 
-  return { awards: enriched, purchaseOrders: pos || [] };
+  return { awards: enriched, purchaseOrders: allPos };
 }
 
 export default async function OrdersPage() {
