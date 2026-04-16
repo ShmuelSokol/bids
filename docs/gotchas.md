@@ -218,7 +218,9 @@ The cookie-write is in a try/catch because `cookies().set()` throws in page/rend
 
 **Burned again (2026-04-16):** the 2026-04-15 fix updated `/solicitations` but missed the dashboard (`src/app/page.tsx`). Dashboard was still using `.gte("bid_time", today)` for dedup, so 290 items Abe bid on in the past 30 days (but not today) still showed as sourceable on the dashboard. Result: dashboard said 345, /solicitations said 55. Fix: dashboard now uses the same 30-day window.
 
-**Lesson:** the shape of the data matters more than the staleness. Dedup by identity field, display by time field. And when you fix a shared-logic bug on one page, grep for every other page that does the same query — the dashboard and /solicitations BOTH dedup against abe_bids_live and both must use the same window.
+**Also found (2026-04-16):** `abe_bids` (historical) had exactly 10,000 rows from a one-time import — never refreshed. Enrichment used only `abe_bids` for setting `already_bid`, missing recent bids in `abe_bids_live`. Fix: sync script now writes to both tables, and enrichment checks both.
+
+**Lesson:** the shape of the data matters more than the staleness. Dedup by identity field, display by time field. When you fix a shared-logic bug on one page, grep for every other page that does the same query. And when you see an exact round number (10,000, 1,000, 500), assume it's a cap until proven otherwise.
 
 ## Why we don't add native packages to package.json
 
