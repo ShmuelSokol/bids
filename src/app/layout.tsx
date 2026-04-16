@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
 import { BugReporter } from "@/components/bug-reporter";
+import { ErrorCapture } from "@/components/error-capture";
 import { ActivityTracker } from "@/components/activity-tracker";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { NotificationBar } from "@/components/notification-bar";
@@ -78,6 +79,7 @@ export default async function RootLayout({
         </div>
         {showChrome && <BugReporter />}
         {showChrome && <ActivityTracker />}
+        <ErrorCapture />
         {showChrome && <AutoRefresh intervalMs={60000} />}
       </body>
     </html>
