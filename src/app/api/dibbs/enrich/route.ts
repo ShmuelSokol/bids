@@ -67,6 +67,8 @@ function interpolateMarkup(cost: number): number {
 
 export async function POST(req: Request) {
   const supabase = createServiceClient();
+  const url = new URL(req.url);
+  const repriceMode = url.searchParams.get("reprice") === "1";
 
   // Optional injected MDB NSN set. The LamLinks import chain fetches
   // the MDB export ONCE at the top, then passes the array here so 30
@@ -253,7 +255,7 @@ export async function POST(req: Request) {
   // Railway's ~30s request timeout. With 17K+ rows we'd hit a 502; this
   // way each call processes up to MAX_PAGES * 1000 rows and the caller
   // can chain calls until `remaining` hits 0.
-  const MAX_PAGES = 2; // process up to 2,000 unsourced rows per call (Railway 30s budget)
+  const MAX_PAGES = 2;
   const solicitations: Array<{
     id: number;
     nsn: string;
@@ -264,11 +266,16 @@ export async function POST(req: Request) {
   }> = [];
   let solPage = 0;
   while (solPage < MAX_PAGES) {
-    const { data: batch } = await supabase
+    let q = supabase
       .from("dibbs_solicitations")
       .select("id, nsn, nomenclature, quantity, fsc, solicitation_number")
-      .eq("is_sourceable", false)
       .range(solPage * 1000, (solPage + 1) * 1000 - 1);
+    if (repriceMode) {
+      q = q.eq("is_sourceable", true);
+    } else {
+      q = q.eq("is_sourceable", false);
+    }
+    const { data: batch } = await q;
     if (!batch || batch.length === 0) break;
     solicitations.push(...batch);
     if (batch.length < 1000) break;
@@ -276,11 +283,11 @@ export async function POST(req: Request) {
   }
   // Quick count of how many unsourced rows still exist after this batch
   // so the caller knows whether to call again.
-  const { count: stillUnsourced } = await supabase
-    .from("dibbs_solicitations")
-    .select("id", { count: "exact", head: true })
-    .eq("is_sourceable", false);
-  const remainingAfterThisCall = Math.max(0, (stillUnsourced || 0) - solicitations.length);
+  let remainingQuery = supabase.from("dibbs_solicitations").select("id", { count: "exact", head: true });
+  if (repriceMode) remainingQuery = remainingQuery.eq("is_sourceable", true);
+  else remainingQuery = remainingQuery.eq("is_sourceable", false);
+  const { count: stillRemaining } = await remainingQuery;
+  const remainingAfterThisCall = Math.max(0, (stillRemaining || 0) - solicitations.length);
 
   if (solicitations.length === 0) {
     return NextResponse.json({
