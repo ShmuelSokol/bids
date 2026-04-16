@@ -12,6 +12,7 @@ import {
   ArrowUpDown,
   ShoppingCart,
   Clock,
+  Trash2,
 } from "lucide-react";
 
 interface Award {
@@ -718,7 +719,6 @@ export function AwardsList({
                       onClick={() => downloadXlsx([po.id])}
                       disabled={downloadingId === po.id}
                       className="px-3 py-1.5 rounded-md border border-card-border bg-card-bg hover:bg-accent/5 text-xs font-medium inline-flex items-center gap-1.5"
-                      title={`Download ${po.po_number} as Excel`}
                     >
                       {downloadingId === po.id ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -726,6 +726,28 @@ export function AwardsList({
                         <>Excel</>
                       )}
                     </button>
+                    {(!po.dmf_state || po.dmf_state === "drafted") && !po.ax_po_number && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete ${po.po_number}? Awards will go back to the unassigned list.`)) return;
+                          const res = await fetch("/api/orders/delete-po", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ po_id: po.id }),
+                          });
+                          const data = await res.json();
+                          if (data.ok) {
+                            setMessage(`Deleted ${po.po_number} — ${data.awards_reset} awards reset. Refreshing...`);
+                            setTimeout(() => window.location.reload(), 1000);
+                          } else {
+                            setMessage(data.error || "Delete failed");
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-md border border-red-300 bg-red-50 hover:bg-red-100 text-xs font-medium text-red-700 inline-flex items-center gap-1"
+                      >
+                        <Trash2 className="h-3 w-3" /> Delete PO
+                      </button>
+                    )}
                   </div>
                 </div>
                 {/* AX write-back state + actions */}
