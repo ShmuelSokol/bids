@@ -55,14 +55,19 @@ interface PurchaseOrder {
   dmf_state?: string | null;
 }
 
+type ShipStats = { shipped: number; notShipped: number; noStatus: number; shipping: number; partial: number; total: number };
+
 export function AwardsList({
   awards,
   purchaseOrders,
+  shipStats,
 }: {
   awards: Award[];
   purchaseOrders: PurchaseOrder[];
+  shipStats?: ShipStats;
 }) {
   const [tab, setTab] = useState<"awards" | "pos">("awards");
+  const [shipFilter, setShipFilter] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -174,6 +179,17 @@ export function AwardsList({
       items = items.filter((a) => !a.po_generated);
     }
 
+    if (shipFilter) {
+      items = items.filter((a) => {
+        const s = (a.ship_status || "").trim().toLowerCase();
+        if (shipFilter === "shipped") return s === "shipped" || s === "invoiced" || s === "complete";
+        if (shipFilter === "not_shipped") return s === "not shipped";
+        if (shipFilter === "no_status") return !s;
+        if (shipFilter === "in_progress") return s === "shipping" || s.includes("partial");
+        return true;
+      });
+    }
+
     if (dateFrom) {
       items = items.filter((a) => {
         if (!a.award_date) return false;
@@ -188,7 +204,7 @@ export function AwardsList({
     }
 
     return items;
-  }, [awards, dateFrom, dateTo, showOnlyNew]);
+  }, [awards, dateFrom, dateTo, showOnlyNew, shipFilter]);
 
   function selectAll() {
     if (selected.size === filtered.length) {
@@ -325,12 +341,43 @@ export function AwardsList({
         <span className="text-foreground font-medium">Orders & POs</span>
       </div>
 
+      {/* Ship Status Breakdown */}
+      {shipStats && (
+        <div className="grid grid-cols-5 gap-2 mb-4">
+          <button onClick={() => setShipFilter(shipFilter === "shipped" ? null : "shipped")}
+            className={`rounded-lg border p-3 text-left transition-colors ${shipFilter === "shipped" ? "border-green-400 bg-green-50" : "border-card-border bg-card-bg hover:border-green-300"}`}>
+            <div className="text-lg font-bold text-green-700">{shipStats.shipped.toLocaleString()}</div>
+            <div className="text-[10px] text-green-600">Shipped / Done</div>
+          </button>
+          <button onClick={() => setShipFilter(shipFilter === "not_shipped" ? null : "not_shipped")}
+            className={`rounded-lg border p-3 text-left transition-colors ${shipFilter === "not_shipped" ? "border-red-400 bg-red-50" : "border-card-border bg-card-bg hover:border-red-300"}`}>
+            <div className="text-lg font-bold text-red-700">{shipStats.notShipped.toLocaleString()}</div>
+            <div className="text-[10px] text-red-600">Not Shipped</div>
+          </button>
+          <button onClick={() => setShipFilter(shipFilter === "no_status" ? null : "no_status")}
+            className={`rounded-lg border p-3 text-left transition-colors ${shipFilter === "no_status" ? "border-gray-400 bg-gray-50" : "border-card-border bg-card-bg hover:border-gray-300"}`}>
+            <div className="text-lg font-bold text-gray-700">{shipStats.noStatus.toLocaleString()}</div>
+            <div className="text-[10px] text-gray-500">No Status</div>
+          </button>
+          <button onClick={() => setShipFilter(shipFilter === "in_progress" ? null : "in_progress")}
+            className={`rounded-lg border p-3 text-left transition-colors ${shipFilter === "in_progress" ? "border-amber-400 bg-amber-50" : "border-card-border bg-card-bg hover:border-amber-300"}`}>
+            <div className="text-lg font-bold text-amber-700">{(shipStats.shipping + shipStats.partial).toLocaleString()}</div>
+            <div className="text-[10px] text-amber-600">In Progress</div>
+          </button>
+          <div className="rounded-lg border border-card-border bg-card-bg p-3 text-left">
+            <div className="text-lg font-bold text-foreground">{shipStats.total.toLocaleString()}</div>
+            <div className="text-[10px] text-muted">Total (90 days)</div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-start justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold mb-1">Orders & Purchase Orders</h1>
           <p className="text-muted text-sm">
-            {awards.filter((a) => !a.po_generated).length} new awards,{" "}
+            {awards.filter((a) => !a.po_generated).length} awards without POs (of {awards.length} total in 90 days),{" "}
             {purchaseOrders.length} POs created
+            {shipFilter && <span className="ml-2 text-accent font-medium">· Filtered: {shipFilter.replace("_", " ")}</span>}
           </p>
         </div>
         <div className="flex gap-2">

@@ -63,15 +63,27 @@ async function getData() {
     };
   });
 
-  return { awards: enriched, purchaseOrders: allPos };
+  // Compute ship status breakdown
+  const shipStats = { shipped: 0, notShipped: 0, noStatus: 0, shipping: 0, partial: 0, total: enriched.length };
+  for (const a of enriched) {
+    const s = (a.ship_status || "").trim().toLowerCase();
+    if (s === "shipped" || s === "invoiced" || s === "complete") shipStats.shipped++;
+    else if (s === "not shipped") shipStats.notShipped++;
+    else if (s === "shipping") shipStats.shipping++;
+    else if (s.includes("partial")) shipStats.partial++;
+    else if (!s) shipStats.noStatus++;
+    else shipStats.notShipped++; // catch-all for other non-shipped
+  }
+
+  return { awards: enriched, purchaseOrders: allPos, shipStats };
 }
 
 export default async function OrdersPage() {
-  const { awards, purchaseOrders } = await getData();
+  const { awards, purchaseOrders, shipStats } = await getData();
 
   return (
     <div className="p-4 md:p-8">
-      <AwardsList awards={awards} purchaseOrders={purchaseOrders} />
+      <AwardsList awards={awards} purchaseOrders={purchaseOrders} shipStats={shipStats} />
     </div>
   );
 }
