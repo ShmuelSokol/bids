@@ -39,6 +39,7 @@ interface Award {
   po_generated: boolean;
   po_id: number | null;
   our_cost: number | null;
+  assigned_vendor: string | null;
   margin_pct: number | null;
 }
 
