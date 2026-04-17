@@ -4,6 +4,18 @@
 
 Intelligence layer on top of LamLinks for Ever Ready First Aid (CAGE 0AG09). ~$8-9M/year government business, ~500 orders/week.
 
+## Environment
+- NEVER assume network drives (Z:, UNC paths like \\server\share) are accessible. If working directory is on a network drive and Bash fails, immediately suggest cloning to a local directory (C:\Projects or ~/projects) instead of repeatedly trying to fix the drive.
+- If Bash tool fails due to working directory issues, try Read/Write tools as a fallback before giving up.
+
+## Windows Compatibility
+- Watch for CRLF/LF newline issues when editing files. Use consistent line endings.
+- PowerShell commands differ from bash — don't assume Linux command syntax works.
+
+## Debugging Rules
+- When fixing bugs, always check for cascading effects in related files before committing. Run the app and verify the fix doesn't break other functionality.
+- Do NOT attempt more than 3 different approaches to the same bug without stopping to explain the root cause analysis to the user and asking for direction.
+
 ## KNOWLEDGE BASE — read before non-trivial work
 
 Narrative, long-form context lives in `docs/`. This file has the critical rules and quick reference. `docs/` has the *why*.
@@ -23,6 +35,8 @@ When you learn something new that future sessions would benefit from, add it to 
 - **Check deploy after every push**: `railway logs 2>&1 | tail -5` — look for "Ready in" (success) or errors.
 - **Always run `npm run build` locally before pushing** to catch errors.
 - **After pushing, verify with Playwright** that the page actually loads data (build passing ≠ working).
+- **After editing Python files, always run a syntax check** (`python -c 'import py_compile; py_compile.compile("<file>")'`) before deploying.
+- **Be aware of Railway 30-second timeouts** — never run batch operations synchronously in request handlers. Use background tasks, chunked processing, or local scripts (e.g. `scripts/reprice-all.ts`).
 
 ## AX ODATA RULES (learned the hard way)
 - **AX OData silently caps filtered queries at 1,000 rows** — no `@odata.nextLink`, no error, no warning. Unfiltered bulk pulls paginate fine; the cap only bites on `$filter`'d queries.
