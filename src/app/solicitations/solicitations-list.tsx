@@ -1125,13 +1125,23 @@ export function SolicitationsList({
                       )}
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
-                          {(history.length > 0 || abeBids.length > 0) && (
-                            <button onClick={() => setExpandedNsn(expandedNsn === s.nsn ? null : s.nsn)}
-                              className="text-muted hover:text-accent">
-                              <History className="h-3 w-3" />
-                              <span className="text-[8px]">{abeBids.length + history.length}</span>
-                            </button>
-                          )}
+                          {(() => {
+                            const hc = (s as any)._histCounts;
+                            const hasCounts = hc && (hc.bids > 0 || hc.wins > 0);
+                            return (
+                              <button onClick={() => setExpandedNsn(expandedNsn === s.nsn ? null : s.nsn)}
+                                className="text-muted hover:text-accent flex flex-col items-center">
+                                <History className="h-3 w-3" />
+                                {hasCounts && (
+                                  <span className="text-[7px] leading-tight whitespace-nowrap">
+                                    {hc.bids > 0 && <span className="text-blue-600">{hc.bids}b</span>}
+                                    {hc.bids > 0 && hc.wins > 0 && "/"}
+                                    {hc.wins > 0 && <span className="text-green-600">{hc.wins}w</span>}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })()}
                           <div>
                             <div className="flex items-center gap-1 flex-wrap">
                               <span className="font-mono text-xs text-accent">{s.nsn}</span>

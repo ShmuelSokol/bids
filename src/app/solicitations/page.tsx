@@ -106,6 +106,39 @@ async function getData() {
     };
   });
 
+  // Per-NSN history counts: bids and wins
+  // Bids: count from the 30d abe_bids_live already loaded (by NSN)
+  const bidCountByNsn = new Map<string, number>();
+  for (const b of liveBids) {
+    if ((b as any).nsn) bidCountByNsn.set((b as any).nsn, (bidCountByNsn.get((b as any).nsn) || 0) + 1);
+  }
+  // Also count from abe_bids (historical) — paginate
+  const abeBidsForCount = await paginateAll(supabase, "abe_bids", "nsn");
+  for (const b of abeBidsForCount) {
+    if (b.nsn && !bidCountByNsn.has(b.nsn)) bidCountByNsn.set(b.nsn, 0);
+    if (b.nsn) bidCountByNsn.set(b.nsn, (bidCountByNsn.get(b.nsn) || 0) + 1);
+  }
+  // Wins: count our awards per NSN
+  const winCountByNsn = new Map<string, number>();
+  const allOurAwards: any[] = [];
+  for (let p = 0; p < 50; p++) {
+    const { data } = await supabase.from("awards").select("fsc, niin").eq("cage", "0AG09").range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    allOurAwards.push(...data);
+    if (data.length < 1000) break;
+  }
+  for (const a of allOurAwards) {
+    const nsn = `${a.fsc}-${a.niin}`;
+    winCountByNsn.set(nsn, (winCountByNsn.get(nsn) || 0) + 1);
+  }
+  // Attach to enriched items
+  for (const s of enriched) {
+    (s as any)._histCounts = {
+      bids: bidCountByNsn.get(s.nsn) || 0,
+      wins: winCountByNsn.get(s.nsn) || 0,
+    };
+  }
+
   const ctx = buildFilterContext(liveBids, decisions);
   const counts = {
     total: enriched.length,
