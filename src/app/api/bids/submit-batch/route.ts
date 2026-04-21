@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
 import { trackEvent, requestContext } from "@/lib/track";
+import { isLamlinksWritebackLive } from "@/lib/system-settings";
 
 /**
  * POST /api/bids/submit-batch
@@ -114,6 +115,62 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // If LamLinks write-back is LIVE, enqueue each successfully-updated bid
+  // for the Windows worker to transmit. Worker lives on NYEVRVSQL001 (the
+  // only host with msnodesqlv8 available) and polls lamlinks_write_queue.
+  let enqueuedCount = 0;
+  const writebackLive = await isLamlinksWritebackLive();
+  if (writebackLive && updatedCount > 0) {
+    // Find the bid_decisions rows we just flipped, grab price/qty/lead_time to enqueue.
+    const submittedSolNums: string[] = [];
+    const submittedNsns: string[] = [];
+    for (const r of updateResults) {
+      for (const row of r.data || []) {
+        submittedSolNums.push(row.solicitation_number);
+        submittedNsns.push(row.nsn);
+      }
+    }
+    const { data: details } = await supabase
+      .from("bid_decisions")
+      .select("solicitation_number, nsn, final_price, quantity, lead_time_days")
+      .in("solicitation_number", submittedSolNums)
+      .in("nsn", submittedNsns);
+
+    const detailByKey = new Map<string, any>();
+    for (const d of details || []) detailByKey.set(`${d.solicitation_number}__${d.nsn}`, d);
+
+    const queueRows: any[] = [];
+    for (let i = 0; i < submittedSolNums.length; i++) {
+      const key = `${submittedSolNums[i]}__${submittedNsns[i]}`;
+      const d = detailByKey.get(key);
+      if (!d) continue;
+      if (d.final_price == null || !d.quantity || !d.lead_time_days) {
+        // Missing inputs — can't enqueue. Leave as submitted-local-only.
+        continue;
+      }
+      queueRows.push({
+        solicitation_number: d.solicitation_number,
+        nsn: d.nsn,
+        bid_price: d.final_price,
+        bid_qty: d.quantity,
+        delivery_days: d.lead_time_days,
+        status: "pending",
+        created_by: decidedBy,
+      });
+    }
+    if (queueRows.length > 0) {
+      // UPSERT-style: ignore duplicates (unique constraint on sol+nsn+status)
+      const { data: inserted, error: enqErr } = await supabase
+        .from("lamlinks_write_queue")
+        .upsert(queueRows, { onConflict: "solicitation_number,nsn,status", ignoreDuplicates: true })
+        .select("id");
+      enqueuedCount = inserted?.length || 0;
+      if (enqErr) {
+        console.error("lamlinks_write_queue enqueue error:", enqErr.message);
+      }
+    }
+  }
+
   const { ip, userAgent } = requestContext(req);
   trackEvent({
     userId: user.user.id,
@@ -121,14 +178,14 @@ export async function POST(req: NextRequest) {
     eventType: "bid",
     eventAction: "submit_batch",
     page: "/solicitations",
-    details: { requested: pairs.length, updated: updatedCount, skipped: skipped.length },
+    details: { requested: pairs.length, updated: updatedCount, skipped: skipped.length, enqueued: enqueuedCount, writeback_live: writebackLive },
     ip,
     userAgent,
   });
 
   await supabase.from("sync_log").insert({
     action: "bids_submitted_batch",
-    details: { user: decidedBy, requested: pairs.length, updated: updatedCount, skipped },
+    details: { user: decidedBy, requested: pairs.length, updated: updatedCount, skipped, enqueued_to_lamlinks: enqueuedCount, writeback_live: writebackLive },
   });
 
   return NextResponse.json({
@@ -136,5 +193,7 @@ export async function POST(req: NextRequest) {
     updated_count: updatedCount,
     skipped_count: skipped.length,
     skipped,
+    enqueued_to_lamlinks: enqueuedCount,
+    writeback_live: writebackLive,
   });
 }

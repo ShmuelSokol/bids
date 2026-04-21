@@ -68,6 +68,57 @@ Evidence from 2026-04-21:
 
 **Recovery if a collision happens:** use `scripts/move-our-ids-up.ts` pattern — copy our row to a much higher id (INSERT new, DELETE old) to free the id Abe's counter wants. Abe retries Save. Envelope itmcnt stays consistent if the move preserves the line count.
 
+## The live write-back pipeline (as of 2026-04-21)
+
+```
+ /solicitations UI (Quoted tab, Submit button)
+        │
+        ▼
+ POST /api/bids/submit-batch
+        │
+        ├─ UPDATE bid_decisions SET status='submitted'   (always — local-only truth)
+        └─ IF system_settings.lamlinks_writeback_enabled='true':
+              INSERT INTO lamlinks_write_queue (one row per submitted bid)
+                            │
+                            ▼
+              Windows Task Scheduler (NYEVRVSQL001, every 1 min, 6am-8pm weekdays)
+                            │
+                            ▼
+              scripts/lamlinks-writeback-worker.ts
+                            │
+                            ├─ Loads env + Supabase
+                            ├─ Checks toggle (early exit if OFF)
+                            ├─ SELECT pending queue rows, LIMIT 10
+                            ├─ Finds staged envelope on LamLinks (o_stat='adding quotes')
+                            │   └─ If no envelope: mark as waiting, retry next poll
+                            ├─ For each queue row:
+                            │     ├─ Claim (UPDATE status='processing' WHERE status='pending')
+                            │     ├─ Resolve sol/NIIN → idnk11 + k08 part/cage
+                            │     ├─ TRANSACTION:
+                            │     │     UPDLOCK k33 envelope (verify still staged)
+                            │     │     TABLOCKX k34 + k35 (pick MAX+30 id)
+                            │     │     INSERT k34 (clone from template) + INSERT k35 + UPDATE itmcnt
+                            │     ├─ Mark queue row as done with k33/k34/k35 ids
+                            │     └─ On any exception: mark as failed + error_message
+                            └─ Close pool
+                            │
+                            ▼
+              Abe sees the new line in LamLinks envelope. Reviews. Clicks Post.
+                            │
+                            ▼
+              scripts/sync-dibs-status.ts (Windows Task, every 15 min)
+                            └─ For each bid_decisions in 'submitted' state, checks
+                               LamLinks k33.t_stat_k33 — once it's 'sent', writes
+                               a "Transmitted via LamLinks k34=<id>" comment.
+                               (Status stays 'submitted' either way.)
+```
+
+**Feature flag:** `system_settings.lamlinks_writeback_enabled` (`true` / `false`). Default `false`. Toggle via `/settings/lamlinks-writeback`. When off, the API route skips the enqueue step and DIBS is back to local-only bookkeeping — no rows enter `lamlinks_write_queue`, the worker finds nothing to do.
+
+**Why a queue and not a direct write?** The API route runs on Railway (Linux) which can't compile `msnodesqlv8`. The only host with LamLinks SQL access is `NYEVRVSQL001`. The queue decouples the two — Railway writes intent, Windows worker executes.
+
+**Why MAX+30 ids?** LamLinks' Windows client maintains a sequential counter and doesn't re-read `MAX` at save time. Using `MAX+1` while Abe is actively saving leads to PK collisions after his counter catches up. A 30-id cushion keeps us safely ahead of any reasonable envelope line count.
+
 ## Post-transmission reconciliation
 
 When Abe clicks Post, LamLinks flips the four status strings on `k33_tab` from staging values to posted values and fires the EDI. DIBS doesn't know this happened unless we check. The reconciler:

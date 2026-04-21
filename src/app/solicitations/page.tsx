@@ -1,6 +1,8 @@
 import { createServiceClient } from "@/lib/supabase-server";
 import { isSourceableOpen, buildFilterContext } from "@/lib/solicitation-filters";
+import { isLamlinksWritebackLive } from "@/lib/system-settings";
 import { SolicitationsList } from "./solicitations-list";
+import Link from "next/link";
 
 async function paginateAll(supabase: any, table: string, select: string, options?: { order?: string }) {
   const all: any[] = [];
@@ -155,10 +157,20 @@ export default async function SolicitationsPage({
   searchParams: Promise<{ filter?: string; sort?: string }>;
 }) {
   const { solicitations, counts, lastSync } = await getData();
+  const writebackLive = await isLamlinksWritebackLive();
   const params = await searchParams;
 
   return (
     <div className="p-4 md:p-8">
+      {writebackLive && (
+        <div className="mb-4 rounded-lg border-2 border-green-400 bg-green-50 px-4 py-2 flex items-center justify-between text-sm">
+          <div>
+            <span className="font-bold text-green-800">🟢 LamLinks Write-Back is LIVE</span>
+            <span className="text-green-700 ml-2">— clicking Submit on Quoted bids will transmit them to LamLinks for DLA.</span>
+          </div>
+          <Link href="/settings/lamlinks-writeback" className="text-xs text-green-800 underline">manage</Link>
+        </div>
+      )}
       <div className="mb-4">
         <h1 className="text-2xl font-bold">Solicitations</h1>
         <p className="text-muted mt-1 text-sm">

@@ -186,8 +186,35 @@ schtasks /create /tn "DIBS - Competitor Awards Import" ^
     /ru "%RUN_AS_USER%" /it /f
 echo.
 
+REM -----------------------------------------------------------------------
+REM LamLinks write-back worker — every 1 min 6am-8pm weekdays. Polls
+REM lamlinks_write_queue for pending rows and drains them into k33/k34/k35
+REM (piggyback pattern, MAX+30 id gap to avoid Abe's client counter).
+REM No-op when system_settings.lamlinks_writeback_enabled='false'.
+REM See docs/lamlinks-writeback.md for the full pattern.
+REM -----------------------------------------------------------------------
+schtasks /create /tn "DIBS - LamLinks Writeback Worker" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" lamlinks-writeback-worker\"" ^
+    /sc daily /st 06:00 ^
+    /ri 1 /du 14:00 ^
+    /ru "%RUN_AS_USER%" /it /f
+echo.
+
+REM -----------------------------------------------------------------------
+REM DIBS status reconciler — every 15 min 6am-8pm weekdays. Flips DIBS
+REM bid_decisions.status from 'quoted' → 'submitted' once LamLinks has
+REM transmitted the bid (k33.t_stat_k33='sent' within 24h). Handles both
+REM DIBS-write-back bids AND bids Abe types directly into LamLinks.
+REM -----------------------------------------------------------------------
+schtasks /create /tn "DIBS - Status Reconciler" ^
+    /tr "cmd /c \"\"%DISPATCHER%\" sync-dibs-status -- --execute\"" ^
+    /sc daily /st 06:00 ^
+    /ri 15 /du 14:00 ^
+    /ru "%RUN_AS_USER%" /it /f
+echo.
+
 echo =====================================================================
-echo All 6 tasks registered. Check:
+echo All tasks registered. Check:
 echo    schtasks /query /tn "DIBS*" /fo TABLE
 echo.
 echo Logs write to C:\tmp\dibs-logs\^<script-name^>.log

@@ -1,7 +1,8 @@
 @echo off
 REM Dispatcher called by Windows Task Scheduler.
-REM Usage: run-dibs-task.bat <script-name-without-extension>
+REM Usage: run-dibs-task.bat <script-name-without-extension> [-- <script-args>]
 REM Example: run-dibs-task.bat sync-abe-bids-live
+REM Example: run-dibs-task.bat sync-dibs-status -- --execute
 REM
 REM Changes to the project directory, timestamps a log entry, runs the
 REM script, and appends stdout+stderr to a per-script log under C:\tmp\dibs-logs\.
@@ -13,9 +14,21 @@ set LOG_DIR=C:\tmp\dibs-logs
 set SCRIPT=%~1
 
 if "%SCRIPT%"=="" (
-    echo Usage: run-dibs-task.bat ^<script-name^>
+    echo Usage: run-dibs-task.bat ^<script-name^> [-- ^<script-args^>]
     exit /b 1
 )
+
+REM Shift past the script name so %* contains any remaining args (without the
+REM leading "--" separator if used). Stored in SCRIPT_ARGS.
+shift
+set SCRIPT_ARGS=
+:collect_args
+if "%~1"=="" goto args_done
+if "%~1"=="--" (shift & goto collect_args)
+if defined SCRIPT_ARGS (set SCRIPT_ARGS=%SCRIPT_ARGS% %1) else (set SCRIPT_ARGS=%1)
+shift
+goto collect_args
+:args_done
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 set LOG_FILE=%LOG_DIR%\%SCRIPT%.log
@@ -45,8 +58,8 @@ if errorlevel 1 (
 )
 
 echo. >> "%LOG_FILE%"
-echo === [%date% %time%] Starting %SCRIPT% === >> "%LOG_FILE%"
-call npx tsx scripts\%SCRIPT%.ts >> "%LOG_FILE%" 2>&1
+echo === [%date% %time%] Starting %SCRIPT% %SCRIPT_ARGS% === >> "%LOG_FILE%"
+call npx tsx scripts\%SCRIPT%.ts %SCRIPT_ARGS% >> "%LOG_FILE%" 2>&1
 set EXIT_CODE=%errorlevel%
 echo === [%date% %time%] Finished %SCRIPT% (exit %EXIT_CODE%) === >> "%LOG_FILE%"
 
