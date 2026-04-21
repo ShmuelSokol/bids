@@ -269,6 +269,7 @@ export async function POST(req: Request) {
     let q = supabase
       .from("dibbs_solicitations")
       .select("id, nsn, nomenclature, quantity, fsc, solicitation_number")
+      .order("id", { ascending: false })
       .range(solPage * 1000, (solPage + 1) * 1000 - 1);
     if (repriceMode) {
       q = q.eq("is_sourceable", true);
