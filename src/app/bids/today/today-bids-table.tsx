@@ -120,39 +120,46 @@ export function TodayBidsTable({ bids }: { bids: Bid[] }) {
                 <SortBtn field="bid_time" current={sortField} asc={sortAsc} onClick={handleSort}>
                   Time
                 </SortBtn>
+                <div className="text-[7px] font-normal text-muted">LL k34/k35</div>
               </th>
               <th className="px-4 py-2 font-medium">
                 <SortBtn field="nsn" current={sortField} asc={sortAsc} onClick={handleSort}>
                   NSN
                 </SortBtn>
+                <div className="text-[7px] font-normal text-muted">LL k34/k35</div>
               </th>
-              <th className="px-4 py-2 font-medium">Item</th>
-              <th className="px-4 py-2 font-medium">Sol #</th>
+              <th className="px-4 py-2 font-medium">Item<div className="text-[7px] font-normal text-muted">LL k34/k35</div></th>
+              <th className="px-4 py-2 font-medium">Sol #<div className="text-[7px] font-normal text-muted">LL k34/k35</div></th>
               <th className="px-4 py-2 font-medium text-right">
                 <SortBtn field="bid_price" current={sortField} asc={sortAsc} onClick={handleSort}>
                   Price
                 </SortBtn>
+                <div className="text-[7px] font-normal text-muted">LL k34/k35</div>
               </th>
               <th className="px-4 py-2 font-medium text-right">
                 <SortBtn field="bid_qty" current={sortField} asc={sortAsc} onClick={handleSort}>
                   Qty
                 </SortBtn>
+                <div className="text-[7px] font-normal text-muted">LL k34/k35</div>
               </th>
               <th className="px-4 py-2 font-medium text-right">
                 <SortBtn field="value" current={sortField} asc={sortAsc} onClick={handleSort}>
                   Value
                 </SortBtn>
+                <div className="text-[7px] font-normal text-muted">LL k34/k35</div>
               </th>
               <th className="px-4 py-2 font-medium">
                 <SortBtn field="lead_days" current={sortField} asc={sortAsc} onClick={handleSort}>
                   Lead
                 </SortBtn>
+                <div className="text-[7px] font-normal text-muted">LL k34/k35</div>
               </th>
-              <th className="px-4 py-2 font-medium">FOB</th>
+              <th className="px-4 py-2 font-medium">FOB<div className="text-[7px] font-normal text-muted">LL k34/k35</div></th>
               <th className="px-4 py-2 font-medium">
                 <SortBtn field="bid_status" current={sortField} asc={sortAsc} onClick={handleSort}>
                   Status
                 </SortBtn>
+                <div className="text-[7px] font-normal text-muted">LL k34/k35</div>
               </th>
             </tr>
           </thead>

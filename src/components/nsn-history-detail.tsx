@@ -180,16 +180,16 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
 
           {data.ax.suppliers.length > 0 && (
             <div className="border-b border-blue-200">
-              <div className="px-3 py-1 text-[10px] font-semibold text-blue-700">Suppliers ({data.ax.suppliers.length})</div>
+              <div className="px-3 py-1 text-[10px] font-semibold text-blue-700">Suppliers ({data.ax.suppliers.length}) <span className="font-normal text-[8px] text-muted">AX VendorProductDescriptionsV2</span></div>
               <table className="w-full text-[11px]">
                 <thead className="text-muted bg-blue-50/50">
                   <tr>
-                    <th className="px-2 py-1 text-left font-medium">Vendor</th>
-                    <th className="px-2 py-1 text-left font-medium">Vendor P/N</th>
-                    <th className="px-2 py-1 text-left font-medium">Description</th>
-                    <th className="px-2 py-1 text-right font-medium">Price</th>
-                    <th className="px-2 py-1 text-left font-medium">UoM</th>
-                    <th className="px-2 py-1 text-left font-medium">Source</th>
+                    <th className="px-2 py-1 text-left font-medium">Vendor<div className="text-[8px] font-normal text-muted">AX VendorProductDescriptionsV2</div></th>
+                    <th className="px-2 py-1 text-left font-medium">Vendor P/N<div className="text-[8px] font-normal text-muted">AX VendorProductDescriptionsV2</div></th>
+                    <th className="px-2 py-1 text-left font-medium">Description<div className="text-[8px] font-normal text-muted">AX VendorProductDescriptionsV2</div></th>
+                    <th className="px-2 py-1 text-right font-medium">Price<div className="text-[8px] font-normal text-muted">AX VendorProductDescriptionsV2</div></th>
+                    <th className="px-2 py-1 text-left font-medium">UoM<div className="text-[8px] font-normal text-muted">AX VendorProductDescriptionsV2</div></th>
+                    <th className="px-2 py-1 text-left font-medium">Source<div className="text-[8px] font-normal text-muted">AX VendorProductDescriptionsV2</div></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -210,17 +210,17 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
 
           {data.ax.receipts.length > 0 && (
             <div>
-              <div className="px-3 py-1 text-[10px] font-semibold text-blue-700">Recent PO Receipts ({data.ax.receipts.length})</div>
+              <div className="px-3 py-1 text-[10px] font-semibold text-blue-700">Recent PO Receipts ({data.ax.receipts.length}) <span className="font-normal text-[8px] text-muted">AX PurchaseOrderLinesV2</span></div>
               <table className="w-full text-[11px]">
                 <thead className="text-muted bg-blue-50/50">
                   <tr>
-                    <th className="px-2 py-1 text-left font-medium">Vendor</th>
-                    <th className="px-2 py-1 text-left font-medium">PO #</th>
-                    <th className="px-2 py-1 text-right font-medium">Price</th>
-                    <th className="px-2 py-1 text-right font-medium">Qty</th>
-                    <th className="px-2 py-1 text-left font-medium">UoM</th>
-                    <th className="px-2 py-1 text-left font-medium">Delivery</th>
-                    <th className="px-2 py-1 text-left font-medium">Status</th>
+                    <th className="px-2 py-1 text-left font-medium">Vendor<div className="text-[8px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-2 py-1 text-left font-medium">PO #<div className="text-[8px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-2 py-1 text-right font-medium">Price<div className="text-[8px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-2 py-1 text-right font-medium">Qty<div className="text-[8px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-2 py-1 text-left font-medium">UoM<div className="text-[8px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-2 py-1 text-left font-medium">Delivery<div className="text-[8px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-2 py-1 text-left font-medium">Status<div className="text-[8px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -267,14 +267,14 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-gray-50">
               <tr className="text-muted text-left">
-                <th className="px-2 py-1 font-medium">Date</th>
-                <th className="px-2 py-1 font-medium">Event</th>
-                <th className="px-2 py-1 font-medium">Sol / Contract</th>
-                <th className="px-2 py-1 font-medium">Winner</th>
-                <th className="px-2 py-1 text-right font-medium">Price</th>
-                <th className="px-2 py-1 text-right font-medium">Qty</th>
-                <th className="px-2 py-1 text-right font-medium">Total</th>
-                <th className="px-2 py-1 font-medium">Our bid (vs winner)</th>
+                <th className="px-2 py-1 font-medium">Date<div className="text-[8px] font-normal text-muted">LL k81 + kc4 + k34</div></th>
+                <th className="px-2 py-1 font-medium">Event<div className="text-[8px] font-normal text-muted">LL k81 + kc4 + k34</div></th>
+                <th className="px-2 py-1 font-medium">Sol / Contract<div className="text-[8px] font-normal text-muted">LL k81 + kc4 + k34</div></th>
+                <th className="px-2 py-1 font-medium">Winner<div className="text-[8px] font-normal text-muted">LL k81 + kc4 + k34</div></th>
+                <th className="px-2 py-1 text-right font-medium">Price<div className="text-[8px] font-normal text-muted">LL k81 + kc4 + k34</div></th>
+                <th className="px-2 py-1 text-right font-medium">Qty<div className="text-[8px] font-normal text-muted">LL k81 + kc4 + k34</div></th>
+                <th className="px-2 py-1 text-right font-medium">Total<div className="text-[8px] font-normal text-muted">computed</div></th>
+                <th className="px-2 py-1 font-medium">Our bid (vs winner)<div className="text-[8px] font-normal text-muted">LL k34/k35</div></th>
               </tr>
             </thead>
             <tbody>

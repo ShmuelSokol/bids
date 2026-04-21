@@ -399,15 +399,15 @@ export function InvoicingDashboard({
                 <th className="px-3 py-2 w-8">
                   <input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.size === readyToInvoice.length && readyToInvoice.length > 0} className="rounded" />
                 </th>
-                <th className="px-3 py-2 font-medium">Contract</th>
-                <th className="px-3 py-2 font-medium">NSN</th>
-                <th className="px-3 py-2 font-medium">Item</th>
-                <th className="px-3 py-2 font-medium text-right">Qty</th>
-                <th className="px-3 py-2 font-medium text-right">Unit Price</th>
-                <th className="px-3 py-2 font-medium text-right">Total</th>
-                <th className="px-3 py-2 font-medium">Gov Invoice #</th>
-                <th className="px-3 py-2 font-medium">Award Date</th>
-                <th className="px-3 py-2 font-medium">Winner</th>
+                <th className="px-3 py-2 font-medium">Contract<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">NSN<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Item<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium text-right">Qty<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium text-right">Unit Price<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium text-right">Total<div className="text-[7px] font-normal text-muted">computed</div></th>
+                <th className="px-3 py-2 font-medium">Gov Invoice #<div className="text-[7px] font-normal text-muted">DIBS computed</div></th>
+                <th className="px-3 py-2 font-medium">Award Date<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Winner<div className="text-[7px] font-normal text-muted">LL k81</div></th>
               </tr>
             </thead>
             <tbody>
@@ -472,10 +472,10 @@ export function InvoicingDashboard({
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-card-border text-left text-muted">
-                    <th className="px-3 py-2 font-medium">Solicitation</th>
-                    <th className="px-3 py-2 font-medium">NSN</th>
-                    <th className="px-3 py-2 font-medium text-right">Bid Price</th>
-                    <th className="px-3 py-2 font-medium">Submitted</th>
+                    <th className="px-3 py-2 font-medium">Solicitation<div className="text-[7px] font-normal text-muted">DIBS bid_decisions</div></th>
+                    <th className="px-3 py-2 font-medium">NSN<div className="text-[7px] font-normal text-muted">DIBS bid_decisions</div></th>
+                    <th className="px-3 py-2 font-medium text-right">Bid Price<div className="text-[7px] font-normal text-muted">DIBS bid_decisions</div></th>
+                    <th className="px-3 py-2 font-medium">Submitted<div className="text-[7px] font-normal text-muted">DIBS bid_decisions</div></th>
                   </tr>
                 </thead>
                 <tbody>

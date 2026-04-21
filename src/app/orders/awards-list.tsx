@@ -773,6 +773,7 @@ export function AwardsList({
                 {/* AX write-back state + actions */}
                 <div className="px-6 py-2 bg-gray-50 border-b border-card-border text-[11px] flex items-center gap-3">
                   <span className="text-muted">AX state:</span>
+                  <SourceTip source="DMF import state machine — drafted/awaiting_po_number/posted">
                   <span
                     className={`px-1.5 py-0.5 rounded font-medium ${
                       po.dmf_state === "posted"
@@ -786,6 +787,7 @@ export function AwardsList({
                   >
                     {po.dmf_state || "drafted"}
                   </span>
+                  </SourceTip>
                   {po.ax_po_number && (
                     <span className="text-muted">
                       AX PO: <code className="font-mono text-foreground">{po.ax_po_number}</code>
