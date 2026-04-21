@@ -199,20 +199,44 @@ export async function POST() {
     }
   }
 
-  // Save to Supabase
+  // Save to Supabase — ONLY update existing rows from LamLinks.
+  // Do NOT create new solicitations from DIBBS scrape alone.
+  // Per Yosef: LamLinks must be the only reason a solicitation exists
+  // in the system, otherwise bid write-back would target a sol that
+  // LamLinks doesn't know about.
   const supabase = createServiceClient();
+  let updatedCount = 0;
+  let skippedCount = 0;
   if (allSolicitations.length > 0) {
+    // Check which sol+nsn pairs already exist in the DB
+    const solKeys = allSolicitations.map(s => s.solicitation_number);
+    const existingKeys = new Set<string>();
+    for (let i = 0; i < solKeys.length; i += 500) {
+      const chunk = [...new Set(solKeys.slice(i, i + 500))];
+      const { data } = await supabase.from("dibbs_solicitations")
+        .select("solicitation_number, nsn")
+        .in("solicitation_number", chunk);
+      for (const r of data || []) existingKeys.add(`${r.solicitation_number}__${r.nsn}`);
+    }
+
+    // Only update existing rows — skip anything not already from LamLinks
     for (let i = 0; i < allSolicitations.length; i += 100) {
-      const batch = allSolicitations.slice(i, i + 100).map((s) => ({
-        ...s,
-        scraped_at: new Date().toISOString(),
-        data_source: "dibbs_scrape",
-        approved_parts: null,
-        detail_url: null,
-      }));
-      await supabase
-        .from("dibbs_solicitations")
-        .upsert(batch, { onConflict: "solicitation_number,nsn", ignoreDuplicates: true });
+      const batch = allSolicitations.slice(i, i + 100)
+        .filter(s => existingKeys.has(`${s.solicitation_number}__${s.nsn}`))
+        .map((s) => ({
+          ...s,
+          scraped_at: new Date().toISOString(),
+          data_source: s.data_source || "dibbs_scrape",
+          approved_parts: null,
+          detail_url: null,
+        }));
+      const skipped = allSolicitations.slice(i, i + 100).length - batch.length;
+      skippedCount += skipped;
+      if (batch.length > 0) {
+        await supabase.from("dibbs_solicitations")
+          .upsert(batch, { onConflict: "solicitation_number,nsn" });
+        updatedCount += batch.length;
+      }
     }
   }
 
@@ -233,7 +257,9 @@ export async function POST() {
 
   const result = {
     success: true,
-    count: allSolicitations.length,
+    count: updatedCount,
+    scraped: allSolicitations.length,
+    skipped_not_in_lamlinks: skippedCount,
     fscs_scraped: batchFscs.length,
     fscs_scraped_list: batchFscs,
     fscs_total_expansion: fscsToScrape.length,
