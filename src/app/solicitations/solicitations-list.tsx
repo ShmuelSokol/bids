@@ -196,7 +196,8 @@ export function SolicitationsList({
           bids: data.bids || [],
           itemSpec: data.itemSpec || null,
           matches: data.matches || [],
-        });
+          axVendorParts: data.ax?.vendor_parts || [],
+        } as any);
         return next;
       });
     } catch (err) {
@@ -1475,17 +1476,18 @@ export function SolicitationsList({
                               </div>
                             </div>
 
-                            {/* Item Spec + Part Number Matches (from lazy-loaded data) */}
+                            {/* Item Spec + AX Vendor Parts + Part Number Matches (from lazy-loaded data) */}
                             {(() => {
                               const cached = historyCache.get(s.nsn);
                               const spec = (cached as any)?.itemSpec;
                               const matches = (cached as any)?.matches;
-                              if (!spec && !matches?.length) return null;
+                              const axVendorParts: any[] = (cached as any)?.axVendorParts || [];
+                              if (!spec && !matches?.length && axVendorParts.length === 0) return null;
                               return (
                                 <div className="grid md:grid-cols-2 gap-3 mb-3">
                                   {spec && (
                                     <div className="bg-gray-50 rounded-lg p-2 border border-card-border text-xs">
-                                      <div className="text-[10px] font-bold text-gray-600 mb-1">Item Details (LamLinks)</div>
+                                      <div className="text-[10px] font-bold text-gray-600 mb-1">Item Details (LamLinks k08)</div>
                                       {spec.item_name && <div>{spec.item_name}</div>}
                                       <div className="grid grid-cols-2 gap-1 mt-1 text-[10px] text-muted">
                                         {spec.part_number && <div>P/N: <span className="font-mono">{spec.part_number}</span></div>}
@@ -1493,6 +1495,23 @@ export function SolicitationsList({
                                         {spec.unit_price > 0 && <div>LL Price: ${spec.unit_price}</div>}
                                         {spec.unit_of_issue && <div>UoI: {spec.unit_of_issue}</div>}
                                       </div>
+                                      <div className="mt-1 text-[9px] text-muted italic">LamLinks&apos; best guess — may not match DLA&apos;s approved mfr list</div>
+                                    </div>
+                                  )}
+                                  {axVendorParts.length > 0 && (
+                                    <div className="bg-blue-50 rounded-lg p-2 border border-blue-200 text-xs">
+                                      <div className="text-[10px] font-bold text-blue-700 mb-1">
+                                        AX Vendor Parts ({axVendorParts.length})
+                                      </div>
+                                      <div className="text-[9px] text-muted mb-1 italic">Our vendor chain — not DLA-approved mfr list. For cross-reference.</div>
+                                      {axVendorParts.slice(0, 5).map((vp: any, i: number) => (
+                                        <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
+                                          <span className="font-mono text-blue-800">{vp.vendor_account || "—"}</span>
+                                          <span className="font-mono">{vp.vendor_product_number}</span>
+                                          {vp.vendor_description && <span className="text-muted truncate">{vp.vendor_description.slice(0, 40)}</span>}
+                                        </div>
+                                      ))}
+                                      {axVendorParts.length > 5 && <div className="text-[9px] text-muted mt-1">…{axVendorParts.length - 5} more</div>}
                                     </div>
                                   )}
                                   {matches?.length > 0 && (() => {

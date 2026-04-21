@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const niin = niinParts.join("-");
   const supabase = createServiceClient();
 
-  const [awardsRes, bidsRes, liveBidsRes, specRes, matchRes, catalogRes, vendorPartsRes, vendorPricesRes, receiptsRes, costRes] = await Promise.all([
+  const [awardsRes, bidsRes, liveBidsRes, specRes, matchRes, catalogRes, vendorPartsRes, vendorPricesRes, receiptsRes, costRes, axVendorPartsRes] = await Promise.all([
     supabase.from("awards").select("id, fsc, niin, unit_price, quantity, description, award_date, contract_number, cage").eq("fsc", fsc).eq("niin", niin).order("award_date", { ascending: false }).limit(200),
     supabase.from("abe_bids").select("id, nsn, bid_price, lead_time_days, bid_qty, bid_date, fob, solicitation_number").eq("nsn", nsn).order("bid_date", { ascending: false }).limit(200),
     supabase.from("abe_bids_live").select("id, nsn, bid_price, lead_days, bid_qty, bid_time, fob, solicitation_number").eq("nsn", nsn).order("bid_time", { ascending: false }).limit(50),
@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
     supabase.from("nsn_vendor_prices").select("vendor, price, price_source, unit_of_measure, item_number").eq("nsn", nsn).order("price", { ascending: true }),
     supabase.from("po_receipt_history").select("vendor, purchase_price, quantity, uom, po_number, delivery_date, line_status").eq("nsn", nsn).order("delivery_date", { ascending: false }).limit(20),
     supabase.from("nsn_costs").select("nsn, cost, cost_source, vendor, unit_of_measure, item_number").eq("nsn", nsn).maybeSingle(),
+    supabase.from("nsn_ax_vendor_parts").select("ax_item_number, vendor_account, vendor_product_number, vendor_description").eq("nsn", nsn),
   ]);
 
   const allAwards = awardsRes.data || [];
@@ -175,6 +176,7 @@ export async function GET(req: NextRequest) {
         };
       }),
       receipts: receiptsRes.data || [],
+      vendor_parts: axVendorPartsRes.data || [],
     },
   });
   response.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=120");

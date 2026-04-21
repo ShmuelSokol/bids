@@ -187,16 +187,22 @@ schtasks /create /tn "DIBS - Competitor Awards Import" ^
 echo.
 
 REM -----------------------------------------------------------------------
-REM LamLinks write-back worker — every 1 min 6am-8pm weekdays. Polls
-REM lamlinks_write_queue for pending rows and drains them into k33/k34/k35
-REM (piggyback pattern, MAX+30 id gap to avoid Abe's client counter).
-REM No-op when system_settings.lamlinks_writeback_enabled='false'.
-REM See docs/lamlinks-writeback.md for the full pattern.
+REM LamLinks write-back worker — LONG-RUNNING DAEMON, launches at logon.
+REM Runs scripts/lamlinks-writeback-worker.ts in --loop mode: one persistent
+REM process that polls lamlinks_write_queue every 30s internally.
+REM
+REM Why logon+daemon instead of scheduled-every-minute: schtasks with /ri 1
+REM pops a cmd window every 60 seconds — unusable while working. A single
+REM daemon launches minimized, hides in the taskbar, and drains the queue
+REM as rows arrive. No-op when the feature-flag is off.
+REM
+REM If the window is closed, the worker dies. Re-start via:
+REM   schtasks /run /tn "DIBS - LamLinks Writeback Worker"
+REM Or just log out and back in.
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - LamLinks Writeback Worker" ^
-    /tr "cmd /c \"\"%DISPATCHER%\" lamlinks-writeback-worker\"" ^
-    /sc daily /st 06:00 ^
-    /ri 1 /du 14:00 ^
+    /tr "cmd /c start \"DIBS Writeback Worker\" /min \"%DISPATCHER%\" lamlinks-writeback-worker -- --loop" ^
+    /sc onlogon ^
     /ru "%RUN_AS_USER%" /it /f
 echo.
 
@@ -205,9 +211,11 @@ REM DIBS status reconciler — every 15 min 6am-8pm weekdays. Flips DIBS
 REM bid_decisions.status from 'quoted' → 'submitted' once LamLinks has
 REM transmitted the bid (k33.t_stat_k33='sent' within 24h). Handles both
 REM DIBS-write-back bids AND bids Abe types directly into LamLinks.
+REM Uses "start /min" so the cmd window appears minimized — matches
+REM existing every-15-min cadence so no additional popup frequency.
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - Status Reconciler" ^
-    /tr "cmd /c \"\"%DISPATCHER%\" sync-dibs-status -- --execute\"" ^
+    /tr "cmd /c start \"DIBS Reconciler\" /min \"%DISPATCHER%\" sync-dibs-status -- --execute" ^
     /sc daily /st 06:00 ^
     /ri 15 /du 14:00 ^
     /ru "%RUN_AS_USER%" /it /f
