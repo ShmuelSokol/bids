@@ -31,6 +31,11 @@ export const WIKI_PAGES = [
     subtitle: "How DIBS transmits bids to DLA via LamLinks",
   },
   {
+    slug: "lamlinks-collision-2026-04-21",
+    title: "LamLinks Counter Collision (2026-04-21)",
+    subtitle: "Incident retrospective + plan forward",
+  },
+  {
     slug: "gotchas",
     title: "Gotchas & War Stories",
     subtitle: "Things that broke and what we learned",

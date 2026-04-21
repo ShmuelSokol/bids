@@ -42,7 +42,7 @@ Canonical reference: `scripts/append-bid-test2.ts`. That script, run with `--exe
 
 ## The sequential-counter gotcha
 
-**This is the subtle one that bit us. Read this before writing anything.**
+**This is the subtle one that bit us. Read this before writing anything.** Full retrospective + plan forward in [lamlinks-collision-2026-04-21.md](./lamlinks-collision-2026-04-21.md).
 
 The LamLinks Windows client does **NOT** re-read `MAX(idnk34_k34)+1` at save time. It maintains its own client-side counter, seeded from `MAX+1` once (probably on session start or form open) and incrementing by 1 for every save — regardless of what's in the DB.
 
