@@ -60,6 +60,16 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npx tsx scripts/refresh-all-catalogs.ts --only dd219
 
+      - name: Refresh nsn_history_counts materialized view
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -s -X POST "https://api.supabase.com/v1/projects/jzgvdfzboknpcrhymjob/database/query" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_MGMT_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"query": "REFRESH MATERIALIZED VIEW CONCURRENTLY nsn_history_counts;"}' || echo "refresh skipped"
+
       - name: Run PO-Award linker
         env:
           AX_TENANT_ID: ${{ secrets.AX_TENANT_ID }}

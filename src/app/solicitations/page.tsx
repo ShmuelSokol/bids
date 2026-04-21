@@ -51,14 +51,10 @@ async function getData() {
     return items;
   }
 
-  const [sourceableItems, recentItems, decisions, liveBids, lastSync, nsnMatches] = await Promise.all([
+  const [sourceableItems, recentItems, decisions, liveBids, lastSync] = await Promise.all([
     loadOpenByFlag(true),
-    loadOpenByFlag(false), // all open unsourced — no cap needed since we filter to non-expired
-
+    loadOpenByFlag(false),
     paginateAll(supabase, "bid_decisions", "*"),
-    // Pull last 30 days of bids (not just today) so yesterday's/
-    // Monday's bids correctly dedup solicitations off the Sourceable
-    // list. Paginated — ~50 bids/day × 30 = ~1500, can exceed 1000.
     (async () => {
       const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
       const all: any[] = [];
@@ -76,11 +72,20 @@ async function getData() {
       return all;
     })(),
     supabase.from("sync_log").select("action, details, created_at").order("created_at", { ascending: false }).limit(1).single().then((r: any) => r.data),
-    paginateAll(supabase, "nsn_matches", "nsn, match_type, confidence, matched_part_number, matched_description, matched_source"),
   ]);
 
-  // Merge sourceable + recent unsourceable
   const solicitations = [...sourceableItems, ...recentItems];
+
+  // Only fetch nsn_matches for NSNs actually on the page (was loading 7K rows)
+  const nsnsForMatches = [...new Set(solicitations.map((s: any) => s.nsn).filter(Boolean))];
+  const nsnMatches: any[] = [];
+  for (let i = 0; i < nsnsForMatches.length; i += 500) {
+    const chunk = nsnsForMatches.slice(i, i + 500);
+    const { data } = await supabase.from("nsn_matches")
+      .select("nsn, match_type, confidence, matched_part_number, matched_description, matched_source")
+      .in("nsn", chunk);
+    nsnMatches.push(...(data || []));
+  }
 
   // Build match lookup
   const matchByNsn = new Map<string, any>();
@@ -106,37 +111,18 @@ async function getData() {
     };
   });
 
-  // Per-NSN history counts: bids and wins
-  // Bids: count from the 30d abe_bids_live already loaded (by NSN)
-  const bidCountByNsn = new Map<string, number>();
-  for (const b of liveBids) {
-    if ((b as any).nsn) bidCountByNsn.set((b as any).nsn, (bidCountByNsn.get((b as any).nsn) || 0) + 1);
+  // Per-NSN history counts from materialized view (pre-computed nightly).
+  // Was: loaded 44K awards + 12K bids server-side on every page load (~5s).
+  // Now: single query against nsn_history_counts view (~50ms).
+  const histCountsByNsn = new Map<string, { bids: number; wins: number }>();
+  const uniqueNsns = [...new Set(enriched.map((s: any) => s.nsn).filter(Boolean))];
+  for (let i = 0; i < uniqueNsns.length; i += 500) {
+    const chunk = uniqueNsns.slice(i, i + 500);
+    const { data } = await supabase.from("nsn_history_counts").select("nsn, bids, wins").in("nsn", chunk);
+    for (const r of data || []) histCountsByNsn.set(r.nsn, { bids: r.bids || 0, wins: r.wins || 0 });
   }
-  // Also count from abe_bids (historical) — paginate
-  const abeBidsForCount = await paginateAll(supabase, "abe_bids", "nsn");
-  for (const b of abeBidsForCount) {
-    if (b.nsn && !bidCountByNsn.has(b.nsn)) bidCountByNsn.set(b.nsn, 0);
-    if (b.nsn) bidCountByNsn.set(b.nsn, (bidCountByNsn.get(b.nsn) || 0) + 1);
-  }
-  // Wins: count our awards per NSN
-  const winCountByNsn = new Map<string, number>();
-  const allOurAwards: any[] = [];
-  for (let p = 0; p < 50; p++) {
-    const { data } = await supabase.from("awards").select("fsc, niin").eq("cage", "0AG09").range(p * 1000, (p + 1) * 1000 - 1);
-    if (!data || data.length === 0) break;
-    allOurAwards.push(...data);
-    if (data.length < 1000) break;
-  }
-  for (const a of allOurAwards) {
-    const nsn = `${a.fsc}-${a.niin}`;
-    winCountByNsn.set(nsn, (winCountByNsn.get(nsn) || 0) + 1);
-  }
-  // Attach to enriched items
   for (const s of enriched) {
-    (s as any)._histCounts = {
-      bids: bidCountByNsn.get(s.nsn) || 0,
-      wins: winCountByNsn.get(s.nsn) || 0,
-    };
+    (s as any)._histCounts = histCountsByNsn.get(s.nsn) || { bids: 0, wins: 0 };
   }
 
   const ctx = buildFilterContext(liveBids, decisions);
