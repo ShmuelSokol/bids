@@ -16,6 +16,7 @@ we tried that didn't work, and subtle gotchas that took days to track down.
 | [data-sources.md](./data-sources.md) | Before touching any scraper, importer, or NSN-matching code. Full field guide to LamLinks, AX, DIBBS, PUB LOG, and Master DB. |
 | [pricing-logic.md](./pricing-logic.md) | Before changing suggested-price computation, markup brackets, or cost waterfall. Empirical model fit from 2,591 bid matches. |
 | [bidding-workflow.md](./bidding-workflow.md) | Before changing the solicitations UI, bid states, or Abe's daily flow. |
+| [lamlinks-writeback.md](./lamlinks-writeback.md) | Before writing to `k33/k34/k35`. Explains the staging status strings, piggyback pattern, and the client-side sequential-counter gotcha that silently surfaces as "Connectivity error". |
 | [gotchas.md](./gotchas.md) | **Read this first when something inexplicably breaks.** Supabase 1K limit, DIBBS consent cookies, timezone bugs, native-package Railway crashes, etc. |
 
 ## How to update

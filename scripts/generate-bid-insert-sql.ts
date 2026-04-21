@@ -165,8 +165,10 @@ async function resolveBid(pool: sql.ConnectionPool, input: BidInput): Promise<Re
 
 function generateSql(resolved: ResolvedBid[]): string {
   const lines: string[] = [];
-  const batchTimestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
-  const qotref = `0AG09-${batchTimestamp.replace(/[^0-9]/g, "").slice(0, 10)}`; // placeholder — final qotref usually has the idnk33 ID
+  // qotref_k33 is char(15) — must fit. Use short placeholder; the
+  // UPDATE below replaces it with '0AG09-<batch_id>' (batch_id is
+  // small enough to stay under 15 chars).
+  const qotref = "pending        "; // 15 chars exactly
 
   lines.push("-- ============================================================");
   lines.push("-- DIBS → LamLinks bid batch write");
@@ -178,22 +180,22 @@ function generateSql(resolved: ResolvedBid[]): string {
   lines.push("SET XACT_ABORT ON;");
   lines.push("BEGIN TRANSACTION;");
   lines.push("");
+  lines.push("-- LamLinks ID columns are NOT auto-increment — we compute next IDs");
+  lines.push("-- manually with MAX+1. Inside transaction for safety.");
+  lines.push("DECLARE @batch INT = (SELECT ISNULL(MAX(idnk33_k33), 0) + 1 FROM k33_tab WITH (TABLOCKX));");
+  lines.push(`DECLARE @nextk34 INT = (SELECT ISNULL(MAX(idnk34_k34), 0) + 1 FROM k34_tab WITH (TABLOCKX));`);
+  lines.push(`DECLARE @nextk35 INT = (SELECT ISNULL(MAX(idnk35_k35), 0) + 1 FROM k35_tab WITH (TABLOCKX));`);
+  lines.push("");
   lines.push("-- Step 1: Create the batch header (k33) in 'acknowledged-only' state.");
-  lines.push("--   LamLinks UI shows this as a pending draft batch Abe can review.");
-  lines.push("--   The o/t/s state fields stay null until Abe clicks 'Submit' in");
-  lines.push("--   LamLinks — that's when its app code transitions the state and");
-  lines.push("--   transmits EDI to DIBBS. We don't touch that flow.");
   lines.push("INSERT INTO k33_tab (");
-  lines.push("  uptime_k33, upname_k33, qotref_k33,");
+  lines.push("  idnk33_k33, uptime_k33, upname_k33, qotref_k33,");
   lines.push("  a_stat_k33, a_stme_k33,");
   lines.push("  itmcnt_k33");
   lines.push(") VALUES (");
-  lines.push(`  GETDATE(), 'dibs-auto', ${sqlStr(qotref)},`);
+  lines.push(`  @batch, GETDATE(), 'dibs-auto', ${sqlStr(qotref)},`);
   lines.push(`  ${sqlStr("acknowledged    ")}, GETDATE(),`);
   lines.push(`  ${resolved.length}`);
   lines.push(");");
-  lines.push("DECLARE @batch INT = SCOPE_IDENTITY();");
-  lines.push("-- Update qotref with the real batch ID (LamLinks convention: '0AG09-<batchId>')");
   lines.push("UPDATE k33_tab SET qotref_k33 = '0AG09-' + CAST(@batch AS VARCHAR(10)) WHERE idnk33_k33 = @batch;");
   lines.push("");
 
@@ -201,6 +203,7 @@ function generateSql(resolved: ResolvedBid[]): string {
     const b = resolved[i];
     const fob = b.fob || "D";
     const k34Cols = [
+      "idnk34_k34",
       "uptime_k34", "upname_k34",
       "idnk11_k34", "idnk33_k34",
       "pn_k34",
@@ -208,6 +211,7 @@ function generateSql(resolved: ResolvedBid[]): string {
       "mcage_k34", "fobcod_k34", "qty_ui_k34", "solqty_k34",
     ];
     const k34Vals = [
+      `@nextk34 + ${i}`,
       "GETDATE()", "'dibs-auto'",
       b.idnk11.toString(), "@batch",
       sqlStr(b.resolved_pn),
@@ -222,9 +226,8 @@ function generateSql(resolved: ResolvedBid[]): string {
     lines.push(`--   $${b.price.toFixed(2)} × ${b.qty}, ${b.lead_days}d lead, FOB ${fob}`);
     lines.push(`INSERT INTO k34_tab (${k34Cols.join(", ")})`);
     lines.push(`VALUES (${k34Vals.join(", ")});`);
-    lines.push(`DECLARE @line${i} INT = SCOPE_IDENTITY();`);
-    lines.push(`INSERT INTO k35_tab (uptime_k35, upname_k35, idnk34_k35, qty_k35, up_k35, daro_k35, clin_k35)`);
-    lines.push(`VALUES (GETDATE(), 'dibs-auto', @line${i}, ${b.qty}, ${b.price}, ${b.lead_days}, '      ');`);
+    lines.push(`INSERT INTO k35_tab (idnk35_k35, uptime_k35, upname_k35, idnk34_k35, qty_k35, up_k35, daro_k35, clin_k35)`);
+    lines.push(`VALUES (@nextk35 + ${i}, GETDATE(), 'dibs-auto', @nextk34 + ${i}, ${b.qty}, ${b.price}, ${b.lead_days}, '      ');`);
     lines.push("");
   }
 

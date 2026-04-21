@@ -20,13 +20,19 @@ DIBS is mostly glue between five external systems. This page is a field guide to
 | `k10_tab` | Solicitations (master header). `sol_no_k10` matches DIBBS format exactly. |
 | `k11_tab` | Solicitation line items. |
 | `k08_tab` | Item master. NSN, description, mfr part number. |
-| `k34_tab` | Bid line items (76 columns). `stat_k34` = blank (draft), S (submitted). |
-| `k33_tab` | Bid batch header. `batch_k33` FK from k34. |
-| `k35_tab` | Bid pricing/delivery. |
+| `k33_tab` | Bid batch header (the "envelope"). 13 cols including four status strings (`o_stat_k33`, `t_stat_k33`, `a_stat_k33`, `s_stat_k33`) that encode staging vs posted state. See [lamlinks-writeback.md](./lamlinks-writeback.md). |
+| `k34_tab` | Bid line items (74 columns). `idnk33_k34` links back to the parent envelope. |
+| `k35_tab` | Bid pricing/delivery. One row per k34 line: `qty_k35`, `up_k35` (unit price), `daro_k35` (delivery ARO days). |
 | `k81_tab` | Awards. |
 | `ka8_tab → ka9_tab → kaj_tab → kad_tab → kae_tab` | Job → line → shipment → invoice → invoice line. The invoicing chain. |
 
-**Why we don't write to it (yet):** Everything above is read-only until Yosef signs off. The bid chain (`k33/k34/k35`) has been audited — **no stored procedures, no triggers, only 2 column-level DB defaults**. It's a dumb data schema; all submission logic lives in the LamLinks Windows client. So the safe write path is: insert `k33` in `acknowledged` state + `k34` bid lines + `k35` pricing rows, and stop. Abe clicks Submit in the LamLinks UI and its app code handles EDI transmission. Tooling: `scripts/generate-bid-insert-sql.ts` (dry-run SQL generator), `scripts/reverse-engineer-bid-schema.ts` (schema analyzer), `scripts/discover-llk-procs.ts` (proc/trigger audit).
+**Writing to the bid chain (k33/k34/k35):** Validated 2026-04-21 — we transmitted two DIBS-generated bids to DLA through this path. The full technical reference is [lamlinks-writeback.md](./lamlinks-writeback.md) — read it before writing new write-back code. Key facts:
+
+- No triggers, no stored procedures on these tables. All logic lives in the LamLinks Windows client.
+- "Saved but not posted" is encoded in four status strings on `k33_tab`, not in a separate staging table.
+- The LamLinks client uses a **sequential client-side counter** for `idnk34`/`idnk35` ids — NOT `MAX+1` at save time. Inserting at `MAX+1` while Abe is mid-session will collide with his counter after N saves. Use `MAX+30` or larger when he's active.
+- Always piggyback under Abe's existing staged envelope (clone metadata from a known-good k34 row; override only 7 fields). Fresh-envelope mode is untested.
+- Canonical write script: `scripts/append-bid-test.ts` (replace config constants per bid). Status reconciliation: `scripts/sync-dibs-status.ts`.
 
 The invoicing chain (`ka8 → ka9 → kaj → kad → kae`) has NOT been audited yet and is Yosef's domain. Writing to it is out of scope until he signs off on the quote/invoice posting test.
 

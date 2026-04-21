@@ -69,6 +69,23 @@ for (let page = 0; page < SAFETY_MAX_PAGES; page++) {
 }
 ```
 
+## LamLinks "Connectivity error" on bid save = PK collision with a DIBS write-back, not a network issue
+
+> Symptom: Abe clicks Save on a new bid line in LamLinks. UI shows `Commit add- commit_k34-1526 Connectivity error: [Microsoft][ODBC SQL Server Driver][SQL Server]Violation of PRIMARY KEY constraint 'k34_tab_idnk34_k34'. Cannot insert duplicate key in object 'dbo.k34_tab'. The duplicate key value is (<id>).`
+
+The error text says "Connectivity error" but it isn't — the SQL Server payload underneath is a duplicate-key violation. Cause: DIBS wrote to the `idnk34` value Abe's LamLinks client had pre-reserved.
+
+**Why this happens:** the LamLinks Windows client maintains its own sequential counter for `idnk34_k34` and `idnk35_k35`. It reads `MAX+1` once (probably on form open or session start) and then increments by 1 on every save — it does **not** re-read `MAX` at save time. So if a DIBS write-back grabs `MAX+1` while Abe is mid-session, his counter will eventually hit the same id.
+
+**Rules for any write to `k33/k34/k35` while Abe might be active:**
+
+1. Never use `MAX(idnk34)+1` as-is. Add a cushion: `MAX + 30` is the working minimum, bigger is safer. Abe's envelopes are typically 5-15 lines, so 30+ keeps us well ahead of his counter.
+2. Never delete+reinsert. Deleting frees an id, Abe's counter is still pointing at it, your reinsert grabs it back — collision on his next save. We hit this exact pattern on the first write-back attempt.
+3. Tell Abe to **not** open additional "Add-line" forms while a DIBS insert is running. Parallel reservations overlap.
+4. Recovery when it happens: move our row to a much higher id (INSERT copy at `MAX+30`, DELETE old) — frees Abe's id, his retry succeeds. Pattern: `scripts/move-our-ids-up.ts`.
+
+Full write-back reference: [lamlinks-writeback.md](./lamlinks-writeback.md).
+
 ## Imports without enrich = silent zero
 
 > Symptom: 13K rows imported from LamLinks, dashboard "sourceable" count barely moved. Every NSN Abe was actually bidding on existed in `nsn_catalog` but DIBS marked all 624 of his bids as "unsourced."

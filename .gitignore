@@ -48,3 +48,6 @@ next-env.d.ts
 
 # discovery data (too large for git)
 /data/
+
+# local snapshot/diagnostic output
+/tmp/

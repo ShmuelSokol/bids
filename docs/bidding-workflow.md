@@ -70,16 +70,18 @@ Abe set a price (usually the suggested bid, sometimes an override). The row is s
 
 ### 4. Submitted
 
-The bid is staged. Today "submitted" means the row is marked `status='submitted'` in `bid_decisions` and copy-pasted into LamLinks by Abe. The direct write-back path is built but gated: `scripts/generate-bid-insert-sql.ts` produces a dry-run SQL file against `k33_tab / k34_tab / k35_tab` for Yosef to review. Once Yosef signs off, `--execute` commits the INSERTs directly, leaving Abe to click Submit in the LamLinks UI (which owns EDI transmission — we never touch the transmit fields).
+The bid has transmitted to DLA via LamLinks' EDI. DIBS `bid_decisions.status = 'submitted'` with a `comment` pointing at the `k34_tab` row (`Transmitted via LamLinks k34=<id>`).
 
-**Test plan for first real write** (agreed 2026-04-15 meeting):
-1. Back up k33/k34/k35 rows or at least snapshot max IDs first
-2. Abe holds the next real solicitation he'd bid on, tells us the sol#
-3. DIBS writes the chain for that one sol
-4. Yosef watches LamLinks UI — does it appear as a pending draft Abe can review + Submit?
-5. Second test: Abe bids normally, then modifies (65d → 64d) to see how LamLinks handles the second write — supersede or new row. Informs our re-bid handling.
+**First real transmission: 2026-04-21.** Two DIBS-generated bids went to DLA in the same session:
+- SPE2DP-26-T-2975 @ $46.45 × 2, 45d (envelope 46852, k34=495751)
+- SPE2DS-26-T-9795 @ $24 × 1 EA, 35d (envelope 46853, k34=495752)
 
-**Column:** `bid_decisions.status = 'submitted'` with a `submitted_at` timestamp.
+The write-back pattern (piggyback-under-staged-envelope) is documented in [lamlinks-writeback.md](./lamlinks-writeback.md). The status reconciler is `scripts/sync-dibs-status.ts` — runs on-demand today, should move to a 15-min cron.
+
+**What's still manual in the submission path (as of 2026-04-21):**
+- DIBS write-back is run by hand (`scripts/append-bid-test.ts --execute`, one sol at a time). Needs to become a UI button on the "Quoted" tab that takes the selected rows and inserts them as lines under Abe's currently-staged envelope.
+- The status reconciliation sweep (`sync-dibs-status.ts`) is run by hand. Needs a cron.
+- Abe still clicks Post in LamLinks. This stays manual by design — he reviews the batch visually first.
 
 Once submitted, the row sticks around for post-game analysis. The `award_lookup` background job eventually pulls the award result (win/loss/partial) and attaches it.
 
@@ -189,16 +191,17 @@ LamLinks carries solicitations from multiple government procurement systems, not
 
 ## What's still manual (and shouldn't be)
 
-- **Bid submission to LamLinks.** Abe copy-pastes from DIBS into LamLinks. Tooling is built (`scripts/generate-bid-insert-sql.ts` — dry-run generator for the `k33 → k34 → k35` chain, hardcoded ERG constants pulled from 50 of Abe's recent successful bids). Awaiting Yosef's review of the generated SQL before flipping to `--execute`. See *"what's next to test"* below.
+- **Bid submission to LamLinks.** Working via `scripts/append-bid-test.ts --execute` (one sol at a time, inserts under Abe's currently-staged envelope). Needs to become a UI button on the "Quoted" tab — select rows, hit Submit, they become k34+k35 lines under the active envelope. See [lamlinks-writeback.md](./lamlinks-writeback.md) for the technical pattern.
+- **DIBS ↔ LamLinks status sync.** `scripts/sync-dibs-status.ts` flips `bid_decisions.status` from `quoted` to `submitted` after LamLinks transmission. Run manually today; needs a 15-min cron.
 - **Morning sync & daily briefing** — both now scheduled via Windows Task Scheduler on `NYEVRVSQL001` (7 tasks, interactive mode so they bind to Shmuel's RDP session).
 
 ## What's next to test after bid submission
 
-Once the LamLinks write-back is live, the downstream lifecycle becomes testable end-to-end:
+Write-back transmitted successfully 2026-04-21 (two bids into DLA). Remaining things to validate end-to-end:
 
-1. **k33 pending-state display** — Does the inserted batch show up in Abe's LamLinks UI as a pending draft he can review? (Our theory: `a_stat='acknowledged'` with null `o_stat/t_stat/s_stat` = pending. Unverified.)
-2. **EDI transmission round-trip** — After Abe clicks Submit in LamLinks, does the state machine flip and DIBBS confirm receipt? Monitor `k33.t_stat_k33` transition to `sent`.
-3. **Award detection loop** — When DIBBS returns an award (win or loss), does it land in `k81_tab` within a reasonable SLA, and does our nightly import pick it up and attach it to the original `bid_decisions` row? Test by tracing a known win end-to-end.
+1. **Award detection loop** — When DLA returns an award (win or loss) for one of our transmitted bids, does it land in `k81_tab` within a reasonable SLA, and does our nightly import pick it up and attach it to the original `bid_decisions` row? Test by tracking SPE2DP-26-T-2975 and SPE2DS-26-T-9795 through their respective return-by dates.
+2. **Re-bid handling** — Abe modifies a bid after submission (e.g., 45d → 40d). Does inserting a second k34 row for the same `idnk11_k34` under a new envelope work, and does DLA accept the amendment? The empirical test is: make a second DIBS write-back for a sol already submitted earlier and watch what transmits.
+3. **Fresh-envelope mode** — Currently we piggyback under Abe's envelope. Once we've transmitted 5+ bids this way, try minting a fresh `k33_tab` header ourselves (so Abe doesn't have to save a seed line first). Needs the `gennte_k34` XML blob pinned to a known-working value and a test of what `qtek14_k34` actually means.
 4. **PO generation from Awards** — Select a won award in DIBS → "Generate POs" → verify it groups by cheapest vendor (not by awardee CAGE) and the cost/margin math matches expectations.
 5. **LamLinks internal invoice posting (Yosef's test)** — The `ka8 → ka9 → kaj → kad → kae` chain. This is **not** the existing `/invoicing` EDI-810-to-DLA flow (that's live). It's a separate write surface letting DIBS post invoices into LamLinks itself so Yosef skips the desktop-UI click-through. Schema is mapped via `scripts/reverse-engineer-invoice-schema.ts` but the write-back generator is not built yet — phased path with 7 open questions for Yosef. See `docs/flows/invoicing.md#lamlinks-internal-invoicing-yosef-test`.
 6. **Double-submission safety** — What happens if DIBS regenerates SQL for a bid Abe already submitted? We rely on the `already_bid` check against `abe_bids_live`, but the write-back script doesn't re-check at insert time. Risk: duplicate k34 rows.

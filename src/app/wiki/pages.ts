@@ -26,6 +26,11 @@ export const WIKI_PAGES = [
     subtitle: "Solicitation → Sourceable → Quoted → Submitted",
   },
   {
+    slug: "lamlinks-writeback",
+    title: "LamLinks Bid Write-Back",
+    subtitle: "How DIBS transmits bids to DLA via LamLinks",
+  },
+  {
     slug: "gotchas",
     title: "Gotchas & War Stories",
     subtitle: "Things that broke and what we learned",
