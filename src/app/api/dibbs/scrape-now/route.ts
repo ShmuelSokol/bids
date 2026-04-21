@@ -21,6 +21,7 @@ interface RawSolicitation {
   return_by_date: string;
   fsc: string;
   set_aside: string;
+  data_source?: string;
 }
 
 function parseTable(html: string, fsc: string): RawSolicitation[] {

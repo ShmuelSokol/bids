@@ -1057,19 +1057,19 @@ export function SolicitationsList({
             <thead>
               <tr className="border-b border-card-border text-left text-muted bg-gray-50/50">
                 {(filter === "quoted" || filter === "sourceable") && <th className="px-3 py-2 w-8"></th>}
-                <th className="px-3 py-2 font-medium" title="NSN from DIBBS scrape or LamLinks (k08); nomenclature from DIBBS. Item metadata after enrichment comes from PUB LOG + AX ProductBarcodesV3.">NSN / Item</th>
-                <th className="px-3 py-2 font-medium" title="Solicitation number from DIBBS / LamLinks k10.sol_no_k10 — matches exactly across sources.">Sol #</th>
-                <th className="px-3 py-2 text-right" title="Quantity solicited, from DIBBS line data."><SortHeader field="quantity">Qty</SortHeader></th>
-                <th className="px-3 py-2 text-right font-medium" title="Our unit cost from nsn_costs (waterfall: Recent PO → Older PO → AX price agreement → Master DB). Source tag shown under $ amount.">Cost</th>
-                <th className="px-3 py-2 text-right" title="Computed by DIBS: winning-bid history if recent wins exist for this NSN, else bracket markup (2.00× under $25, 1.36× $25-100, 1.21× $100-500, 1.16× $500+). See /wiki/pricing-logic."><SortHeader field="price">Suggested</SortHeader></th>
-                <th className="px-3 py-2 text-right" title="Computed by DIBS: (suggested − cost) / suggested. FOB-Destination lines subtract shipping first."><SortHeader field="margin">Margin</SortHeader></th>
-                <th className="px-3 py-2 text-right" title="Computed: suggested × quantity. What we'd win if this bid succeeds at suggested price."><SortHeader field="value">Pot. Value</SortHeader></th>
-                <th className="px-3 py-2 text-center" title="DIBS AI score 0-100: cost confidence + margin quality + win probability (FSC heatmap) + value + timing. See /wiki/bidding-workflow."><SortHeader field="score">Score</SortHeader></th>
-                <th className="px-3 py-2 font-medium" title="Freight terms from DIBBS solicitation line — D=Destination (we pay shipping), O=Origin (buyer pays).">FOB</th>
-                <th className="px-3 py-2" title="Response-by date from DIBBS / LamLinks k10.closes_k10."><SortHeader field="due">Due</SortHeader></th>
-                <th className="px-3 py-2" title="Date DIBBS posted this solicitation (issue_date)."><SortHeader field="posted">Posted</SortHeader></th>
-                <th className="px-3 py-2 text-center font-medium">History</th>
-                <th className="px-3 py-2 font-medium" title="Which data source flagged this solicitation — LL (LamLinks import, covers our subscribed 240 FSCs) or DIBBS (our scrape, covers the other 224).">Channel</th>
+                <th className="px-3 py-2 font-medium"><div>NSN / Item</div><div className="text-[8px] font-normal text-muted">LL k08 + AX + PUB LOG</div></th>
+                <th className="px-3 py-2 font-medium"><div>Sol #</div><div className="text-[8px] font-normal text-muted">LL k10</div></th>
+                <th className="px-3 py-2 text-right"><SortHeader field="quantity">Qty</SortHeader><div className="text-[8px] font-normal text-muted">LL</div></th>
+                <th className="px-3 py-2 text-right font-medium"><div>Cost</div><div className="text-[8px] font-normal text-muted">AX waterfall</div></th>
+                <th className="px-3 py-2 text-right"><SortHeader field="price">Suggested</SortHeader><div className="text-[8px] font-normal text-muted">DIBS computed</div></th>
+                <th className="px-3 py-2 text-right"><SortHeader field="margin">Margin</SortHeader><div className="text-[8px] font-normal text-muted">DIBS computed</div></th>
+                <th className="px-3 py-2 text-right"><SortHeader field="value">Pot. Value</SortHeader><div className="text-[8px] font-normal text-muted">DIBS computed</div></th>
+                <th className="px-3 py-2 text-center"><SortHeader field="score">Score</SortHeader><div className="text-[8px] font-normal text-muted">DIBS AI</div></th>
+                <th className="px-3 py-2 font-medium"><div>FOB</div><div className="text-[8px] font-normal text-muted">LL</div></th>
+                <th className="px-3 py-2"><SortHeader field="due">Due</SortHeader><div className="text-[8px] font-normal text-muted">LL k10</div></th>
+                <th className="px-3 py-2"><SortHeader field="posted">Posted</SortHeader><div className="text-[8px] font-normal text-muted">LL k10</div></th>
+                <th className="px-3 py-2 text-center font-medium"><div>History</div><div className="text-[8px] font-normal text-muted">LL + AX</div></th>
+                <th className="px-3 py-2 font-medium"><div>Source</div><div className="text-[8px] font-normal text-muted">AX / MDB / LL</div></th>
                 <th className="px-3 py-2 font-medium w-20"></th>
               </tr>
             </thead>
