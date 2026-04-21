@@ -21,6 +21,7 @@ import { calculateBidScore, type BidScore } from "@/lib/bid-score";
 import { formatDateShort, formatDateTime, formatTime } from "@/lib/dates";
 import { isOpenSolicitation } from "@/lib/solicitation-filters";
 import { NsnHistoryDetail } from "@/components/nsn-history-detail";
+import { SourceTip } from "@/components/source-tip";
 
 interface Solicitation {
   id: number;
@@ -1132,7 +1133,7 @@ export function SolicitationsList({
                           </button>
                           <div>
                             <div className="flex items-center gap-1 flex-wrap">
-                              <span className="font-mono text-xs text-accent">{s.nsn}</span>
+                              <SourceTip source="LamLinks k08_tab.fsc_k08 + niin_k08. Matched to AX via ProductBarcodesV3."><span className="font-mono text-xs text-accent">{s.nsn}</span></SourceTip>
                               {s.bid_status && (
                                 <span className={`text-[10px] px-1 rounded ${
                                   s.bid_status === "quoted" ? "bg-blue-100 text-blue-700" :
@@ -1144,7 +1145,7 @@ export function SolicitationsList({
                               {s.source === "masterdb" && <span className="text-[8px] px-1 rounded bg-purple-50 text-purple-600">MDB</span>}
                               {s.data_source === "lamlinks" && <span className="text-[8px] px-1 rounded bg-cyan-50 text-cyan-700">LL</span>}
                             </div>
-                            <div className="text-xs truncate max-w-[180px]">{s.nomenclature || "—"}</div>
+                            <div className="text-xs truncate max-w-[180px]"><SourceTip source="LamLinks k08_tab.p_desc_k08">{s.nomenclature || "—"}</SourceTip></div>
                             <div className="flex flex-wrap gap-0.5 mt-0.5">
                               {s.already_bid && (
                                 <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium">
@@ -1173,8 +1174,8 @@ export function SolicitationsList({
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-2 font-mono text-[10px] text-muted">{s.solicitation_number}</td>
-                      <td className="px-3 py-2 text-right">{s.quantity}</td>
+                      <td className="px-3 py-2 font-mono text-[10px] text-muted"><SourceTip source="LamLinks k10_tab.sol_no_k10">{s.solicitation_number}</SourceTip></td>
+                      <td className="px-3 py-2 text-right"><SourceTip source="LamLinks k11_tab quantity">{s.quantity}</SourceTip></td>
                       <td className="px-3 py-2 text-right font-mono text-xs text-muted">
                         {s.our_cost ? `$${s.our_cost.toFixed(2)}` : "—"}
                         {s.cost_source && <div className="text-[9px] text-muted/60 truncate max-w-[80px]">{s.cost_source}</div>}
@@ -1188,13 +1189,16 @@ export function SolicitationsList({
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">
+                        <SourceTip source="DIBS computed: (suggested - cost) / suggested">
                         {s.margin_pct !== null ? (
                           <span className={`text-xs font-medium ${s.margin_pct >= 20 ? "text-green-600" : s.margin_pct >= 10 ? "text-yellow-600" : "text-red-600"}`}>
                             {s.margin_pct}%
                           </span>
                         ) : "—"}
+                        </SourceTip>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-xs font-bold">
+                        <SourceTip source="DIBS computed: suggested × quantity">
                         {potValue > 0 ? (
                           <>
                             ${potValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1203,8 +1207,10 @@ export function SolicitationsList({
                             )}
                           </>
                         ) : "—"}
+                        </SourceTip>
                       </td>
                       <td className="px-3 py-2 text-center">
+                        <SourceTip source="DIBS AI score: cost confidence + margin quality + win probability + value + timing">
                         {(() => {
                           const bs = (s as any)._bidScore as BidScore | undefined;
                           if (!bs) return "—";
@@ -1218,8 +1224,10 @@ export function SolicitationsList({
                             </div>
                           );
                         })()}
+                        </SourceTip>
                       </td>
                       <td className="px-3 py-2 text-center">
+                        <SourceTip source="LamLinks solicitation — D=Destination (we pay shipping), O=Origin (buyer pays)">
                         {s.fob ? (
                           <span className={`text-[10px] font-medium px-1 rounded ${s.fob === "D" ? "bg-blue-50 text-blue-700" : "bg-gray-50 text-gray-600"}`}>
                             {s.fob === "D" ? "Dest" : "Orig"}
@@ -1228,10 +1236,12 @@ export function SolicitationsList({
                         {s.est_shipping && s.fob === "D" && (
                           <div className="text-[9px] text-muted">~${s.est_shipping} ship</div>
                         )}
+                        </SourceTip>
                       </td>
-                      <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">{s.return_by_date}</td>
-                      <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">{s.issue_date || "—"}</td>
+                      <td className="px-3 py-2 text-xs text-muted whitespace-nowrap"><SourceTip source="LamLinks k10_tab.closes_k10 — response deadline">{s.return_by_date}</SourceTip></td>
+                      <td className="px-3 py-2 text-xs text-muted whitespace-nowrap"><SourceTip source="LamLinks k10_tab.issue_date — when DIBBS posted the solicitation">{s.issue_date || "—"}</SourceTip></td>
                       <td className="px-3 py-2 text-center text-xs whitespace-nowrap">
+                        <SourceTip source="Bids from abe_bids + abe_bids_live (LamLinks k34). Wins from awards (LamLinks k81).">
                         {(() => {
                           const hc = (s as any)._histCounts;
                           if (!hc || (hc.bids === 0 && hc.wins === 0)) return <span className="text-muted">—</span>;
@@ -1243,6 +1253,7 @@ export function SolicitationsList({
                             </span>
                           );
                         })()}
+                        </SourceTip>
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex flex-col gap-0.5">

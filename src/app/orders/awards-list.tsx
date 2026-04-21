@@ -14,6 +14,7 @@ import {
   Clock,
   Trash2,
 } from "lucide-react";
+import { SourceTip } from "@/components/source-tip";
 
 interface Award {
   id: number;
@@ -348,26 +349,26 @@ export function AwardsList({
         <div className="grid grid-cols-5 gap-2 mb-4">
           <button onClick={() => setShipFilter(shipFilter === "shipped" ? null : "shipped")}
             className={`rounded-lg border p-3 text-left transition-colors ${shipFilter === "shipped" ? "border-green-400 bg-green-50" : "border-card-border bg-card-bg hover:border-green-300"}`}>
-            <div className="text-lg font-bold text-green-700">{shipStats.shipped.toLocaleString()}</div>
+            <div className="text-lg font-bold text-green-700"><SourceTip source="From LamLinks ship_status field">{shipStats.shipped.toLocaleString()}</SourceTip></div>
             <div className="text-[10px] text-green-600">Shipped / Done</div>
           </button>
           <button onClick={() => setShipFilter(shipFilter === "not_shipped" ? null : "not_shipped")}
             className={`rounded-lg border p-3 text-left transition-colors ${shipFilter === "not_shipped" ? "border-red-400 bg-red-50" : "border-card-border bg-card-bg hover:border-red-300"}`}>
-            <div className="text-lg font-bold text-red-700">{shipStats.notShipped.toLocaleString()}</div>
+            <div className="text-lg font-bold text-red-700"><SourceTip source="From LamLinks ship_status field">{shipStats.notShipped.toLocaleString()}</SourceTip></div>
             <div className="text-[10px] text-red-600">Not Shipped</div>
           </button>
           <button onClick={() => setShipFilter(shipFilter === "no_status" ? null : "no_status")}
             className={`rounded-lg border p-3 text-left transition-colors ${shipFilter === "no_status" ? "border-gray-400 bg-gray-50" : "border-card-border bg-card-bg hover:border-gray-300"}`}>
-            <div className="text-lg font-bold text-gray-700">{shipStats.noStatus.toLocaleString()}</div>
+            <div className="text-lg font-bold text-gray-700"><SourceTip source="From LamLinks ship_status field">{shipStats.noStatus.toLocaleString()}</SourceTip></div>
             <div className="text-[10px] text-gray-500">No Status</div>
           </button>
           <button onClick={() => setShipFilter(shipFilter === "in_progress" ? null : "in_progress")}
             className={`rounded-lg border p-3 text-left transition-colors ${shipFilter === "in_progress" ? "border-amber-400 bg-amber-50" : "border-card-border bg-card-bg hover:border-amber-300"}`}>
-            <div className="text-lg font-bold text-amber-700">{(shipStats.shipping + shipStats.partial).toLocaleString()}</div>
+            <div className="text-lg font-bold text-amber-700"><SourceTip source="From LamLinks ship_status field">{(shipStats.shipping + shipStats.partial).toLocaleString()}</SourceTip></div>
             <div className="text-[10px] text-amber-600">In Progress</div>
           </button>
           <div className="rounded-lg border border-card-border bg-card-bg p-3 text-left">
-            <div className="text-lg font-bold text-foreground">{shipStats.total.toLocaleString()}</div>
+            <div className="text-lg font-bold text-foreground"><SourceTip source="From LamLinks ship_status field">{shipStats.total.toLocaleString()}</SourceTip></div>
             <div className="text-[10px] text-muted">Total (6 months)</div>
           </div>
         </div>
@@ -563,31 +564,32 @@ export function AwardsList({
                         />
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-accent">
-                        {a.nsn}
+                        <SourceTip source="LamLinks k81_tab → k08_tab (fsc_k08 + niin_k08)">{a.nsn}</SourceTip>
                       </td>
                       <td className="px-3 py-2">
                         <div className="truncate max-w-[180px] text-xs">
-                          {a.description || "—"}
+                          <SourceTip source="LamLinks k08_tab.p_desc_k08">{a.description || "—"}</SourceTip>
                         </div>
                         {a.cage && (
                           <div className="text-[10px] text-muted">
-                            CAGE: {a.cage}
+                            CAGE: <SourceTip source="LamLinks k81_tab.a_cage_k81 — always 0AG09 for our awards">{a.cage}</SourceTip>
                           </div>
                         )}
                       </td>
                       <td className="px-3 py-2 font-mono text-[10px]">
-                        {a.contract_number?.trim().slice(0, 20)}
+                        <SourceTip source="LamLinks k81_tab.cntrno_k81">{a.contract_number?.trim().slice(0, 20)}</SourceTip>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-xs">
-                        ${a.unit_price?.toFixed(2)}
+                        <SourceTip source="LamLinks k81_tab.uprice_k81 — the price we won the award at">${a.unit_price?.toFixed(2)}</SourceTip>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-xs text-muted">
-                        {a.our_cost ? `$${a.our_cost.toFixed(2)}` : "—"}
+                        <SourceTip source="AX nsn_costs waterfall: Recent PO → Price Agreement → Older PO">{a.our_cost ? `$${a.our_cost.toFixed(2)}` : "—"}</SourceTip>
                       </td>
                       <td className="px-3 py-2 text-right text-xs">
-                        {a.quantity}
+                        <SourceTip source="LamLinks k81_tab.qty_k81">{a.quantity}</SourceTip>
                       </td>
                       <td className="px-3 py-2 text-right">
+                        <SourceTip source="DIBS computed: (sell price - cost) / sell price">
                         {a.margin_pct !== null ? (
                           <span
                             className={`text-xs font-medium ${
@@ -603,8 +605,10 @@ export function AwardsList({
                         ) : (
                           "—"
                         )}
+                        </SourceTip>
                       </td>
                       <td className="px-3 py-2 text-center text-[10px]">
+                        <SourceTip source="LamLinks k81_tab.fob — D=Destination, O=Origin">
                         {a.fob === "D" ? (
                           <span className="px-1 rounded bg-blue-50 text-blue-700">
                             Dest
@@ -616,15 +620,19 @@ export function AwardsList({
                         ) : (
                           "—"
                         )}
+                        </SourceTip>
                       </td>
                       <td className="px-3 py-2">
+                        <SourceTip source="AX nsn_costs.vendor — the vendor from the cost waterfall, or bid_vendor frozen at bid time">
                         {a.assigned_vendor ? (
                           <span className="text-[10px] px-1 rounded bg-green-50 text-green-700 font-mono">{a.assigned_vendor}</span>
                         ) : (
                           <span className="text-[10px] px-1 rounded bg-red-50 text-red-600">UNASSIGNED</span>
                         )}
+                        </SourceTip>
                       </td>
                       <td className="px-3 py-2">
+                        <SourceTip source="LamLinks k81_tab.shpsta_k81 — updated by shipping sync every 15 min">
                         <span
                           className={`text-[10px] px-1 rounded ${
                             a.ship_status === "Shipped"
@@ -641,9 +649,10 @@ export function AwardsList({
                             PO
                           </span>
                         )}
+                        </SourceTip>
                       </td>
                       <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">
-                        {formatDateShort(a.award_date)}
+                        <SourceTip source="LamLinks k81_tab.awddte_k81">{formatDateShort(a.award_date)}</SourceTip>
                       </td>
                     </tr>
                   ))}
@@ -696,8 +705,9 @@ export function AwardsList({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-bold">
-                        {po.po_number}
+                        <SourceTip source="DIBS generated — not yet in AX until DMF posted">{po.po_number}</SourceTip>
                       </span>
+                      <SourceTip source="DIBS internal state — draft/submitted/confirmed">
                       <span
                         className={`text-[10px] px-2 py-0.5 rounded font-medium ${
                           po.status === "draft"
@@ -711,16 +721,17 @@ export function AwardsList({
                       >
                         {po.status.toUpperCase()}
                       </span>
+                      </SourceTip>
                     </div>
                     <div className="text-sm text-muted mt-0.5">
-                      {po.supplier} · {po.line_count} items ·{" "}
+                      <SourceTip source="AX nsn_costs.vendor — routed by cost waterfall">{po.supplier}</SourceTip> · {po.line_count} items ·{" "}
                       {formatDateShort(po.created_at)}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
                       <div className="text-lg font-bold font-mono">
-                        ${po.total_cost?.toFixed(2)}
+                        <SourceTip source="DIBS computed from nsn_costs × quantity">${po.total_cost?.toFixed(2)}</SourceTip>
                       </div>
                       <div className="text-xs text-muted">est. cost</div>
                     </div>

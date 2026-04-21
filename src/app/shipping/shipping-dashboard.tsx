@@ -192,19 +192,19 @@ export function ShippingDashboard({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-card-border text-left text-muted">
-                <th className="px-3 py-2 font-medium">Ship #</th>
-                <th className="px-3 py-2 font-medium">Contract</th>
-                <th className="px-3 py-2 font-medium">CLIN</th>
-                <th className="px-3 py-2 font-medium">NSN</th>
-                <th className="px-3 py-2 font-medium">Item</th>
-                <th className="px-3 py-2 font-medium text-right">Qty</th>
-                <th className="px-3 py-2 font-medium text-right">Value</th>
-                <th className="px-3 py-2 font-medium">FOB</th>
-                <th className="px-3 py-2 font-medium">Weight</th>
-                <th className="px-3 py-2 font-medium">Transport</th>
-                <th className="px-3 py-2 font-medium">Tracking</th>
-                <th className="px-3 py-2 font-medium">Ship Date</th>
-                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Ship #<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Contract<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">CLIN<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">NSN<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Item<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium text-right">Qty<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium text-right">Value<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">FOB<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Weight<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Transport<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Tracking<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Ship Date<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">Status<div className="text-[7px] font-normal text-muted">LL k81</div></th>
               </tr>
             </thead>
             <tbody>

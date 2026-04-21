@@ -112,13 +112,13 @@ export default function FollowupsPage() {
           <table className="w-full text-xs">
             <thead className="text-muted border-b border-card-border">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">AX PO #</th>
-                <th className="px-4 py-2 text-left font-medium">Supplier</th>
-                <th className="px-4 py-2 text-right font-medium">Lines</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
-                <th className="px-4 py-2 text-right font-medium">SLA</th>
-                <th className="px-4 py-2 text-right font-medium">Overdue</th>
-                <th className="px-4 py-2 text-left font-medium">State</th>
+                <th className="px-4 py-2 text-left font-medium">AX PO #<div className="text-[7px] font-normal text-muted">DIBS / AX</div></th>
+                <th className="px-4 py-2 text-left font-medium">Supplier<div className="text-[7px] font-normal text-muted">AX nsn_costs</div></th>
+                <th className="px-4 py-2 text-right font-medium">Lines<div className="text-[7px] font-normal text-muted">DIBS po_lines</div></th>
+                <th className="px-4 py-2 text-right font-medium">Total<div className="text-[7px] font-normal text-muted">DIBS po_lines</div></th>
+                <th className="px-4 py-2 text-right font-medium">SLA<div className="text-[7px] font-normal text-muted">DIBS rules</div></th>
+                <th className="px-4 py-2 text-right font-medium">Overdue<div className="text-[7px] font-normal text-muted">DIBS computed</div></th>
+                <th className="px-4 py-2 text-left font-medium">State<div className="text-[7px] font-normal text-muted">DIBS purchase_orders</div></th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -169,10 +169,10 @@ export default function FollowupsPage() {
         <table className="w-full text-xs">
           <thead className="text-muted border-b border-card-border">
             <tr>
-              <th className="px-4 py-2 text-left font-medium">Vendor</th>
-              <th className="px-4 py-2 text-right font-medium">SLA days</th>
-              <th className="px-4 py-2 text-left font-medium">Email template</th>
-              <th className="px-4 py-2 text-left font-medium">Updated</th>
+              <th className="px-4 py-2 text-left font-medium">Vendor<div className="text-[7px] font-normal text-muted">DIBS config</div></th>
+              <th className="px-4 py-2 text-right font-medium">SLA days<div className="text-[7px] font-normal text-muted">DIBS config</div></th>
+              <th className="px-4 py-2 text-left font-medium">Email template<div className="text-[7px] font-normal text-muted">DIBS config</div></th>
+              <th className="px-4 py-2 text-left font-medium">Updated<div className="text-[7px] font-normal text-muted">DIBS config</div></th>
               <th className="px-4 py-2"></th>
             </tr>
           </thead>
@@ -228,12 +228,12 @@ export default function FollowupsPage() {
               <table className="w-full text-xs">
                 <thead className="text-muted border-b border-card-border">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Contract</th>
-                    <th className="px-4 py-2 text-left font-medium">NSN</th>
-                    <th className="px-4 py-2 text-right font-medium">Qty</th>
-                    <th className="px-4 py-2 text-right font-medium">Price</th>
-                    <th className="px-4 py-2 text-left font-medium">Awarded</th>
-                    <th className="px-4 py-2 text-left font-medium">Description</th>
+                    <th className="px-4 py-2 text-left font-medium">Contract<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                    <th className="px-4 py-2 text-left font-medium">NSN<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Qty<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Price<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                    <th className="px-4 py-2 text-left font-medium">Awarded<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                    <th className="px-4 py-2 text-left font-medium">Description<div className="text-[7px] font-normal text-muted">LL k81</div></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -264,12 +264,12 @@ export default function FollowupsPage() {
               <table className="w-full text-xs">
                 <thead className="text-muted border-b border-card-border">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Contract</th>
-                    <th className="px-4 py-2 text-left font-medium">NSN</th>
-                    <th className="px-4 py-2 text-right font-medium">Qty</th>
-                    <th className="px-4 py-2 text-left font-medium">AX PO(s)</th>
-                    <th className="px-4 py-2 text-left font-medium">Supplier</th>
-                    <th className="px-4 py-2 text-left font-medium">Confidence</th>
+                    <th className="px-4 py-2 text-left font-medium">Contract<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                    <th className="px-4 py-2 text-left font-medium">NSN<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Qty<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                    <th className="px-4 py-2 text-left font-medium">AX PO(s)<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-4 py-2 text-left font-medium">Supplier<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-4 py-2 text-left font-medium">Confidence<div className="text-[7px] font-normal text-muted">DIBS computed</div></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -306,10 +306,10 @@ export default function FollowupsPage() {
               <table className="w-full text-xs">
                 <thead className="text-muted border-b border-card-border">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">AX PO #</th>
-                    <th className="px-4 py-2 text-right font-medium">Lines</th>
-                    <th className="px-4 py-2 text-right font-medium">Total</th>
-                    <th className="px-4 py-2 text-left font-medium">Earliest delivery</th>
+                    <th className="px-4 py-2 text-left font-medium">AX PO #<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Lines<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Total<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-4 py-2 text-left font-medium">Earliest delivery<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
                   </tr>
                 </thead>
                 <tbody>

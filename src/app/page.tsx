@@ -219,14 +219,14 @@ export default async function Dashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-card-border text-left text-muted">
-                  <th className="px-4 py-3 font-medium">NSN</th>
-                  <th className="px-4 py-3 font-medium">Item</th>
-                  <th className="px-4 py-3 font-medium text-right">Qty</th>
-                  <th className="px-4 py-3 font-medium text-right">Cost</th>
-                  <th className="px-4 py-3 font-medium text-right">Suggested</th>
-                  <th className="px-4 py-3 font-medium text-right">Margin</th>
-                  <th className="px-4 py-3 font-medium text-right">Potential Value</th>
-                  <th className="px-4 py-3 font-medium">Due</th>
+                  <th className="px-4 py-3 font-medium"><div>NSN</div><div className="text-[7px] font-normal">LL k08</div></th>
+                  <th className="px-4 py-3 font-medium"><div>Item</div><div className="text-[7px] font-normal">LL k08 + AX</div></th>
+                  <th className="px-4 py-3 font-medium text-right"><div>Qty</div><div className="text-[7px] font-normal">LL</div></th>
+                  <th className="px-4 py-3 font-medium text-right"><div>Cost</div><div className="text-[7px] font-normal">AX waterfall</div></th>
+                  <th className="px-4 py-3 font-medium text-right"><div>Suggested</div><div className="text-[7px] font-normal">DIBS computed</div></th>
+                  <th className="px-4 py-3 font-medium text-right"><div>Margin</div><div className="text-[7px] font-normal">DIBS computed</div></th>
+                  <th className="px-4 py-3 font-medium text-right"><div>Potential Value</div><div className="text-[7px] font-normal">DIBS computed</div></th>
+                  <th className="px-4 py-3 font-medium"><div>Due</div><div className="text-[7px] font-normal">LL k10</div></th>
                 </tr>
               </thead>
               <tbody>
@@ -284,14 +284,14 @@ export default async function Dashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-blue-200 text-left text-muted">
-                  <th className="px-4 py-2 font-medium">Time</th>
-                  <th className="px-4 py-2 font-medium">NSN</th>
-                  <th className="px-4 py-2 font-medium">Item</th>
-                  <th className="px-4 py-2 font-medium text-right">Price</th>
-                  <th className="px-4 py-2 font-medium text-right">Qty</th>
-                  <th className="px-4 py-2 font-medium text-right">Value</th>
-                  <th className="px-4 py-2 font-medium">Lead</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium"><div>Time</div><div className="text-[7px] font-normal">LL k34</div></th>
+                  <th className="px-4 py-2 font-medium"><div>NSN</div><div className="text-[7px] font-normal">LL k08</div></th>
+                  <th className="px-4 py-2 font-medium"><div>Item</div><div className="text-[7px] font-normal">LL k08</div></th>
+                  <th className="px-4 py-2 font-medium text-right"><div>Price</div><div className="text-[7px] font-normal">LL k35</div></th>
+                  <th className="px-4 py-2 font-medium text-right"><div>Qty</div><div className="text-[7px] font-normal">LL k35</div></th>
+                  <th className="px-4 py-2 font-medium text-right"><div>Value</div><div className="text-[7px] font-normal">computed</div></th>
+                  <th className="px-4 py-2 font-medium"><div>Lead</div><div className="text-[7px] font-normal">LL k35</div></th>
+                  <th className="px-4 py-2 font-medium"><div>Status</div><div className="text-[7px] font-normal">LL k33</div></th>
                 </tr>
               </thead>
               <tbody>

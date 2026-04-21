@@ -105,11 +105,11 @@ export default function InvoiceFollowupsPage() {
               <table className="w-full text-xs">
                 <thead className="text-muted border-b border-card-border">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Invoice #</th>
-                    <th className="px-4 py-2 text-left font-medium">Posted on</th>
-                    <th className="px-4 py-2 text-right font-medium">Days posted</th>
-                    <th className="px-4 py-2 text-right font-medium">Total</th>
-                    <th className="px-4 py-2 text-left font-medium">Severity</th>
+                    <th className="px-4 py-2 text-left font-medium">Invoice #<div className="text-[7px] font-normal text-muted">LL kad_tab</div></th>
+                    <th className="px-4 py-2 text-left font-medium">Posted on<div className="text-[7px] font-normal text-muted">LL kad_tab</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Days posted<div className="text-[7px] font-normal text-muted">computed</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Total<div className="text-[7px] font-normal text-muted">LL kad_tab</div></th>
+                    <th className="px-4 py-2 text-left font-medium">Severity<div className="text-[7px] font-normal text-muted">DIBS computed</div></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -155,11 +155,11 @@ export default function InvoiceFollowupsPage() {
                 <table className="w-full text-xs">
                   <thead className="text-muted border-b border-card-border">
                     <tr>
-                      <th className="px-4 py-1.5 text-left font-medium">Contract</th>
-                      <th className="px-4 py-1.5 text-left font-medium">NSN</th>
-                      <th className="px-4 py-1.5 text-right font-medium">Qty</th>
-                      <th className="px-4 py-1.5 text-right font-medium">Sold @</th>
-                      <th className="px-4 py-1.5 text-left font-medium">Awarded</th>
+                      <th className="px-4 py-1.5 text-left font-medium">Contract<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                      <th className="px-4 py-1.5 text-left font-medium">NSN<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                      <th className="px-4 py-1.5 text-right font-medium">Qty<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                      <th className="px-4 py-1.5 text-right font-medium">Sold @<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                      <th className="px-4 py-1.5 text-left font-medium">Awarded<div className="text-[7px] font-normal text-muted">LL k81</div></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -184,12 +184,12 @@ export default function InvoiceFollowupsPage() {
                 <table className="w-full text-xs">
                   <thead className="text-muted border-b border-card-border">
                     <tr>
-                      <th className="px-4 py-1.5 text-left font-medium">Contract</th>
-                      <th className="px-4 py-1.5 text-left font-medium">NSN</th>
-                      <th className="px-4 py-1.5 text-right font-medium">Award Qty</th>
-                      <th className="px-4 py-1.5 text-left font-medium">AX PO(s)</th>
-                      <th className="px-4 py-1.5 text-left font-medium">Supplier</th>
-                      <th className="px-4 py-1.5 text-left font-medium">Conf</th>
+                      <th className="px-4 py-1.5 text-left font-medium">Contract<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                      <th className="px-4 py-1.5 text-left font-medium">NSN<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                      <th className="px-4 py-1.5 text-right font-medium">Award Qty<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                      <th className="px-4 py-1.5 text-left font-medium">AX PO(s)<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                      <th className="px-4 py-1.5 text-left font-medium">Supplier<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                      <th className="px-4 py-1.5 text-left font-medium">Conf<div className="text-[7px] font-normal text-muted">DIBS computed</div></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -237,10 +237,10 @@ export default function InvoiceFollowupsPage() {
               <table className="w-full text-xs">
                 <thead className="text-muted border-b border-card-border">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">AX PO #</th>
-                    <th className="px-4 py-2 text-right font-medium">Lines</th>
-                    <th className="px-4 py-2 text-right font-medium">Total</th>
-                    <th className="px-4 py-2 text-left font-medium">Earliest delivery</th>
+                    <th className="px-4 py-2 text-left font-medium">AX PO #<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Lines<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-4 py-2 text-right font-medium">Total<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
+                    <th className="px-4 py-2 text-left font-medium">Earliest delivery<div className="text-[7px] font-normal text-muted">AX PurchaseOrderLinesV2</div></th>
                     <th className="px-4 py-2 text-left font-medium"></th>
                   </tr>
                 </thead>
@@ -262,14 +262,14 @@ export default function InvoiceFollowupsPage() {
                               <table className="w-full text-[11px]">
                                 <thead className="text-muted">
                                   <tr>
-                                    <th className="px-2 py-1 text-left">Line</th>
-                                    <th className="px-2 py-1 text-left">Item</th>
-                                    <th className="px-2 py-1 text-left">Description</th>
-                                    <th className="px-2 py-1 text-right">Qty</th>
-                                    <th className="px-2 py-1 text-right">Price</th>
-                                    <th className="px-2 py-1 text-left">Req delivery</th>
-                                    <th className="px-2 py-1 text-left">Conf delivery</th>
-                                    <th className="px-2 py-1 text-left">Status</th>
+                                    <th className="px-2 py-1 text-left">Line<div className="text-[7px] font-normal text-muted">AX</div></th>
+                                    <th className="px-2 py-1 text-left">Item<div className="text-[7px] font-normal text-muted">AX</div></th>
+                                    <th className="px-2 py-1 text-left">Description<div className="text-[7px] font-normal text-muted">AX</div></th>
+                                    <th className="px-2 py-1 text-right">Qty<div className="text-[7px] font-normal text-muted">AX</div></th>
+                                    <th className="px-2 py-1 text-right">Price<div className="text-[7px] font-normal text-muted">AX</div></th>
+                                    <th className="px-2 py-1 text-left">Req delivery<div className="text-[7px] font-normal text-muted">AX</div></th>
+                                    <th className="px-2 py-1 text-left">Conf delivery<div className="text-[7px] font-normal text-muted">AX</div></th>
+                                    <th className="px-2 py-1 text-left">Status<div className="text-[7px] font-normal text-muted">AX</div></th>
                                   </tr>
                                 </thead>
                                 <tbody>
