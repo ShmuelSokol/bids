@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { Settings, Building2, MapPin, Upload, Database, Activity, Bug } from "lucide-react";
+import { Building2, MapPin, Upload, Database, Activity, Bug, Send } from "lucide-react";
+import { isLamlinksWritebackLive } from "@/lib/system-settings";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const writebackLive = await isLamlinksWritebackLive();
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -128,6 +130,25 @@ export default function SettingsPage() {
             <span>Real-time feed</span>
             <span>Per-user breakdown</span>
             <span>7-day history</span>
+          </div>
+        </Link>
+
+        {/* LamLinks Write-Back Toggle */}
+        <Link
+          href="/settings/lamlinks-writeback"
+          className={`rounded-xl border-2 ${writebackLive ? "border-green-400 bg-green-50/30" : "border-card-border bg-card-bg"} shadow-sm p-6 hover:border-accent transition-colors group`}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold group-hover:text-accent">LamLinks Write-Back</h2>
+            <Send className={`h-5 w-5 ${writebackLive ? "text-green-600" : "text-muted"} group-hover:text-accent`} />
+          </div>
+          <p className="text-sm text-muted mb-3">Controls whether DIBS Submit actually transmits bids into LamLinks for DLA.</p>
+          <div className="flex gap-4 text-xs">
+            {writebackLive ? (
+              <span className="text-green-700 font-medium">🟢 LIVE — bids transmit to LamLinks</span>
+            ) : (
+              <span className="text-gray-600 font-medium">⚪ SIMULATED — DIBS-local only</span>
+            )}
           </div>
         </Link>
 

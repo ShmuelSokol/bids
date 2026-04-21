@@ -1167,6 +1167,11 @@ export function SolicitationsList({
                                   {(s as any).nsn_match.confidence === "HIGH" ? "P/N" : "~P/N"}: {(s as any).nsn_match.matched_part_number || "?"} via {(s as any).nsn_match.matched_source || "?"}
                                 </span>
                               )}
+                              {(s as any).nsn_fuzzy_matches?.length > 0 && !(s as any).nsn_match && (
+                                <span className="text-[9px] px-1 rounded font-medium bg-red-50 text-red-700 border border-red-200" title="Title similarity only — different NSN's item may share nomenclature. Do NOT use without verifying.">
+                                  ⚠ TITLE-MATCH ONLY — VERIFY
+                                </span>
+                              )}
                               {(s.award_count ?? 0) > 0 && (
                                 <span className="text-[9px] px-1 rounded bg-orange-50 text-orange-700">{s.award_count} competitors{s.competitor_cage ? `: ${s.competitor_cage}` : ""}</span>
                               )}
@@ -1490,19 +1495,43 @@ export function SolicitationsList({
                                       </div>
                                     </div>
                                   )}
-                                  {matches?.length > 0 && (
-                                    <div className="bg-yellow-50 rounded-lg p-2 border border-yellow-200 text-xs">
-                                      <div className="text-[10px] font-bold text-yellow-700 mb-1">Part Number Matches ({matches.length})</div>
-                                      {matches.map((m: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
-                                          <span className={`px-1 rounded font-medium ${m.confidence === "HIGH" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{m.confidence}</span>
-                                          <span className="font-mono">{m.matched_part_number}</span>
-                                          <span className="text-muted truncate">{m.matched_description?.slice(0, 40)}</span>
-                                          <span className="text-[9px] text-muted">({m.matched_source})</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
+                                  {matches?.length > 0 && (() => {
+                                    const fuzzy = matches.filter((m: any) => m.match_type?.startsWith("TITLE_SIMILARITY"));
+                                    const exact = matches.filter((m: any) => !m.match_type?.startsWith("TITLE_SIMILARITY"));
+                                    return (
+                                      <div className="space-y-2">
+                                        {exact.length > 0 && (
+                                          <div className="bg-yellow-50 rounded-lg p-2 border border-yellow-200 text-xs">
+                                            <div className="text-[10px] font-bold text-yellow-700 mb-1">Part Number Matches ({exact.length})</div>
+                                            {exact.map((m: any, i: number) => (
+                                              <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
+                                                <span className={`px-1 rounded font-medium ${m.confidence === "HIGH" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{m.confidence}</span>
+                                                <span className="font-mono">{m.matched_part_number}</span>
+                                                <span className="text-muted truncate">{m.matched_description?.slice(0, 40)}</span>
+                                                <span className="text-[9px] text-muted">({m.matched_source})</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                        {fuzzy.length > 0 && (
+                                          <div className="bg-red-50 rounded-lg p-2 border border-red-300 text-xs">
+                                            <div className="text-[10px] font-bold text-red-800 mb-1">⚠ Title-Only Candidates — VERIFY before bidding ({fuzzy.length})</div>
+                                            <div className="text-[10px] text-red-700 mb-1 leading-tight">
+                                              These part numbers belong to <em>different</em> NSNs that happen to share this nomenclature. Using them as your bid&apos;s mfr part# can misroute the order. Confirm via PUB LOG or the vendor before using.
+                                            </div>
+                                            {fuzzy.map((m: any, i: number) => (
+                                              <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
+                                                <span className="px-1 rounded font-medium bg-red-200 text-red-800">FUZZY</span>
+                                                <span className="font-mono">{m.matched_part_number}</span>
+                                                <span className="text-muted truncate">{m.matched_description?.slice(0, 40)}</span>
+                                                <span className="text-[9px] text-muted">({m.matched_source})</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               );
                             })()}

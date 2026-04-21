@@ -87,10 +87,21 @@ async function getData() {
     nsnMatches.push(...(data || []));
   }
 
-  // Build match lookup
+  // Build match lookup — separate authoritative from fuzzy.
+  // TITLE_SIMILARITY_* matches can be wrong (e.g. NSN 6509-01-578-7887 title-matched
+  // against a DIFFERENT NSN's item because nomenclature was identical). We must NOT
+  // surface those as a part number Abe can bid with. They go in a separate warning panel.
+  const isFuzzy = (m: any) => typeof m?.match_type === "string" && m.match_type.startsWith("TITLE_SIMILARITY");
   const matchByNsn = new Map<string, any>();
+  const fuzzyByNsn = new Map<string, any[]>();
   for (const m of nsnMatches) {
-    if (!matchByNsn.has(m.nsn) || m.confidence === "HIGH") matchByNsn.set(m.nsn, m);
+    if (isFuzzy(m)) {
+      const arr = fuzzyByNsn.get(m.nsn) || [];
+      arr.push(m);
+      fuzzyByNsn.set(m.nsn, arr);
+    } else {
+      if (!matchByNsn.has(m.nsn) || m.confidence === "HIGH") matchByNsn.set(m.nsn, m);
+    }
   }
 
   const liveBidsBySol = new Set(liveBids.map((lb: any) => lb.solicitation_number?.trim()).filter(Boolean));
@@ -108,6 +119,7 @@ async function getData() {
       decided_by: decision?.decided_by || null,
       already_bid: s.already_bid || bidToday,
       nsn_match: matchByNsn.get(s.nsn) || null,
+      nsn_fuzzy_matches: fuzzyByNsn.get(s.nsn) || null,
     };
   });
 

@@ -397,26 +397,32 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
                 </tr>
               </thead>
               <tbody>
-                {data.matches.map((m, i) => (
-                  <tr key={i} className="border-t border-card-border/30">
-                    <td className="px-2 py-0.5">
-                      <span
-                        className={`text-[9px] px-1 rounded font-medium ${
-                          m.confidence === "HIGH"
-                            ? "bg-green-100 text-green-700"
-                            : m.confidence === "MEDIUM"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {m.confidence}
-                      </span>
-                    </td>
-                    <td className="px-2 py-0.5 font-mono text-[10px]">{m.matched_part_number || "—"}</td>
-                    <td className="px-2 py-0.5 truncate max-w-[260px]">{m.matched_description || "—"}</td>
-                    <td className="px-2 py-0.5 text-muted">{m.matched_source || "—"}</td>
-                  </tr>
-                ))}
+                {data.matches.map((m, i) => {
+                  const isFuzzy = m.match_type?.startsWith("TITLE_SIMILARITY");
+                  return (
+                    <tr key={i} className={`border-t border-card-border/30 ${isFuzzy ? "bg-red-50/50" : ""}`}>
+                      <td className="px-2 py-0.5">
+                        <span
+                          className={`text-[9px] px-1 rounded font-medium ${
+                            isFuzzy
+                              ? "bg-red-200 text-red-800"
+                              : m.confidence === "HIGH"
+                              ? "bg-green-100 text-green-700"
+                              : m.confidence === "MEDIUM"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-gray-100 text-gray-600"
+                          }`}
+                          title={isFuzzy ? "Title-similarity only — may belong to a different NSN. Verify before using as mfr part#." : m.match_type || undefined}
+                        >
+                          {isFuzzy ? "FUZZY" : m.confidence}
+                        </span>
+                      </td>
+                      <td className="px-2 py-0.5 font-mono text-[10px]">{m.matched_part_number || "—"}</td>
+                      <td className="px-2 py-0.5 truncate max-w-[260px]">{m.matched_description || "—"}</td>
+                      <td className="px-2 py-0.5 text-muted">{m.matched_source || "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
