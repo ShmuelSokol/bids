@@ -528,8 +528,71 @@ async function sendWhatsApp(to: string, message: string, mediaUrl?: string) {
   return result;
 }
 
+async function preflight(): Promise<string[]> {
+  const warnings: string[] = [];
+  const twoHoursAgo = new Date(Date.now() - 2 * 3600000).toISOString();
+  const sixHoursAgo = new Date(Date.now() - 6 * 3600000).toISOString();
+
+  // Check critical syncs ran recently
+  const criticalSyncs = [
+    { action: "abe_bids_live_sync", label: "Abe bids", maxAge: twoHoursAgo },
+    { action: "lamlinks_import", label: "LamLinks solicitations", maxAge: sixHoursAgo },
+    { action: "lamlinks_awards_import", label: "Awards import", maxAge: sixHoursAgo },
+    { action: "nsn_costs_rebuild", label: "NSN costs", maxAge: sixHoursAgo },
+  ];
+  for (const sync of criticalSyncs) {
+    const { data } = await supabase.from("sync_log").select("created_at")
+      .eq("action", sync.action).gte("created_at", sync.maxAge).limit(1);
+    if (!data || data.length === 0) {
+      warnings.push(`${sync.label} hasn't run since ${sync.maxAge.slice(0, 16)}`);
+    }
+  }
+
+  // Check mssql module works (catches the April 2026 outage pattern)
+  try {
+    require("mssql/msnodesqlv8");
+  } catch {
+    warnings.push("mssql/msnodesqlv8 module is broken — LamLinks syncs will fail");
+    // Attempt self-heal
+    try {
+      require("child_process").execSync("npm install --no-save mssql msnodesqlv8", { cwd: "C:\\tmp\\dibs-init\\dibs", stdio: "pipe" });
+      warnings.push("Auto-reinstalled mssql — verify syncs are working");
+    } catch {
+      warnings.push("CRITICAL: mssql reinstall failed");
+    }
+  }
+
+  // Check for suspicious exact-1000 counts
+  const { count: bids } = await supabase.from("abe_bids").select("*", { count: "exact", head: true });
+  if (bids === 1000 || bids === 10000) warnings.push(`abe_bids at exactly ${bids} — likely capped`);
+
+  return warnings;
+}
+
 async function main() {
-  console.log("Fetching stats from Supabase...");
+  // Pre-flight health check — fix issues before generating briefing
+  console.log("Running pre-flight health check...");
+  const warnings = await preflight();
+  if (warnings.length > 0) {
+    console.log("⚠ WARNINGS:");
+    for (const w of warnings) console.log(`  - ${w}`);
+    // Send immediate WhatsApp alert for critical issues
+    const critical = warnings.filter(w => w.includes("CRITICAL") || w.includes("broken"));
+    if (critical.length > 0) {
+      try {
+        const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://dibs-gov-production.up.railway.app";
+        await fetch(`${SITE}/api/whatsapp/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_SECRET || "" },
+          body: JSON.stringify({ message: `🚨 DIBS pre-briefing alert:\n${critical.join("\n")}` }),
+        });
+      } catch {}
+    }
+  } else {
+    console.log("✓ All systems healthy");
+  }
+
+  console.log("\nFetching stats from Supabase...");
   const stats = await getStats();
 
   console.log("\nStats:", JSON.stringify(stats, null, 2));

@@ -30,6 +30,7 @@ Narrative, long-form context lives in `docs/`. This file has the critical rules 
 When you learn something new that future sessions would benefit from, add it to the appropriate `docs/` page. Gotchas go in `gotchas.md` with symptom → cause → fix structure.
 
 ## CRITICAL DEPLOYMENT RULES
+- **After ANY `npm install`, verify native deps:** `node -e "require('mssql/msnodesqlv8')"` — if it throws, run `npm install --no-save mssql msnodesqlv8`. A single npm install wiped sub-deps and caused a 5-day silent sync outage in April 2026.
 - **NEVER add msnodesqlv8, mssql, playwright, or dotenv to package.json** (deps OR devDeps). They crash Railway builds (native compilation fails on Linux). Install locally with `npm install --no-save` only.
 - **Railway auto-deploys from GitHub** — do NOT use `railway up`. Just `git push`.
 - **Check deploy after every push**: `railway logs 2>&1 | tail -5` — look for "Ready in" (success) or errors.

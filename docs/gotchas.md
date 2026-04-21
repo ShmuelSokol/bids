@@ -222,6 +222,20 @@ The cookie-write is in a try/catch because `cookies().set()` throws in page/rend
 
 **Lesson:** the shape of the data matters more than the staleness. Dedup by identity field, display by time field. When you fix a shared-logic bug on one page, grep for every other page that does the same query. And when you see an exact round number (10,000, 1,000, 500), assume it's a cap until proven otherwise.
 
+## npm install wipes native deps — 5-day silent outage (April 2026)
+
+> Symptom: all LamLinks syncs (bids, awards, solicitations, shipping, invoices) silently failed for 5 days. Dashboard showed stale data. Scheduled tasks were running (exit code 1) but nothing reached sync_log. Discovered April 21 when user asked "when was last import?"
+
+`npm install --no-save libsodium-wrappers` (for GitHub secrets setup) wiped `@tediousjs/connection-string` — a sub-dependency of `mssql`. The `mssql` folder itself still existed, so the self-heal check in `run-dibs-task.bat` passed. But every script crashed at runtime with `MODULE_NOT_FOUND`.
+
+**Why the old self-heal failed:** it only checked `if not exist "node_modules\mssql"`. The folder existed but was broken inside.
+
+**Fix:** self-heal now does `node -e "require('mssql/msnodesqlv8')"` — tests the actual module load, not just folder existence. If require fails, reinstalls. If still fails, aborts with CRITICAL.
+
+**Monitoring added:** hourly health check (`scripts/check-sync-health.ts`) via Windows Task Scheduler. If no sync_log entries in 2 hours during business hours: attempts self-heal AND sends WhatsApp alert. This would have caught the outage within 2 hours instead of 5 days.
+
+**Rule:** NEVER run `npm install` in this repo without immediately running `node -e "require('mssql/msnodesqlv8')"` to verify native deps survived. The `run-dibs-task.bat` self-heal handles automated runs, but manual npm installs during development need the same check.
+
 ## Why we don't add native packages to package.json
 
 > Symptom: Railway deploy failed. Build logs showed `gyp` errors about `msnodesqlv8`.
