@@ -57,6 +57,68 @@ async function findStagedEnvelope(pool: sql.ConnectionPool): Promise<{ idnk33: n
   return { idnk33: row.idnk33_k33, templateK34: row.template_k34 };
 }
 
+async function findLatestPostedTemplateK34(pool: sql.ConnectionPool): Promise<number | null> {
+  // For fresh-envelope mode, clone metadata from Abe's most recent k34 row
+  // (any envelope, posted or staged). Ensures gennte_k34 XML version is
+  // current and business defaults match the latest state Abe's own client
+  // would produce.
+  const r = await pool.request().query(`
+    SELECT TOP 1 idnk34_k34 FROM k34_tab
+    WHERE LTRIM(RTRIM(upname_k34)) = 'ajoseph'
+    ORDER BY idnk34_k34 DESC
+  `);
+  return r.recordset[0]?.idnk34_k34 ?? null;
+}
+
+async function createFreshEnvelope(pool: sql.ConnectionPool, templateK34: number): Promise<number> {
+  // Mint a brand-new k33 staging envelope. Uses kdy_tab to allocate idnk33,
+  // then inserts a k33 row with the same status-string shape LamLinks' own
+  // client uses (o_stat/a_stat/s_stat='adding quotes', t_stat='not sent',
+  // a_stat='not acknowledged'). itmcnt starts at 0; the regular append flow
+  // will bump it as each k34 line is added.
+  //
+  // Runs in its own transaction so it's atomic even if the broader worker
+  // loop blows up afterward.
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const req = new sql.Request(tx);
+    const k33Alloc = await req.query(`
+      DECLARE @newId INT;
+      UPDATE kdy_tab WITH (ROWLOCK, HOLDLOCK)
+      SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+      WHERE tabnam_kdy = 'k33_tab';
+      SELECT @newId AS id;
+    `);
+    const newK33: number = k33Alloc.recordset[0].id;
+    if (!newK33) throw new Error(`kdy allocation for k33_tab failed`);
+
+    // qotref_k33 is char(15). LamLinks' own format is "0AG09-{idnk33}" padded
+    // to 15 chars (e.g. "0AG09-46853    ").
+    const qotref = `0AG09-${newK33}`.padEnd(15, " ").slice(0, 15);
+
+    await req.query(`
+      INSERT INTO k33_tab (
+        idnk33_k33, uptime_k33, upname_k33, qotref_k33,
+        o_stat_k33, t_stat_k33, a_stat_k33, s_stat_k33,
+        o_stme_k33, t_stme_k33, a_stme_k33, s_stme_k33,
+        itmcnt_k33
+      ) VALUES (
+        ${newK33}, GETDATE(), 'ajoseph   ', '${qotref}',
+        'adding quotes   ', 'not sent        ', 'not acknowledged', 'adding quotes   ',
+        GETDATE(), GETDATE(), GETDATE(), GETDATE(),
+        0
+      )
+    `);
+    await tx.commit();
+    console.log(`  + created fresh envelope idnk33=${newK33} (qotref="${qotref.trim()}") template_k34=${templateK34}`);
+    return newK33;
+  } catch (e) {
+    try { await tx.rollback(); } catch {}
+    throw e;
+  }
+}
+
 async function resolveTarget(pool: sql.ConnectionPool, sol: string, nsn: string) {
   // NSN stored with dashes in LamLinks (01-578-7887 not 015787887), take everything after the FSC
   const niin = nsn.replace(/^\d{4}-/, "");
@@ -214,13 +276,23 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
 
   let processed = 0, failed = 0, waiting = 0;
   try {
-    const envelope = await findStagedEnvelope(pool);
+    let envelope = await findStagedEnvelope(pool);
     if (!envelope) {
-      console.log(`  no staged envelope for ajoseph — waiting for him to save a seed line`);
-      waiting = queue.length;
-      return { processed, failed, waiting };
+      // No staged envelope. Mint a fresh one so DIBS doesn't have to wait
+      // for Abe to save a seed bid first. Uses kdy_tab for the idnk33 and
+      // clones k34 metadata from Abe's most recent k34 row (posted or not).
+      console.log(`  no staged envelope — minting a fresh one...`);
+      const templateK34 = await findLatestPostedTemplateK34(pool);
+      if (!templateK34) {
+        console.log(`  no k34 template row found under upname='ajoseph' — cannot proceed`);
+        waiting = queue.length;
+        return { processed, failed, waiting };
+      }
+      const newIdnK33 = await createFreshEnvelope(pool, templateK34);
+      envelope = { idnk33: newIdnK33, templateK34 };
+    } else {
+      console.log(`  piggybacking into envelope ${envelope.idnk33}, template k34=${envelope.templateK34}`);
     }
-    console.log(`  piggybacking into envelope ${envelope.idnk33}, template k34=${envelope.templateK34}`);
 
     for (const row of queue) {
       // Mark processing (claim)

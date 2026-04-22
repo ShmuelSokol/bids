@@ -137,7 +137,7 @@ export default async function LamLinksWritebackSettingsPage() {
           <li>✅ Write-back pattern proven end-to-end (2 bids transmitted to DLA on 2026-04-21).</li>
           <li>✅ Status reconciler (<code className="font-mono">scripts/sync-dibs-status.ts</code>) available for manual runs.</li>
           <li>⏳ Windows worker (<code className="font-mono">scripts/lamlinks-writeback-worker.ts</code>) needs to be running on <code className="font-mono">NYEVRVSQL001</code> before queued rows will drain. Until it&apos;s registered as a scheduled task, queued rows sit as <em>pending</em>.</li>
-          <li>⏳ Piggyback requires an existing envelope in <em>adding quotes</em> state on the LamLinks side. If none exists, the worker will wait and retry.</li>
+          <li>✅ Seed-bid NOT required — worker auto-creates a fresh k33 envelope if none is staged. Abe can start his day with DIBS-prepared bids already in LamLinks.</li>
           <li>⚠ Toggling OFF mid-flight is safe — pending rows stay in the queue and resume when toggled back ON.</li>
         </ul>
       </div>

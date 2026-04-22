@@ -40,6 +40,8 @@ Instead, append a line under Abe's **existing** staged envelope (any `k33_tab` r
 
 Canonical reference: `scripts/append-bid-test2.ts`. That script, run with `--execute`, inserts a line in under 100 ms inside a transaction with `TABLOCKX`+`HOLDLOCK` on k34/k35 and `UPDLOCK`+`HOLDLOCK` on k33.
 
+**Fresh-envelope mode (no seed-bid needed):** `scripts/lamlinks-writeback-worker.ts` also supports minting a brand-new `k33_tab` envelope when none is staged. Uses `kdy_tab` to allocate the new idnk33, writes all 13 k33 fields with the staging-state strings, and picks the most recent k34 row under `upname='ajoseph'` as the template for subsequent line inserts. Abe does NOT need to save a dummy bid in LamLinks first — DIBS can initiate an envelope on its own and populate it, then Abe opens LamLinks, sees a ready-to-review envelope, and Posts.
+
 ## The id-allocation protocol: `kdy_tab`
 
 LamLinks uses a classic **server-side sequence table** called `kdy_tab`. One row per id-type (one for every k-series and some kc/ka-series tables). The row has:
