@@ -856,22 +856,35 @@ export function AwardsList({
                       </tr>
                     </thead>
                     <tbody>
-                      {(po.po_lines || []).map((line: any) => (
+                      {(po.po_lines || []).map((line: any) => {
+                        const costUnverified = typeof line.cost_source === "string" && line.cost_source.includes("COST UNVERIFIED");
+                        return (
                         <tr
                           key={line.id}
-                          className="border-b border-card-border/50"
+                          className={`border-b border-card-border/50 ${costUnverified ? "bg-amber-50/50" : ""}`}
                         >
                           <td className="px-4 py-1.5 font-mono text-accent">
                             {line.nsn}
                           </td>
                           <td className="px-4 py-1.5 truncate max-w-[200px]">
                             {line.description}
+                            {costUnverified && (
+                              <div className="text-[9px] text-amber-700 mt-0.5 font-medium" title={line.cost_source}>
+                                ⚠ UoM mismatch — cost not verified. Check supplier or enter cost manually.
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-1.5 text-right">
                             {line.quantity}
                           </td>
                           <td className="px-4 py-1.5 text-right font-mono">
-                            {line.unit_cost ? `$${line.unit_cost.toFixed(2)}` : "—"}
+                            {costUnverified ? (
+                              <span className="text-amber-700" title={line.cost_source}>⚠ verify</span>
+                            ) : line.unit_cost ? (
+                              `$${line.unit_cost.toFixed(2)}`
+                            ) : (
+                              "—"
+                            )}
                           </td>
                           <td className="px-4 py-1.5 text-right font-mono">
                             ${line.sell_price?.toFixed(2)}
@@ -903,7 +916,8 @@ export function AwardsList({
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
