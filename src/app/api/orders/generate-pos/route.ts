@@ -100,6 +100,21 @@ export async function POST(req: NextRequest) {
     itemNumber: string | null;
   };
 
+  // The awards table stores NSN as split fsc + niin columns (NOT a single
+  // `nsn` string). Earlier versions of this file accessed `award.nsn`
+  // expecting a computed value and got undefined every time, which made
+  // the tier-2 waterfall lookup fail for every award. Fix: derive nsn
+  // consistently from fsc+niin, and attach it onto each award object so
+  // downstream code (line inserts, routing, etc.) has a single source
+  // of truth.
+  function nsnOf(a: any): string | null {
+    if (!a.fsc || !a.niin) return null;
+    return `${a.fsc}-${a.niin}`;
+  }
+  for (const a of eligible) {
+    (a as any).nsn = nsnOf(a);
+  }
+
   // Fallback: load current nsn_costs for awards without bid_vendor
   const nsnsNeedingFallback = [...new Set(
     eligible.filter((a: any) => !a.bid_vendor).map((a: any) => a.nsn).filter(Boolean)
