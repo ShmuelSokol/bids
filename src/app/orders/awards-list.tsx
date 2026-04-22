@@ -866,6 +866,17 @@ export function AwardsList({
                       AX PO: <code className="font-mono text-foreground">{po.ax_po_number}</code>
                     </span>
                   )}
+                  {/* NPI button — show whenever any line lacks an AX item, OR the line's supplier isn't yet set up on that AX item */}
+                  {(po.po_lines || []).some((l: any) => !l.ax_item_number || !l.vendor_product_number_ax) && (
+                    <button
+                      onClick={() => downloadFromEndpoint("/api/orders/generate-npi", [po.id], `dibs-npi-${po.id}.xlsx`)}
+                      disabled={downloadingId === po.id}
+                      className="px-2.5 py-1 rounded border-2 border-amber-400 bg-amber-50 text-amber-800 text-xs font-medium"
+                      title="Generate an NPI RawData sheet for items not yet set up in AX. Paste into New Product Import Dashboard.xlsm, run the macro, save as xlsx, upload to AX DM workspace."
+                    >
+                      📝 Generate NPI
+                    </button>
+                  )}
                   {!po.dmf_state || po.dmf_state === "drafted" ? (
                     <button
                       onClick={() => downloadFromEndpoint("/api/orders/dmf-header", [po.id], `dibs-po-header-${po.id}.xlsx`)}

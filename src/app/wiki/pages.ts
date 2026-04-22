@@ -36,6 +36,11 @@ export const WIKI_PAGES = [
     subtitle: "Incident retrospective + plan forward",
   },
   {
+    slug: "npi-workflow",
+    title: "NPI Workflow (AX new items + add-supplier)",
+    subtitle: "How DIBS generates the New Product Import RawData for AX",
+  },
+  {
     slug: "gotchas",
     title: "Gotchas & War Stories",
     subtitle: "Things that broke and what we learned",
