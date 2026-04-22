@@ -23,6 +23,7 @@ DIBS is mostly glue between five external systems. This page is a field guide to
 | `k33_tab` | Bid batch header (the "envelope"). 13 cols including four status strings (`o_stat_k33`, `t_stat_k33`, `a_stat_k33`, `s_stat_k33`) that encode staging vs posted state. See [lamlinks-writeback.md](./lamlinks-writeback.md). |
 | `k34_tab` | Bid line items (74 columns). `idnk33_k34` links back to the parent envelope. |
 | `k35_tab` | Bid pricing/delivery. One row per k34 line: `qty_k35`, `up_k35` (unit price), `daro_k35` (delivery ARO days). |
+| `kdy_tab` | **Sequence table.** One row per sequenced table (k34, k35, k33, k11, …, ~60 rows). Column `idnval_kdy` holds the last-assigned id for `tabnam_kdy`. LamLinks' client does atomic `UPDATE kdy_tab SET idnval_kdy += 1 WHERE tabnam_kdy = 'k34_tab'` on every insert. **DIBS writes must use this protocol too** — inserting at `MAX+1` without also updating `kdy` causes collisions when Abe's client eventually reads a stale sequence value. |
 | `k81_tab` | Awards. |
 | `ka8_tab → ka9_tab → kaj_tab → kad_tab → kae_tab` | Job → line → shipment → invoice → invoice line. The invoicing chain. |
 

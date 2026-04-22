@@ -40,33 +40,58 @@ Instead, append a line under Abe's **existing** staged envelope (any `k33_tab` r
 
 Canonical reference: `scripts/append-bid-test2.ts`. That script, run with `--execute`, inserts a line in under 100 ms inside a transaction with `TABLOCKX`+`HOLDLOCK` on k34/k35 and `UPDLOCK`+`HOLDLOCK` on k33.
 
-## The sequential-counter gotcha
+## The id-allocation protocol: `kdy_tab`
 
-**This is the subtle one that bit us. Read this before writing anything.** Full retrospective + plan forward in [lamlinks-collision-2026-04-21.md](./lamlinks-collision-2026-04-21.md).
+LamLinks uses a classic **server-side sequence table** called `kdy_tab`. One row per id-type (one for every k-series and some kc/ka-series tables). The row has:
 
-The LamLinks Windows client does **NOT** re-read `MAX(idnk34_k34)+1` at save time. It maintains its own client-side counter, seeded from `MAX+1` once (probably on session start or form open) and incrementing by 1 for every save — regardless of what's in the DB.
+| column | meaning |
+|---|---|
+| `tabnam_kdy` | target table name (`'k34_tab'`, `'k35_tab'`, `'k33_tab'`, `'k11_tab'`, etc.) |
+| `idnval_kdy` | the LAST id assigned — tracks `MAX(<pk>)` for the target table |
+| `uptime_kdy` | last modified |
 
-Evidence from 2026-04-21:
-- Abe's first line on envelope 46853: `idnk34 = 495731`. DB `MAX` at that moment was 495751 (our orphaned row from an earlier test). His client used 495731, not `MAX+1`.
-- Abe's second line on envelope 46853: `idnk34 = 495732`. DB `MAX` at that moment was 495752 (our second write-back). His client used 495731+1, not `MAX+1`.
+**LamLinks client insert protocol** (inferred from `kdy.idnval` exactly equalling `MAX(id)` across every sequenced table):
 
-**Implications:**
+1. Atomically `UPDATE kdy_tab SET idnval_kdy = idnval_kdy + 1` on the row matching the target table; capture the post-increment value.
+2. `INSERT INTO <table> VALUES (<new id>, ...)`.
+3. Commit. Row-level locks on `kdy_tab` serialise concurrent clients.
 
-- If we insert at `MAX+1` while Abe is mid-session, his counter will eventually hit our id. Collision = `Violation of PRIMARY KEY constraint` on his next Save. The LamLinks UI reports this as a generic "Connectivity error" — you'll waste 20 minutes chasing networking before you find the real cause.
-- If we insert at `MAX+N` (e.g. +20), Abe can save ~N lines in that envelope before catching us. Envelopes are usually 5-15 lines, so 20-30 is workable but not bulletproof.
-- If Abe **posts and starts a new envelope**, the counter likely re-seeds (unverified but consistent with observed behavior — first line of 46853 came from a fresh MAX read after 46852 posted).
-- `delete + reinsert` is a trap: delete frees the id, Abe's counter is still pointing at it, your re-insert grabs it back, Abe's next save collides. We hit this exact sequence once.
+### DIBS write-back: always allocate through `kdy_tab`
 
-**Recommended protocol for DIBS write-back while Abe is active:**
+```sql
+DECLARE @newId INT;
+UPDATE kdy_tab WITH (ROWLOCK, HOLDLOCK)
+SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+WHERE tabnam_kdy = 'k34_tab';
+-- @newId is the id to use for our INSERT
+INSERT INTO k34_tab (idnk34_k34, ...) VALUES (@newId, ...);
+```
 
-1. Check that the target envelope is in `'adding quotes'` staging state.
-2. Pick `idnk34` = **`MAX + 30`** (or larger). Not `MAX + 1`.
-3. Warn Abe: *"Don't open another Add-line form until I'm done."* Parallel reservations overlap.
-4. Insert inside a transaction with `TABLOCKX+HOLDLOCK` on k34/k35 and `UPDLOCK+HOLDLOCK` on k33. Re-verify envelope state inside the transaction.
-5. Bump `itmcnt_k33` and `uptime_k33` on the envelope in the same transaction.
-6. Verify `rowsAffected === 1` on every statement.
+The UPDATE takes a row lock on the `kdy` row for the transaction's lifetime. If Abe's LamLinks client is mid-save and tries to read the same sequence, it waits until we commit and gets the next value. **No collisions possible** — we become a well-behaved participant in the same protocol his client already uses.
 
-**Recovery if a collision happens:** use `scripts/move-our-ids-up.ts` pattern — copy our row to a much higher id (INSERT new, DELETE old) to free the id Abe's counter wants. Abe retries Save. Envelope itmcnt stays consistent if the move preserves the line count.
+### Why `MAX+1` / `MAX+N` appeared to work and then broke
+
+Before we found `kdy_tab` (morning of 2026-04-21), we theorised LamLinks' client had a per-session, client-side sequential counter because Abe's saves looked like `his-last + 1`. That was a statistical artifact — when only Abe is saving, the `kdy` sequence advancing 1-per-save looks exactly like a per-user counter.
+
+The actual failure mode of `MAX+N` inserts: they don't update `kdy.idnval`, so the sequence falls behind `MAX`. Eventually Abe's client reads a `kdy.idnval + 1` that's already taken by our row → **PK collision, reported as a generic "Connectivity error" in the LamLinks UI.** That's what blocked Abe on 2026-04-21 afternoon.
+
+The old `scripts/move-our-ids-up.ts` "emergency fix" was cargo-culted from the wrong model. Don't use it. If you see it referenced anywhere, replace with the `kdy_tab` protocol above. Full retrospective of the wrong turn in [lamlinks-collision-2026-04-21.md](./lamlinks-collision-2026-04-21.md).
+
+### Recovery if orphans exist from old MAX+N inserts
+
+Bring `kdy` up to current MAX for the affected table:
+
+```sql
+UPDATE kdy_tab
+SET idnval_kdy = (SELECT MAX(idnk34_k34) FROM k34_tab)
+WHERE tabnam_kdy = 'k34_tab';
+
+UPDATE kdy_tab
+SET idnval_kdy = (SELECT MAX(idnk35_k35) FROM k35_tab)
+WHERE tabnam_kdy = 'k35_tab';
+```
+
+Abe's next saves will allocate safely past any orphan. No surgery on posted rows required.
 
 ## The live write-back pipeline (as of 2026-04-21)
 
@@ -96,7 +121,8 @@ Evidence from 2026-04-21:
                             │     ├─ Resolve sol/NIIN → idnk11 + k08 part/cage
                             │     ├─ TRANSACTION:
                             │     │     UPDLOCK k33 envelope (verify still staged)
-                            │     │     TABLOCKX k34 + k35 (pick MAX+30 id)
+                            │     │     UPDATE kdy_tab for 'k34_tab' → new idnk34
+                            │     │     UPDATE kdy_tab for 'k35_tab' → new idnk35
                             │     │     INSERT k34 (clone from template) + INSERT k35 + UPDATE itmcnt
                             │     ├─ Mark queue row as done with k33/k34/k35 ids
                             │     └─ On any exception: mark as failed + error_message
@@ -117,7 +143,7 @@ Evidence from 2026-04-21:
 
 **Why a queue and not a direct write?** The API route runs on Railway (Linux) which can't compile `msnodesqlv8`. The only host with LamLinks SQL access is `NYEVRVSQL001`. The queue decouples the two — Railway writes intent, Windows worker executes.
 
-**Why MAX+30 ids?** LamLinks' Windows client maintains a sequential counter and doesn't re-read `MAX` at save time. Using `MAX+1` while Abe is actively saving leads to PK collisions after his counter catches up. A 30-id cushion keeps us safely ahead of any reasonable envelope line count.
+**How we pick the new idnk34/idnk35?** Atomically via `UPDATE kdy_tab SET idnval_kdy += 1 WHERE tabnam_kdy = 'k34_tab'`. Row-lock on `kdy_tab` serialises us against Abe's own client. See the "id-allocation protocol" section above for why `MAX+N` was the wrong approach.
 
 ## Post-transmission reconciliation
 

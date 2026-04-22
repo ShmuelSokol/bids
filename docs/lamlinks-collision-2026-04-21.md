@@ -1,6 +1,8 @@
-# LamLinks Client Counter Collision — Incident Retrospective 2026-04-21
+# LamLinks Counter Collision — Incident Retrospective 2026-04-21
 
-**Outcome:** Two DIBS-generated bids successfully transmitted to DLA for the first time. A follow-on collision between DIBS-inserted rows and Abe's LamLinks client counter blocked his saves mid-day and forced us to relocate posted rows to historical PK gaps. We now know enough about LamLinks' client-side id behavior to design the durable fix — but it requires a non-SQL observation path (Process Monitor on Abe's workstation) that we haven't set up yet.
+> **POSTSCRIPT (added same day):** Yosef correctly hypothesised that LamLinks uses a shared SQL sequence table. After deeper scanning we found it — **`kdy_tab`**, one row per id-type, `idnval_kdy` column holding the last-assigned id. LamLinks' client does atomic `UPDATE kdy_tab SET idnval_kdy += 1` for every insert. **Neither a client-side counter nor Procmon is needed.** The durable fix is simply: DIBS allocates new idnk34/idnk35 through the same `kdy_tab` UPDATE protocol. See the "How we actually fixed it" section at the bottom and `docs/lamlinks-writeback.md` for the current pattern. The "plan forward" sections below describing Procmon installation are obsolete — kept for historical context only.
+
+**Outcome:** Two DIBS-generated bids successfully transmitted to DLA for the first time. A follow-on collision between DIBS-inserted rows and Abe's LamLinks client counter blocked his saves mid-day. We initially misidentified the cause (we thought it was a client-side counter on Abe's PC) and "fixed" it by relocating posted rows to historical PK gaps. Later the same day we found the actual mechanism — a shared SQL sequence table `kdy_tab` — and converted the write-back to use it, eliminating the collision class entirely.
 
 ## What we were trying to do
 
@@ -125,6 +127,39 @@ No orphans. No collisions. No PK surgery.
 - `system_settings` + `lamlinks_write_queue` Supabase tables
 - 2 new Windows scheduled tasks in `scripts/windows/install-tasks.bat`: the worker daemon (at logon, `--loop`) and the status reconciler (every 15 min)
 
+## How we actually fixed it (added same day)
+
+After Yosef pushed back with "99% sure there's a SQL table managing line numbers," we did a wider scan and found **`kdy_tab`**:
+
+```
+idnkdy | idnnam    | tabnam  | idnval  | uptime
+-------|-----------|---------|---------|---------------------
+34     | idnk34    | k34_tab | 495782  | 2026-04-21T17:54:42
+35     | idnk35    | k35_tab | 503420  | 2026-04-21T17:54:42
+33     | idnk33    | k33_tab | 46858   | 2026-04-21T17:48:00
+11     | idnk11    | k11_tab | 2236646 | 2026-04-21T10:40:23
+...(one row for every sequenced table in the DB, ~60 rows total)
+```
+
+Verified `idnval_kdy = MAX(<pk>)` exactly across every sequenced table — confirming `idnval` is "last id assigned" (not "next to assign"). LamLinks' insert protocol is:
+
+```sql
+DECLARE @newId INT;
+UPDATE kdy_tab SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+WHERE tabnam_kdy = 'k34_tab';
+INSERT INTO k34_tab (idnk34_k34, ...) VALUES (@newId, ...);
+```
+
+Row-level locks on `kdy_tab` serialise concurrent clients. We rewrote `scripts/lamlinks-writeback-worker.ts` and `scripts/append-bid-test*.ts` to use this exact protocol. From this point forward, DIBS inserts are indistinguishable from LamLinks' own client inserts from the perspective of the id allocator — no orphans, no collisions, ever.
+
+## What was true retrospectively
+
+- Our `MAX+N` inserts on 2026-04-21 morning left `kdy.idnval` behind actual `MAX` in `k34_tab` / `k35_tab`. Abe's subsequent saves advanced `kdy` through the stale range until his client's next-allocated id landed on our orphan → PK collision → "Connectivity error" in LamLinks UI.
+- The apparent "sequential-from-last-save" pattern we observed earlier was a statistical illusion. When only one user is saving, `kdy` advances by exactly 1 per save, so it *looks* like a per-user client counter. Multi-user save patterns (which we didn't observe in our narrow window) would've exposed the shared nature of `kdy` immediately.
+- Moving the 2 orphans down into PK gaps was **not necessary** in hindsight. The right fix at the moment of the collision was: `UPDATE kdy_tab SET idnval_kdy = (SELECT MAX(idnk34_k34) FROM k34_tab) WHERE tabnam_kdy = 'k34_tab'` — bring the sequence back to reality. Abe's client would then allocate safely past our orphan on its next save. The move worked, but was more invasive than needed.
+
 ## Takeaway
 
-Two live bids transmitted to DLA for the first time via DIBS. The blocker encountered is understood and mitigable. The path to making this production-safe for everyday use runs through **observing the LamLinks client on Abe's PC** to locate its counter storage, then controlling it from the reconciler. Set up Procmon once, harvest insights repeatedly for every future LamLinks-touching feature.
+First live DIBS → LamLinks → DLA bids transmitted, plus we mapped the actual id-allocation mechanism. The production-safe pattern is in `docs/lamlinks-writeback.md`. Neither Procmon nor Yosef-dependent client-patching is needed.
+
+**Credit where due:** Yosef's hunch that a SQL sequence table existed was correct. An earlier narrower search missed `kdy_tab` because the `idnval_kdy` column name doesn't contain "next" or "seq" — it's named "id value." Including ranges like `495753..496000` (just above current MAX) in a value-based scan was what surfaced it. Lesson: when hunting for a sequence table by introspection, probe values near the current MAX in addition to searching column names.

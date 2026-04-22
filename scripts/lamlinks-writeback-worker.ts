@@ -15,15 +15,19 @@
 // - Skips anything not in 'pending' state
 // - Picks a staged envelope with o_stat='adding quotes'; if none, marks
 //   rows as waiting (status stays 'pending') and retries next poll
-// - Uses MAX+30 for idnk34/idnk35 (guards against Abe's client-side counter)
-// - Wraps each insert in a TABLOCKX+HOLDLOCK transaction
+// - Allocates idnk34/idnk35 via the kdy_tab sequence table — the EXACT
+//   protocol LamLinks' own client uses. Atomic UPDATE increments
+//   kdy_tab.idnval_kdy and returns the new value; we insert at that id.
+//   No orphans, no collisions with Abe's client, no MAX+N guessing.
+//   (Pre-2026-04-21 we used MAX+30 which produced collisions — see
+//   docs/lamlinks-collision-2026-04-21.md for the retrospective.)
+// - Wraps each insert in a transaction with row-level locking on kdy_tab
 // - Marks 'done' with k33/k34/k35 ids on success; 'failed' with error on errors
 
 import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
 
-const ID_GAP = 30;                 // MAX+30 to stay ahead of Abe's client counter
 const POLL_INTERVAL_MS = 30_000;   // 30s between polls in --loop mode
 const MAX_ROWS_PER_PASS = 10;      // avoid monopolising Abe's LamLinks session
 
@@ -95,11 +99,27 @@ async function writeOneBid(
       throw new Error(`Envelope ${envelope.idnk33} flipped state mid-flight`);
     }
 
-    // Pick ids with a 30-gap cushion over MAX to stay ahead of Abe's client-side counter
-    const l34 = await req.query(`SELECT ISNULL(MAX(idnk34_k34),0) AS m FROM k34_tab WITH (TABLOCKX, HOLDLOCK)`);
-    const l35 = await req.query(`SELECT ISNULL(MAX(idnk35_k35),0) AS m FROM k35_tab WITH (TABLOCKX, HOLDLOCK)`);
-    const newK34 = l34.recordset[0].m + ID_GAP;
-    const newK35 = l35.recordset[0].m + ID_GAP;
+    // Atomically allocate next k34 + k35 ids from kdy_tab (LamLinks' sequence
+    // table). UPDATE takes a row-level lock on the kdy row, so even if Abe's
+    // client tries to read the same sequence at the same instant, it'll wait
+    // until we commit and then get the next value.
+    const k34Alloc = await req.query(`
+      DECLARE @newId INT;
+      UPDATE kdy_tab WITH (ROWLOCK, HOLDLOCK)
+      SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+      WHERE tabnam_kdy = 'k34_tab';
+      SELECT @newId AS id;
+    `);
+    const k35Alloc = await req.query(`
+      DECLARE @newId INT;
+      UPDATE kdy_tab WITH (ROWLOCK, HOLDLOCK)
+      SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+      WHERE tabnam_kdy = 'k35_tab';
+      SELECT @newId AS id;
+    `);
+    const newK34: number = k34Alloc.recordset[0].id;
+    const newK35: number = k35Alloc.recordset[0].id;
+    if (!newK34 || !newK35) throw new Error(`kdy allocation failed: k34=${newK34}, k35=${newK35}`);
 
     const safePn = (target.mfrPn || "").replace(/'/g, "''");
     const safeCage = (target.mfrCage || "").replace(/'/g, "''");

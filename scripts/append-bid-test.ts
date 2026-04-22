@@ -1,16 +1,20 @@
 // TEST BID WRITE-BACK — appends one k34+k35 line under Abe's EXISTING staged envelope.
 //
-// We do NOT create a new k33 envelope. We piggyback on idnk33=46852 (Abe's current
-// saved-but-not-posted quote). After insert, Abe sees a 3rd line in his existing
+// We do NOT create a new k33 envelope. We piggyback on a currently-staged envelope
+// (Abe's saved-but-not-posted quote). After insert, Abe sees a new line in his
 // LamLinks quote form. He reviews, then Posts (or deletes) as normal.
 //
+// Id allocation: uses kdy_tab (LamLinks' own sequence table) — see
+// docs/lamlinks-collision-2026-04-21.md for why MAX+N broke before.
+//
 // Safety layers:
-//   1. Confirms envelope 46852 is still in 'adding quotes' state (not posted).
-//   2. Confirms template k34 row 495722 still exists (source of metadata clone).
+//   1. Confirms the target envelope is in 'adding quotes' state (not posted).
+//   2. Confirms template k34 row still exists (source of metadata clone).
 //   3. Resolves target sol/NIIN to its k11 + k08 record; aborts if not found.
-//   4. Wraps BOTH inserts in a single transaction with TABLOCKX+HOLDLOCK on k34/k35.
-//      No other session can write to those tables between the MAX() read and COMMIT.
-//   5. Re-reads the locked MAX right before insert (not the earlier unlocked peek).
+//   4. Atomically allocates idnk34 + idnk35 via UPDATE kdy_tab ... SET idnval_kdy += 1.
+//      This is the exact protocol LamLinks' own client uses, so no collisions.
+//   5. Wraps all writes in a single transaction. ROWLOCK+HOLDLOCK on kdy rows;
+//      UPDLOCK on the k33 envelope to re-verify state mid-transaction.
 //   6. Verifies inserted rows after commit.
 //   7. Defaults to DRY RUN. Only --execute performs writes.
 //
@@ -145,12 +149,25 @@ async function main() {
       throw new Error(`Envelope state changed mid-flight: o_stat="${oStatLocked}". Rolling back.`);
     }
 
-    // Locked MAX reads
-    const l34 = await req.query(`SELECT ISNULL(MAX(idnk34_k34),0)+1 AS m FROM k34_tab WITH (TABLOCKX, HOLDLOCK)`);
-    const l35 = await req.query(`SELECT ISNULL(MAX(idnk35_k35),0)+1 AS m FROM k35_tab WITH (TABLOCKX, HOLDLOCK)`);
-    const nextK34: number = l34.recordset[0].m;
-    const nextK35: number = l35.recordset[0].m;
-    console.log(`  Locked: idnk34=${nextK34}, idnk35=${nextK35}`);
+    // Atomic id allocation via kdy_tab — the LamLinks sequence table.
+    const k34Alloc = await req.query(`
+      DECLARE @newId INT;
+      UPDATE kdy_tab WITH (ROWLOCK, HOLDLOCK)
+      SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+      WHERE tabnam_kdy = 'k34_tab';
+      SELECT @newId AS id;
+    `);
+    const k35Alloc = await req.query(`
+      DECLARE @newId INT;
+      UPDATE kdy_tab WITH (ROWLOCK, HOLDLOCK)
+      SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+      WHERE tabnam_kdy = 'k35_tab';
+      SELECT @newId AS id;
+    `);
+    const nextK34: number = k34Alloc.recordset[0].id;
+    const nextK35: number = k35Alloc.recordset[0].id;
+    if (!nextK34 || !nextK35) throw new Error(`kdy allocation failed: k34=${nextK34}, k35=${nextK35}`);
+    console.log(`  Allocated from kdy_tab: idnk34=${nextK34}, idnk35=${nextK35}`);
 
     // Escape MFR PN for SQL literal (just in case it contains an apostrophe)
     const safePn = mfrPn.replace(/'/g, "''");

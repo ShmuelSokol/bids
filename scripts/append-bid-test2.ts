@@ -1,7 +1,7 @@
 // SECOND write-back test — appends SPE2DS-26-T-9795 @ $24 × 1 EA, 35d ARO
 // under Abe's existing staged envelope 46853 (currently has 1 line).
-// Uses MAX+1 for new ids (495752 / 503389) — no artificial gap.
-// Abe must NOT open another "Add line" form while this runs.
+// Allocates new idnk34/idnk35 from kdy_tab (LamLinks' sequence table) — the
+// exact protocol the LamLinks client uses. See docs/lamlinks-writeback.md.
 
 import "./env";
 import sql from "mssql/msnodesqlv8";
@@ -80,11 +80,24 @@ async function main() {
     const envLock = await req.query(`SELECT o_stat_k33, itmcnt_k33 FROM k33_tab WITH (UPDLOCK, HOLDLOCK) WHERE idnk33_k33 = ${CONFIG.PARENT_IDNK33}`);
     if (String(envLock.recordset[0].o_stat_k33).trim() !== "adding quotes") throw new Error(`Envelope flipped state`);
 
-    const l34 = await req.query(`SELECT ISNULL(MAX(idnk34_k34),0)+1 AS m FROM k34_tab WITH (TABLOCKX, HOLDLOCK)`);
-    const l35 = await req.query(`SELECT ISNULL(MAX(idnk35_k35),0)+1 AS m FROM k35_tab WITH (TABLOCKX, HOLDLOCK)`);
-    const newK34 = l34.recordset[0].m as number;
-    const newK35 = l35.recordset[0].m as number;
-    console.log(`  Locked ids: k34=${newK34}, k35=${newK35}`);
+    const k34Alloc = await req.query(`
+      DECLARE @newId INT;
+      UPDATE kdy_tab WITH (ROWLOCK, HOLDLOCK)
+      SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+      WHERE tabnam_kdy = 'k34_tab';
+      SELECT @newId AS id;
+    `);
+    const k35Alloc = await req.query(`
+      DECLARE @newId INT;
+      UPDATE kdy_tab WITH (ROWLOCK, HOLDLOCK)
+      SET idnval_kdy = idnval_kdy + 1, @newId = idnval_kdy + 1
+      WHERE tabnam_kdy = 'k35_tab';
+      SELECT @newId AS id;
+    `);
+    const newK34 = k34Alloc.recordset[0].id as number;
+    const newK35 = k35Alloc.recordset[0].id as number;
+    if (!newK34 || !newK35) throw new Error(`kdy allocation failed: k34=${newK34}, k35=${newK35}`);
+    console.log(`  Allocated from kdy_tab: k34=${newK34}, k35=${newK35}`);
 
     const safePn = mfrPn.replace(/'/g, "''");
     const safeCage = mfrCage.replace(/'/g, "''");
