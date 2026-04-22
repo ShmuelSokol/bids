@@ -28,30 +28,36 @@ type Task = {
   skipInitialRun?: boolean; // if true, wait intervalMs before first fire instead of firing immediately
 };
 
+// Intervals chosen for near-real-time feel now that there's no popup cost.
+// All spawns use windowsHide:true so every sync runs invisibly. Daemon's
+// "skip tick if previous still running" logic prevents overlap if any
+// individual sync runs longer than its interval.
 const TASKS: Task[] = [
   // Real-time writeback worker — drains lamlinks_write_queue every 30s.
   // Persistent because spawning a fresh node.exe every 30s is wasteful;
   // the script's internal --loop handles its own polling.
   { script: "lamlinks-writeback-worker", args: ["--loop"], mode: "persistent" },
 
-  // Abe's live bids sync — every 5 min, 24/7. Keeps the DIBS dashboard's
-  // "Abe Bids Today" panel fresh even if he works at 10 PM or weekends.
-  { script: "sync-abe-bids-live", mode: "periodic", intervalMs: 5 * 60_000 },
-
-  // AX PO poll — advances purchase_orders.dmf_state as headers + lines land
-  // in AX. No-op when no PO is in an in-flight state, so this is cheap.
-  { script: "poll-ax-pos", mode: "periodic", intervalMs: 5 * 60_000 },
-
-  // Shipping updates — warehouse writes tracking numbers throughout the day.
-  { script: "sync-shipping", mode: "periodic", intervalMs: 15 * 60_000 },
-
-  // Invoice state monitor — watches LamLinks kad_tab.cinsta_kad for transitions
-  // so /invoicing/monitor surfaces "Abe posted invoice X" same-day.
-  { script: "sync-invoice-states", mode: "periodic", intervalMs: 15 * 60_000 },
+  // Abe's live bids sync — every 2 min, 24/7. Keeps the DIBS dashboard's
+  // "Abe Bids Today" panel near-real-time even at 10 PM or on weekends.
+  { script: "sync-abe-bids-live", mode: "periodic", intervalMs: 2 * 60_000 },
 
   // Status reconciler — flips DIBS bid_decisions.status quoted→submitted once
-  // LamLinks has transmitted the bid (k33.t_stat_k33='sent').
-  { script: "sync-dibs-status", args: ["--execute"], mode: "periodic", intervalMs: 15 * 60_000, skipInitialRun: true },
+  // LamLinks has transmitted the bid (k33.t_stat_k33='sent'). 2 min so the
+  // UI feels instant after Abe clicks Post in LamLinks.
+  { script: "sync-dibs-status", args: ["--execute"], mode: "periodic", intervalMs: 2 * 60_000, skipInitialRun: true },
+
+  // AX PO poll — advances purchase_orders.dmf_state as headers + lines land
+  // in AX. Every 3 min (AX is the slowest of the integrations). No-op when
+  // no PO is in an in-flight state.
+  { script: "poll-ax-pos", mode: "periodic", intervalMs: 3 * 60_000 },
+
+  // Shipping updates — warehouse writes tracking numbers throughout the day.
+  { script: "sync-shipping", mode: "periodic", intervalMs: 5 * 60_000 },
+
+  // Invoice state monitor — watches LamLinks kad_tab.cinsta_kad for transitions
+  // so /invoicing/monitor surfaces "Abe posted invoice X" near-real-time.
+  { script: "sync-invoice-states", mode: "periodic", intervalMs: 5 * 60_000 },
 ];
 
 const LOG_DIR = "C:\\tmp\\dibs-logs";
