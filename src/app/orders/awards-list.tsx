@@ -1110,10 +1110,13 @@ export function AwardsList({
                         <th className="text-left px-2 py-1">UoM</th>
                         <th className="text-left px-2 py-1">Delivery</th>
                         <th className="text-left px-2 py-1">Status</th>
+                        <th className="text-left px-2 py-1 w-16"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {poReceipts.map((r: any, i: number) => (
+                      {poReceipts.map((r: any, i: number) => {
+                        const isCurrent = r.vendor === switchingLine.currentSupplier;
+                        return (
                         <tr key={i} className="border-t border-card-border/30">
                           <td className="px-2 py-1 font-mono font-medium">{r.vendor}</td>
                           <td className="px-2 py-1 font-mono text-muted">{r.po_number}</td>
@@ -1124,8 +1127,22 @@ export function AwardsList({
                           <td className="px-2 py-1">
                             <span className={`text-[9px] px-1 rounded ${r.line_status === "Received" ? "bg-green-100 text-green-700" : r.line_status === "Backorder" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-600"}`}>{r.line_status || "—"}</span>
                           </td>
+                          <td className="px-2 py-1">
+                            {isCurrent ? (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Current</span>
+                            ) : (
+                              <button
+                                onClick={() => handleSwitchSupplier(r.vendor)}
+                                disabled={switching || !r.vendor}
+                                className="text-[10px] px-2 py-0.5 rounded bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50"
+                              >
+                                {switching ? "..." : "Switch"}
+                              </button>
+                            )}
+                          </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
