@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, RefreshCw, Shield, User as UserIcon, Users, Check } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, RefreshCw, Shield, User as UserIcon, Users, Check, KeyRound, Copy, X } from "lucide-react";
 
 type U = {
   id: string;
@@ -62,6 +62,11 @@ export function UsersManager() {
   const [err, setErr] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [changing, setChanging] = useState<Record<string, boolean>>({});
+  const [resetting, setResetting] = useState<Record<string, boolean>>({});
+  // When a temp password comes back from the server we show it inline on the
+  // user's row until the superadmin dismisses it. Keyed by user_id so multiple
+  // resets can stay on-screen.
+  const [tempPasswords, setTempPasswords] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const lastRefreshRef = useRef<number>(0);
 
@@ -92,6 +97,29 @@ export function UsersManager() {
     const id = setInterval(() => setNowMs(Date.now()), 1_000);
     return () => clearInterval(id);
   }, []);
+
+  async function resetPassword(u: U) {
+    if (!confirm(`Reset password for ${u.full_name || u.email}?\n\nA new temp password will be generated. ${u.full_name || "They"} will be forced to set a new one on next login. Share the temp over Signal / phone — don't email it.`)) return;
+    setResetting((r) => ({ ...r, [u.id]: true }));
+    setMsg(null);
+    try {
+      const res = await fetch("/api/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: u.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Reset failed");
+      setTempPasswords((t) => ({ ...t, [u.id]: data.temp_password }));
+      // Bump local must_reset_password flag so the badge shows up immediately.
+      setUsers((prev) => prev?.map((x) => (x.id === u.id ? { ...x, must_reset_password: true } : x)) || null);
+    } catch (e: any) {
+      setErr(e.message || String(e));
+      setTimeout(() => setErr(null), 5000);
+    } finally {
+      setResetting((r) => ({ ...r, [u.id]: false }));
+    }
+  }
 
   async function setRole(u: U, newRole: string) {
     if (newRole === u.role) return;
@@ -179,7 +207,8 @@ export function UsersManager() {
               const isMe = u.id === currentUserId;
               const badge = ROLE_BADGE[u.role] || ROLE_BADGE.viewer;
               return (
-                <tr key={u.id} className="border-t border-card-border hover:bg-gray-50/50">
+                <Fragment key={u.id}>
+                <tr className="border-t border-card-border hover:bg-gray-50/50">
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-accent/10 text-accent inline-flex items-center justify-center text-xs font-semibold">
@@ -223,9 +252,54 @@ export function UsersManager() {
                         ))}
                       </select>
                       {changing[u.id] && <Loader2 className="h-3 w-3 animate-spin text-muted" />}
+                      <button
+                        onClick={() => resetPassword(u)}
+                        disabled={isMe || !!resetting[u.id]}
+                        title={isMe ? "Use another superadmin to reset your own password" : "Generate temp password + force reset on next login"}
+                        className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 text-amber-800 px-2 py-1 text-xs hover:bg-amber-100 disabled:opacity-40"
+                      >
+                        {resetting[u.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <KeyRound className="h-3 w-3" />}
+                        Reset pw
+                      </button>
                     </div>
                   </td>
                 </tr>
+                {tempPasswords[u.id] && (
+                  <tr key={`temp-${u.id}`} className="border-t border-amber-200 bg-amber-50/60">
+                    <td colSpan={5} className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <KeyRound className="h-4 w-4 text-amber-700 mt-0.5" />
+                        <div className="flex-1 text-sm">
+                          <div className="font-semibold text-amber-900">
+                            Temp password for {u.full_name || u.email}
+                          </div>
+                          <div className="text-xs text-amber-800 mt-0.5 leading-snug">
+                            Share over Signal / phone / in-person — <strong>do not email</strong>. They&apos;ll be forced to set a new one on next login. This banner disappears when you dismiss it — the server does NOT store the temp.
+                          </div>
+                          <div className="mt-2 inline-flex items-center gap-2 rounded border border-amber-300 bg-white px-3 py-1.5">
+                            <code className="font-mono text-sm font-semibold text-amber-900 tracking-wider">
+                              {tempPasswords[u.id]}
+                            </code>
+                            <button
+                              onClick={() => navigator.clipboard.writeText(tempPasswords[u.id]).then(() => { setMsg("Temp password copied"); setTimeout(() => setMsg(null), 2000); })}
+                              className="inline-flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900"
+                            >
+                              <Copy className="h-3 w-3" /> Copy
+                            </button>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setTempPasswords((t) => { const n = { ...t }; delete n[u.id]; return n; })}
+                          className="text-amber-700 hover:text-amber-900"
+                          title="Dismiss"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
