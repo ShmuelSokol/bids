@@ -84,6 +84,60 @@ export function AwardsList({
   const [switchingLine, setSwitchingLine] = useState<{ id: number; nsn: string; currentSupplier: string } | null>(null);
   const [vendorPrices, setVendorPrices] = useState<any[]>([]);
   const [poReceipts, setPoReceipts] = useState<any[]>([]);
+  // Inline-edit state for PO lines: {lineId: "uom"|"cost"} tracks which
+  // cell is currently editable. editValue is the text being typed.
+  const [editingCell, setEditingCell] = useState<{ lineId: number; field: "uom" | "cost" } | null>(null);
+  const [editValue, setEditValue] = useState<string>("");
+  const [savingLine, setSavingLine] = useState<number | null>(null);
+
+  async function saveLineEdit(lineId: number, field: "uom" | "cost", value: string) {
+    setSavingLine(lineId);
+    try {
+      const body: any = { line_id: lineId };
+      if (field === "uom") body.unit_of_measure = value.trim();
+      else body.unit_cost = Number(value);
+      const res = await fetch("/api/orders/po-lines/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Patch the line in local state
+        setPurchaseOrders((prev) =>
+          prev.map((po) => ({
+            ...po,
+            po_lines: (po.po_lines || []).map((l: any) =>
+              l.id === lineId
+                ? {
+                    ...l,
+                    unit_cost: data.line.unit_cost,
+                    unit_of_measure: data.line.unit_of_measure,
+                    total_cost: data.line.total_cost,
+                    margin_pct: data.line.margin_pct,
+                    cost_source: data.line.cost_source,
+                  }
+                : l
+            ),
+          }))
+        );
+        setMessage(
+          data.cost_auto_resolved
+            ? `Line updated — UoM fix auto-resolved cost from vendor`
+            : `Line updated`
+        );
+        setTimeout(() => setMessage(null), 3000);
+      } else {
+        setMessage(data.error || "Update failed");
+      }
+    } catch (err: any) {
+      setMessage(`Update failed: ${err.message}`);
+    } finally {
+      setSavingLine(null);
+      setEditingCell(null);
+      setEditValue("");
+    }
+  }
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [addingSupplier, setAddingSupplier] = useState(false);
@@ -850,33 +904,26 @@ export function AwardsList({
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-muted border-b border-card-border">
-                        <th className="px-4 py-2 text-left font-medium">
-                          NSN
-                        </th>
-                        <th className="px-4 py-2 text-left font-medium">
-                          Item
-                        </th>
-                        <th className="px-4 py-2 text-right font-medium">
-                          Qty
-                        </th>
-                        <th className="px-4 py-2 text-right font-medium">
-                          Unit Cost
-                        </th>
-                        <th className="px-4 py-2 text-right font-medium">
-                          Sell Price
-                        </th>
-                        <th className="px-4 py-2 text-right font-medium">
-                          Margin
-                        </th>
-                        <th className="px-4 py-2 text-left font-medium">
-                          Contract
-                        </th>
+                        <th className="px-4 py-2 text-left font-medium">NSN</th>
+                        <th className="px-3 py-2 text-left font-medium">AX Item</th>
+                        <th className="px-3 py-2 text-left font-medium">Vendor P/N</th>
+                        <th className="px-4 py-2 text-left font-medium">Item</th>
+                        <th className="px-4 py-2 text-right font-medium">Qty</th>
+                        <th className="px-3 py-2 text-center font-medium">UoM</th>
+                        <th className="px-4 py-2 text-right font-medium">Unit Cost</th>
+                        <th className="px-4 py-2 text-right font-medium">Sell Price</th>
+                        <th className="px-4 py-2 text-right font-medium">Margin</th>
+                        <th className="px-4 py-2 text-left font-medium">Contract</th>
                         <th className="px-4 py-2 text-left font-medium w-20"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {(po.po_lines || []).map((line: any) => {
                         const costUnverified = typeof line.cost_source === "string" && line.cost_source.includes("COST UNVERIFIED");
+                        const manuallyOverridden = typeof line.cost_source === "string" && line.cost_source.startsWith("manual override");
+                        const isEditingUom = editingCell?.lineId === line.id && editingCell?.field === "uom";
+                        const isEditingCost = editingCell?.lineId === line.id && editingCell?.field === "cost";
+                        const isSaving = savingLine === line.id;
                         return (
                         <tr
                           key={line.id}
@@ -885,24 +932,112 @@ export function AwardsList({
                           <td className="px-4 py-1.5 font-mono text-accent">
                             {line.nsn}
                           </td>
+                          <td className="px-3 py-1.5 font-mono text-[10px]">
+                            {line.ax_item_number ? (
+                              <SourceTip source="AX ItemNumber — from nsn_catalog.source">
+                                <span className="text-indigo-700">{line.ax_item_number}</span>
+                              </SourceTip>
+                            ) : (
+                              <span className="text-red-600 text-[9px]">not in AX</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono text-[10px]">
+                            {line.vendor_product_number_ax ? (
+                              <SourceTip source="AX VendorProductDescriptionsV2 — vendor's part # for this supplier+NSN">
+                                <span className="text-purple-700">{line.vendor_product_number_ax}</span>
+                              </SourceTip>
+                            ) : line.vendor_item_number ? (
+                              <span className="text-purple-700">{line.vendor_item_number}</span>
+                            ) : (
+                              <span className="text-muted">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-1.5 truncate max-w-[200px]">
                             {line.description}
                             {costUnverified && (
                               <div className="text-[9px] text-amber-700 mt-0.5 font-medium" title={line.cost_source}>
-                                ⚠ UoM mismatch — cost not verified. Check supplier or enter cost manually.
+                                ⚠ UoM mismatch — click UoM or Unit Cost to fix
+                              </div>
+                            )}
+                            {manuallyOverridden && (
+                              <div className="text-[9px] text-blue-700 mt-0.5 font-medium" title={line.cost_source}>
+                                📝 Cost manually overridden
                               </div>
                             )}
                           </td>
                           <td className="px-4 py-1.5 text-right">
                             {line.quantity}
                           </td>
-                          <td className="px-4 py-1.5 text-right font-mono">
-                            {costUnverified ? (
-                              <span className="text-amber-700" title={line.cost_source}>⚠ verify</span>
-                            ) : line.unit_cost ? (
-                              `$${line.unit_cost.toFixed(2)}`
+                          <td className="px-3 py-1.5 text-center">
+                            {isEditingUom ? (
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => {
+                                  if (editValue.trim() && editValue.trim().toUpperCase() !== (line.unit_of_measure || "").toUpperCase()) {
+                                    saveLineEdit(line.id, "uom", editValue);
+                                  } else {
+                                    setEditingCell(null);
+                                    setEditValue("");
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") e.currentTarget.blur();
+                                  if (e.key === "Escape") { setEditingCell(null); setEditValue(""); }
+                                }}
+                                className="w-14 px-1 py-0.5 border border-accent rounded text-xs font-mono text-center uppercase"
+                                disabled={isSaving}
+                              />
                             ) : (
-                              "—"
+                              <button
+                                onClick={() => { setEditingCell({ lineId: line.id, field: "uom" }); setEditValue(line.unit_of_measure || ""); }}
+                                className={`text-xs font-mono hover:bg-accent/10 px-1.5 py-0.5 rounded ${costUnverified ? "bg-amber-100 text-amber-700 border border-amber-300" : "text-muted"}`}
+                                title="Click to edit"
+                              >
+                                {line.unit_of_measure && line.unit_of_measure !== "null" ? line.unit_of_measure : "—"}
+                              </button>
+                            )}
+                          </td>
+                          <td className="px-4 py-1.5 text-right font-mono">
+                            {isEditingCost ? (
+                              <input
+                                autoFocus
+                                type="number"
+                                step="0.01"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => {
+                                  const v = Number(editValue);
+                                  if (!isNaN(v) && v >= 0 && v !== Number(line.unit_cost)) {
+                                    saveLineEdit(line.id, "cost", editValue);
+                                  } else {
+                                    setEditingCell(null);
+                                    setEditValue("");
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") e.currentTarget.blur();
+                                  if (e.key === "Escape") { setEditingCell(null); setEditValue(""); }
+                                }}
+                                className="w-20 px-1 py-0.5 border border-accent rounded text-xs font-mono text-right"
+                                disabled={isSaving}
+                              />
+                            ) : (
+                              <button
+                                onClick={() => { setEditingCell({ lineId: line.id, field: "cost" }); setEditValue(line.unit_cost ? String(line.unit_cost) : ""); }}
+                                className={`text-xs hover:bg-accent/10 px-1.5 py-0.5 rounded ${costUnverified ? "text-amber-700" : ""}`}
+                                title="Click to edit cost"
+                              >
+                                {costUnverified ? (
+                                  <span className="font-medium" title={line.cost_source}>⚠ click to enter</span>
+                                ) : line.unit_cost ? (
+                                  `$${Number(line.unit_cost).toFixed(2)}`
+                                ) : (
+                                  "—"
+                                )}
+                              </button>
                             )}
                           </td>
                           <td className="px-4 py-1.5 text-right font-mono">

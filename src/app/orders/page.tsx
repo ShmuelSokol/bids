@@ -54,6 +54,47 @@ async function getData() {
     if (data.length < 1000) break;
   }
 
+  // Enrich each PO line with two AX part#s:
+  //   - ax_item_number: the AX internal item code (e.g. "COV059031"), from
+  //     nsn_catalog.source (stored as "AX:<itemNumber>")
+  //   - vendor_product_number_ax: the part # AX's vendor table has on file
+  //     for this NSN+supplier pair, from nsn_ax_vendor_parts. Helpful for
+  //     PO lines when we need to tell the vendor what to ship.
+  const lineNsns = [...new Set(allPos.flatMap((p: any) => (p.po_lines || []).map((l: any) => l.nsn).filter(Boolean)))];
+  const axItemByNsn = new Map<string, string>();
+  if (lineNsns.length > 0) {
+    for (let i = 0; i < lineNsns.length; i += 500) {
+      const chunk = lineNsns.slice(i, i + 500);
+      const { data } = await supabase.from("nsn_catalog").select("nsn, source").in("nsn", chunk);
+      for (const c of data || []) {
+        const m = /^AX:(.+)$/.exec((c.source || "").trim());
+        if (m) axItemByNsn.set(c.nsn, m[1].trim());
+      }
+    }
+  }
+  const vendorPartKey = (nsn: string, vendor: string) => `${nsn}__${vendor}`;
+  const vendorPartByKey = new Map<string, string>();
+  if (lineNsns.length > 0) {
+    for (let i = 0; i < lineNsns.length; i += 500) {
+      const chunk = lineNsns.slice(i, i + 500);
+      const { data } = await supabase
+        .from("nsn_ax_vendor_parts")
+        .select("nsn, vendor_account, vendor_product_number")
+        .in("nsn", chunk);
+      for (const r of data || []) {
+        const k = vendorPartKey(r.nsn, (r.vendor_account || "").trim());
+        vendorPartByKey.set(k, r.vendor_product_number);
+      }
+    }
+  }
+  for (const po of allPos) {
+    for (const l of po.po_lines || []) {
+      l.ax_item_number = axItemByNsn.get(l.nsn) || null;
+      l.vendor_product_number_ax =
+        vendorPartByKey.get(vendorPartKey(l.nsn, l.supplier || "")) || null;
+    }
+  }
+
   // Enrich awards with cost/margin
   const enriched = awards.map((a: any) => {
     const nsn = `${a.fsc}-${a.niin}`;
