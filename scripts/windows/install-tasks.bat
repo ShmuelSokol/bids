@@ -62,17 +62,26 @@ echo Dispatcher: %DISPATCHER%
 echo.
 
 REM -----------------------------------------------------------------------
-REM Abe's live bids — every 5 min, 6am-6pm all week (Abe bids on weekends too).
-REM This is the closest-to-real-time task, feeds the dashboard.
+REM OLD recurring tasks (abe-bids, shipping, ax-po-poll, invoice-state,
+REM status-reconciler, lamlinks-writeback-worker) have been CONSOLIDATED
+REM into a single "DIBS - Recurring Daemon" registered below. That one
+REM daemon runs all of them in a single persistent process with zero
+REM recurring cmd-window popups. See docs/lamlinks-writeback.md.
 REM -----------------------------------------------------------------------
-REM /sc minute /mo N on its own creates a ONE-DAY window that dies after
-REM 24 hours. Use /sc daily + /ri /du so the task re-windows every day
-REM AND repeats inside each window until 6pm.
-schtasks /create /tn "DIBS - Abe Bids Sync" ^
-    /tr "cmd /c \"\"%DISPATCHER%\" sync-abe-bids-live\"" ^
-    /sc daily /st 06:00 ^
-    /ri 5 /du 12:00 ^
-    /ru "%RUN_AS_USER%" /it /f
+
+REM Clean up the old per-task scheduled tasks if they exist, so we don't
+REM run the same sync twice. Errors (task not found) are expected on a
+REM fresh machine and can be ignored.
+for %%T in (
+    "DIBS - Abe Bids Sync"
+    "DIBS - Shipping Sync"
+    "DIBS - AX PO Poll"
+    "DIBS - Invoice State Sync"
+    "DIBS - Status Reconciler"
+    "DIBS - LamLinks Writeback Worker"
+) do (
+    schtasks /delete /tn %%T /f 2>nul
+)
 echo.
 
 REM -----------------------------------------------------------------------
@@ -116,44 +125,6 @@ schtasks /create /tn "DIBS - AX Cost Rebuild" ^
 echo.
 
 REM -----------------------------------------------------------------------
-REM Shipping sync — every 15 min, 6am-6pm weekdays. Warehouse updates
-REM tracking numbers throughout the day; we want them visible on /shipping.
-REM -----------------------------------------------------------------------
-schtasks /create /tn "DIBS - Shipping Sync" ^
-    /tr "cmd /c \"\"%DISPATCHER%\" sync-shipping\"" ^
-    /sc daily /st 06:00 ^
-    /ri 15 /du 12:00 ^
-    /ru "%RUN_AS_USER%" /it /f
-echo.
-
-REM -----------------------------------------------------------------------
-REM AX PO poll — every 5 min 6am-6pm. Calls /api/orders/poll-ax which
-REM advances purchase_orders.dmf_state as headers + lines land in AX.
-REM Runs only when there's a PO in awaiting_po_number / awaiting_lines_
-REM import — the route is a no-op otherwise, so this is cheap.
-REM -----------------------------------------------------------------------
-schtasks /create /tn "DIBS - AX PO Poll" ^
-    /tr "cmd /c \"\"%DISPATCHER%\" poll-ax-pos\"" ^
-    /sc daily /st 06:00 ^
-    /ri 5 /du 12:00 ^
-    /ru "%RUN_AS_USER%" /it /f
-echo.
-
-REM -----------------------------------------------------------------------
-REM Invoice state monitor — every 15 min, 6am-8pm. Watches LamLinks
-REM kad_tab.cinsta_kad for state transitions so DIBS surfaces "Abe
-REM posted invoice X at 3:47 PM" same-day, without touching WAWF.
-REM See /invoicing/monitor for the UI and docs/flows/mill-strip-research.md
-REM for the broader visibility plan.
-REM -----------------------------------------------------------------------
-schtasks /create /tn "DIBS - Invoice State Sync" ^
-    /tr "cmd /c \"\"%DISPATCHER%\" sync-invoice-states\"" ^
-    /sc daily /st 06:00 ^
-    /ri 15 /du 14:00 ^
-    /ru "%RUN_AS_USER%" /it /f
-echo.
-
-REM -----------------------------------------------------------------------
 REM PO ↔ Award heuristic linker — daily 5:15am. Queries AX for all
 REM DD219 PO lines, resolves ItemNumber → NSN via ProductBarcodesV3,
 REM matches each PO line to the most-likely award by (qty, date
@@ -187,37 +158,31 @@ schtasks /create /tn "DIBS - Competitor Awards Import" ^
 echo.
 
 REM -----------------------------------------------------------------------
-REM LamLinks write-back worker — LONG-RUNNING DAEMON, launches at logon.
-REM Runs scripts/lamlinks-writeback-worker.ts in --loop mode: one persistent
-REM process that polls lamlinks_write_queue every 30s internally.
+REM UNIFIED RECURRING DAEMON — ONE persistent process at logon that runs
+REM all the previously-scheduled recurring syncs on their own cadence.
+REM Replaces:
+REM   - DIBS - Abe Bids Sync (every 5 min)
+REM   - DIBS - Shipping Sync (every 15 min)
+REM   - DIBS - AX PO Poll (every 5 min)
+REM   - DIBS - Invoice State Sync (every 15 min)
+REM   - DIBS - Status Reconciler (every 15 min)
+REM   - DIBS - LamLinks Writeback Worker (persistent --loop)
 REM
-REM Why logon+daemon instead of scheduled-every-minute: schtasks with /ri 1
-REM pops a cmd window every 60 seconds — unusable while working. A single
-REM daemon launches minimized, hides in the taskbar, and drains the queue
-REM as rows arrive. No-op when the feature-flag is off.
+REM Why: per-task scheduled entries each pop a minimized cmd window when
+REM they fire. With five of them cycling every 5-15 min the user gets
+REM hundreds of popups per workday. This consolidates to ONE persistent
+REM process that spawns child syncs internally via child_process.spawn
+REM with windowsHide:true — zero recurring popups.
 REM
-REM If the window is closed, the worker dies. Re-start via:
-REM   schtasks /run /tn "DIBS - LamLinks Writeback Worker"
-REM Or just log out and back in.
+REM Also runs 24/7 (no 6am-8pm window), so Abe's late-night or weekend
+REM work syncs live.
+REM
+REM If the daemon dies, log out and back in, OR run:
+REM   schtasks /run /tn "DIBS - Recurring Daemon"
 REM -----------------------------------------------------------------------
-schtasks /create /tn "DIBS - LamLinks Writeback Worker" ^
-    /tr "cmd /c start \"DIBS Writeback Worker\" /min \"%DISPATCHER%\" lamlinks-writeback-worker -- --loop" ^
+schtasks /create /tn "DIBS - Recurring Daemon" ^
+    /tr "cmd /c start \"DIBS Recurring Daemon\" /min \"%DISPATCHER%\" dibs-recurring-daemon" ^
     /sc onlogon ^
-    /ru "%RUN_AS_USER%" /it /f
-echo.
-
-REM -----------------------------------------------------------------------
-REM DIBS status reconciler — every 15 min 6am-8pm weekdays. Flips DIBS
-REM bid_decisions.status from 'quoted' → 'submitted' once LamLinks has
-REM transmitted the bid (k33.t_stat_k33='sent' within 24h). Handles both
-REM DIBS-write-back bids AND bids Abe types directly into LamLinks.
-REM Uses "start /min" so the cmd window appears minimized — matches
-REM existing every-15-min cadence so no additional popup frequency.
-REM -----------------------------------------------------------------------
-schtasks /create /tn "DIBS - Status Reconciler" ^
-    /tr "cmd /c start \"DIBS Reconciler\" /min \"%DISPATCHER%\" sync-dibs-status -- --execute" ^
-    /sc daily /st 06:00 ^
-    /ri 15 /du 14:00 ^
     /ru "%RUN_AS_USER%" /it /f
 echo.
 
