@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Loader2, Check } from "lucide-react";
+import { X, Loader2, Check, MessageSquare } from "lucide-react";
 
 type Solicitation = {
   id: number;
@@ -20,9 +20,16 @@ type Override = {
   unit_of_measure: string | null;
   unit_cost: number | null;
   supplier_sku: string | null;
-  notes: string | null;
   reviewed_by: string;
   reviewed_at: string;
+};
+
+type Note = {
+  id: number;
+  note: string;
+  vendor: string | null;
+  author: string;
+  created_at: string;
 };
 
 const UOM_OPTIONS = ["EA", "PG", "PK", "BX", "CS", "CA", "DZ", "BT", "CN", "HD", "RO", "TU", "GAL", "QT", "PT", "LB", "OZ", "FT"];
@@ -34,18 +41,19 @@ export function SourcingModal({
 }: {
   solicitation: Solicitation;
   onClose: () => void;
-  onSaved: (updates: { bid_vendor: string; bid_cost?: number; bid_uom?: string; bid_item_number?: string }) => void;
+  onSaved: (updates: { bid_vendor: string; bid_cost?: number; bid_uom?: string; bid_item_number?: string; draft_lines_updated: number }) => void;
 }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Override[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
 
   const [vendor, setVendor] = useState(solicitation.bid_vendor || "");
   const [uom, setUom] = useState(solicitation.bid_uom || "");
   const [cost, setCost] = useState(solicitation.bid_cost ? String(solicitation.bid_cost) : "");
   const [sku, setSku] = useState(solicitation.bid_item_number || "");
-  const [notes, setNotes] = useState("");
+  const [newNote, setNewNote] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -54,6 +62,7 @@ export function SourcingModal({
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Load failed");
         setOverrides(data.overrides || []);
+        setNotes(data.notes || []);
       } catch (e: any) {
         setErr(e.message || String(e));
       } finally {
@@ -62,14 +71,12 @@ export function SourcingModal({
     })();
   }, [solicitation.id]);
 
-  // When vendor picks up a known override, auto-fill the rest from it.
   function prefillFromOverride(v: string) {
     const ov = overrides.find((o) => o.vendor.toUpperCase() === v.toUpperCase());
     if (!ov) return;
     if (ov.unit_of_measure) setUom(ov.unit_of_measure);
     if (ov.unit_cost !== null) setCost(String(ov.unit_cost));
     if (ov.supplier_sku) setSku(ov.supplier_sku);
-    if (ov.notes) setNotes(ov.notes);
   }
 
   async function save() {
@@ -87,7 +94,7 @@ export function SourcingModal({
         body.unit_cost = n;
       }
       if (sku.trim()) body.supplier_sku = sku.trim();
-      if (notes.trim()) body.notes = notes.trim();
+      if (newNote.trim()) body.new_note = newNote.trim();
 
       const res = await fetch("/api/solicitations/set-sourcing", {
         method: "POST",
@@ -96,11 +103,13 @@ export function SourcingModal({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
+
       onSaved({
         bid_vendor: vendor.trim().toUpperCase(),
         bid_cost: body.unit_cost,
         bid_uom: body.unit_of_measure?.toUpperCase(),
         bid_item_number: body.supplier_sku,
+        draft_lines_updated: data.draft_lines_updated || 0,
       });
       onClose();
     } catch (e: any) {
@@ -110,14 +119,20 @@ export function SourcingModal({
     }
   }
 
+  // Preview the margin change with the typed cost, so Abe sees the impact
+  // before clicking save. Uses the solicitation's suggested_price if known.
+  const typedCost = Number(cost) || 0;
+  // suggested_price not returned by the route payload — compute later via server
+  // on save. Here we just show the cost itself.
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-[560px] max-w-[95vw] max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-2xl w-[640px] max-w-[95vw] max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-3 border-b border-card-border flex items-start justify-between">
           <div>
             <h3 className="font-semibold text-base">Pre-award sourcing</h3>
             <p className="text-xs text-muted mt-0.5">
-              Lock in vendor, cost, UoM, and SKU now so when the award arrives, DIBS skips the review.
+              Lock vendor + cost + UoM + SKU now. Future awards for this NSN+vendor skip the review. Saving also updates any matching draft POs with the new cost.
             </p>
           </div>
           <button onClick={onClose} className="text-muted hover:text-foreground">
@@ -135,19 +150,24 @@ export function SourcingModal({
           </div>
 
           {loading ? (
-            <div className="flex items-center text-sm text-muted"><Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading existing overrides…</div>
+            <div className="flex items-center text-sm text-muted"><Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading sourcing history…</div>
           ) : (
             <>
+              {/* Existing overrides — click to prefill */}
               {overrides.length > 0 && (
                 <div>
-                  <div className="text-xs font-medium text-muted mb-1">Existing on file for this NSN</div>
+                  <div className="text-xs font-medium text-muted mb-1">Existing vendor setups for this NSN</div>
                   <div className="space-y-1">
                     {overrides.map((o) => (
                       <button
                         key={o.vendor}
                         type="button"
                         onClick={() => { setVendor(o.vendor); prefillFromOverride(o.vendor); }}
-                        className="w-full text-left rounded border border-sky-200 bg-sky-50 hover:bg-sky-100 px-2 py-1.5 text-xs flex items-center justify-between"
+                        className={`w-full text-left rounded border px-2 py-1.5 text-xs flex items-center justify-between ${
+                          vendor.toUpperCase() === o.vendor.toUpperCase()
+                            ? "border-sky-400 bg-sky-100"
+                            : "border-sky-200 bg-sky-50 hover:bg-sky-100"
+                        }`}
                       >
                         <span>
                           <span className="font-medium">{o.vendor}</span>
@@ -162,10 +182,39 @@ export function SourcingModal({
                       </button>
                     ))}
                   </div>
-                  <div className="text-[10px] text-muted mt-1">Click a row to pre-fill the form below.</div>
                 </div>
               )}
 
+              {/* Historical notes — append-only, across vendors */}
+              {notes.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-muted mb-1 flex items-center gap-1">
+                    <MessageSquare className="h-3 w-3" /> Historical notes ({notes.length})
+                  </div>
+                  <div className="rounded border border-amber-200 bg-amber-50 max-h-36 overflow-y-auto">
+                    {notes.map((n, i) => (
+                      <div
+                        key={n.id}
+                        className={`px-2.5 py-1.5 text-xs ${i < notes.length - 1 ? "border-b border-amber-200/60" : ""}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            {n.vendor && (
+                              <span className="inline-block text-[9px] font-medium uppercase rounded bg-white border border-amber-300 text-amber-800 px-1 mr-1">{n.vendor}</span>
+                            )}
+                            <span>{n.note}</span>
+                          </div>
+                          <div className="text-[10px] text-muted whitespace-nowrap">
+                            {n.author} · {new Date(n.created_at).toISOString().slice(0, 10)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Edit form */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="text-xs text-muted block mb-1">Vendor (AX account) *</label>
@@ -197,6 +246,11 @@ export function SourcingModal({
                     onChange={(e) => setCost(e.target.value)}
                     className="w-full rounded border border-card-border px-2 py-1.5 text-sm font-mono"
                   />
+                  {typedCost > 0 && solicitation.bid_cost && Math.abs(typedCost - Number(solicitation.bid_cost)) > 0.01 && (
+                    <div className="text-[10px] text-muted mt-0.5">
+                      Was ${Number(solicitation.bid_cost).toFixed(2)} → margin will recalc on save (solicitation + any matching draft POs).
+                    </div>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-muted block mb-1">Supplier SKU (vendor's part #)</label>
@@ -208,11 +262,11 @@ export function SourcingModal({
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-muted block mb-1">Note (optional)</label>
+                  <label className="text-xs text-muted block mb-1">Add a note (appends to history — won't overwrite past notes)</label>
                   <input
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="e.g. confirmed with Sue at Medline"
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    placeholder='e.g. "vendor blocked" or "confirmed $4.25 with Sue 2026-05-15"'
                     className="w-full rounded border border-card-border px-2 py-1.5 text-sm"
                   />
                 </div>
@@ -237,7 +291,7 @@ export function SourcingModal({
                 </button>
                 <div className="flex-1" />
                 <span className="text-[10px] text-muted">
-                  Writes to `dibbs_solicitations` + `nsn_review_overrides`
+                  Updates solicitation, (NSN, vendor) override, appends note, and cascades to matching draft POs.
                 </span>
               </div>
             </>

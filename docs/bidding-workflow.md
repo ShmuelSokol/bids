@@ -60,10 +60,12 @@ Clicking a row opens the detail panel with:
 - **Bid history** for this NSN (last 10 bids + our wins/losses)
 - **"Check DIBBS"** button — live check whether this solicitation is still open on DIBBS.
 
-Row-level **"Sourcing"** button (POST `/api/solicitations/set-sourcing`) opens a small modal to lock in vendor + cost + UoM + supplier SKU **before** the award lands. Saves to two places:
+Row-level **"Sourcing"** button (POST `/api/solicitations/set-sourcing`) opens a modal to lock in vendor + cost + UoM + supplier SKU **before** the award lands. Saves to up to four places:
 
-1. The solicitation's `bid_vendor`, `bid_cost`, `bid_uom`, `bid_item_number` fields — updates its preview + margin immediately.
-2. `nsn_review_overrides(nsn, vendor)` — persistent (NSN, vendor) record so when an award comes in for this NSN routed to the same vendor, `generate-pos` reads the override first and skips the COST UNVERIFIED / review path entirely.
+1. The solicitation's `bid_vendor`, `bid_cost`, `bid_uom`, `bid_item_number`, `margin_pct` — updates its preview immediately.
+2. `nsn_review_overrides(nsn, vendor)` — persistent record so when an award later comes in for this NSN routed to the same vendor, `generate-pos` reads the override first and skips the COST UNVERIFIED / review path entirely.
+3. `nsn_sourcing_notes` — when the operator types into "Add a note", a NEW row is appended (never overwrites). This gives Abe an append-only history per NSN. Example: quarter 1 entry "blocked with Medline" stays forever; quarter 2 he adds "still blocked" or "unblocked on 2026-08-01" as a separate line. The modal surfaces the last 50 notes in chronological order.
+4. Any DRAFT PO lines matching (nsn, vendor) — cost / UoM / supplier SKU / total_cost / margin_pct all re-derived with the new values, parent PO header totals recalculated, and `cost_source` tagged "reviewed override by … (cascaded from solicitation sourcing)". AX-committed POs (`ax_po_number` set or `dmf_state` past drafted) are never touched. The toast message tells Abe how many draft lines got refreshed.
 
 The button shows `Sourcing` when nothing is set, and `✓ <VENDOR>` in blue once it is. The modal pre-fills from any existing `nsn_review_overrides` rows for the NSN (useful when the vendor has been sourced before for a different solicitation on the same NSN).
 

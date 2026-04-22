@@ -1728,7 +1728,10 @@ export function SolicitationsList({
                     : x
                 )
               );
-              setMessage(`Sourcing saved for ${sol.nsn} · ${upd.bid_vendor} — future awards will skip review`);
+              const cascade = upd.draft_lines_updated > 0
+                ? ` + ${upd.draft_lines_updated} draft PO line${upd.draft_lines_updated !== 1 ? "s" : ""} refreshed`
+                : "";
+              setMessage(`Sourcing saved for ${sol.nsn} · ${upd.bid_vendor}${cascade}`);
               setTimeout(() => setMessage(null), 4000);
             }}
           />

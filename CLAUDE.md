@@ -135,7 +135,8 @@ When you learn something new that future sessions would benefit from, add it to 
 - **nsn_vendor_prices** (34K) — per-vendor pricing for supplier switch (5,930 NSNs with 2+ vendors)
 - **nsn_ax_vendor_parts** — per-(NSN, vendor) AX item record (used by NPI to decide add-supplier vs new-item)
 - **nsn_upc_map** (74) — optional UPC per NSN from AX ProductBarcodesV3; powers UPC row in NPI BarCode tab. Refresh via `scripts/populate-nsn-upc-map.ts`.
-- **nsn_review_overrides** — review-once state keyed by (nsn, vendor). Abe's fixes in the /orders Review tab land here and skip the COST UNVERIFIED/waterfall path on future generate-pos calls.
+- **nsn_review_overrides** — review-once state keyed by (nsn, vendor). Abe's fixes in the /orders Review tab AND the /solicitations Sourcing modal land here. generate-pos reads this first to skip the COST UNVERIFIED / waterfall path.
+- **nsn_sourcing_notes** — append-only note history per NSN (nullable vendor). New entry each time Abe types into "Add a note" in the sourcing modal. Used to preserve context like "blocked with Medline" across re-listings of the same NSN.
 - **purchase_orders** + **po_lines** — generated POs from awards. `purchase_orders.dmf_state` drives the AX write-back state machine (`drafted` → `awaiting_po_number` → `lines_ready` → `awaiting_lines_import` → `posted`). `ax_po_number` populated after AX auto-assigns.
 - **fsc_heatmap** (332) — hot/warm/cold FSC categories
 - **fsc_expansion** (464) — solicitation vs bid rates by FSC
