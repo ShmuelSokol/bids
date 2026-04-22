@@ -60,6 +60,13 @@ Clicking a row opens the detail panel with:
 - **Bid history** for this NSN (last 10 bids + our wins/losses)
 - **"Check DIBBS"** button — live check whether this solicitation is still open on DIBBS.
 
+Row-level **"Sourcing"** button (POST `/api/solicitations/set-sourcing`) opens a small modal to lock in vendor + cost + UoM + supplier SKU **before** the award lands. Saves to two places:
+
+1. The solicitation's `bid_vendor`, `bid_cost`, `bid_uom`, `bid_item_number` fields — updates its preview + margin immediately.
+2. `nsn_review_overrides(nsn, vendor)` — persistent (NSN, vendor) record so when an award comes in for this NSN routed to the same vendor, `generate-pos` reads the override first and skips the COST UNVERIFIED / review path entirely.
+
+The button shows `Sourcing` when nothing is set, and `✓ <VENDOR>` in blue once it is. The modal pre-fills from any existing `nsn_review_overrides` rows for the NSN (useful when the vendor has been sourced before for a different solicitation on the same NSN).
+
 ### 3. Quoted
 
 Abe set a price (usually the suggested bid, sometimes an override). The row is staged for submission.

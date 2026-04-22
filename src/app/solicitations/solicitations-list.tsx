@@ -22,6 +22,7 @@ import { formatDateShort, formatDateTime, formatTime } from "@/lib/dates";
 import { isOpenSolicitation } from "@/lib/solicitation-filters";
 import { NsnHistoryDetail } from "@/components/nsn-history-detail";
 import { SourceTip } from "@/components/source-tip";
+import { SourcingModal } from "./sourcing-modal";
 
 interface Solicitation {
   id: number;
@@ -121,6 +122,8 @@ export function SolicitationsList({
   const [editComment, setEditComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedQuoted, setSelectedQuoted] = useState<Set<number>>(new Set());
+  // Which solicitation is open in the pre-award sourcing modal.
+  const [sourcingId, setSourcingId] = useState<number | null>(null);
   const [expandedNsn, setExpandedNsn] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
@@ -1295,6 +1298,19 @@ export function SolicitationsList({
                               {supplierSearchId === s.id ? "Close" : "Find Suppliers"}
                             </button>
                           )}
+                          {!isEditing && s.nsn && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSourcingId(s.id); }}
+                              className={`text-[10px] px-2 py-1 rounded border font-medium ${
+                                (s as any).bid_vendor
+                                  ? "bg-sky-100 text-sky-700 border-sky-300 hover:bg-sky-200"
+                                  : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-sky-50 hover:text-sky-700"
+                              }`}
+                              title="Set vendor / UoM / cost / supplier SKU in advance — will auto-apply when the award lands"
+                            >
+                              {(s as any).bid_vendor ? `✓ ${(s as any).bid_vendor}` : "Sourcing"}
+                            </button>
+                          )}
                           {s.bid_comment && (
                             <div className="text-[9px] text-yellow-700 flex items-center gap-0.5">
                               <MessageSquare className="h-2 w-2" />{s.bid_comment}
@@ -1691,6 +1707,33 @@ export function SolicitationsList({
           </div>
         )}
       </div>
+      {sourcingId !== null && (() => {
+        const sol = solicitations.find((x) => x.id === sourcingId);
+        if (!sol) return null;
+        return (
+          <SourcingModal
+            solicitation={sol as any}
+            onClose={() => setSourcingId(null)}
+            onSaved={(upd) => {
+              setSolicitations((prev) =>
+                prev.map((x) =>
+                  x.id === sourcingId
+                    ? {
+                        ...x,
+                        bid_vendor: upd.bid_vendor,
+                        bid_cost: upd.bid_cost ?? (x as any).bid_cost,
+                        bid_uom: upd.bid_uom ?? (x as any).bid_uom,
+                        bid_item_number: upd.bid_item_number ?? (x as any).bid_item_number,
+                      } as any
+                    : x
+                )
+              );
+              setMessage(`Sourcing saved for ${sol.nsn} · ${upd.bid_vendor} — future awards will skip review`);
+              setTimeout(() => setMessage(null), 4000);
+            }}
+          />
+        );
+      })()}
     </>
   );
 }
