@@ -14,7 +14,17 @@ import { computeMarginPct } from "@/lib/margin";
  * UoM matches the vendor UoM (from nsn_costs) or when a manual cost is
  * explicitly entered.
  *
- * Body: { line_id: number, unit_of_measure?: string, unit_cost?: number }
+ * Body: {
+ *   line_id: number,
+ *   unit_of_measure?: string,
+ *   unit_cost?: number,
+ *   persist_override?: boolean,   // when true, upsert (nsn, vendor) → override
+ *   override_notes?: string,      // optional operator note on the override
+ * }
+ *
+ * When `persist_override` is true, the edited values get stored in
+ * `nsn_review_overrides` keyed by (nsn, vendor). Future PO generations will
+ * read that first (see generate-pos), so Abe only reviews each NSN once.
  */
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -24,6 +34,8 @@ export async function POST(req: NextRequest) {
   const lineId = body.line_id;
   const newUom: string | undefined = body.unit_of_measure;
   const newCost: number | undefined = body.unit_cost;
+  const persistOverride: boolean = body.persist_override === true;
+  const overrideNotes: string | undefined = body.override_notes;
   if (typeof lineId !== "number") {
     return NextResponse.json({ error: "line_id required" }, { status: 400 });
   }
@@ -110,9 +122,33 @@ export async function POST(req: NextRequest) {
     await supabase.from("purchase_orders").update({ total_cost: totalCost, updated_at: new Date().toISOString() }).eq("id", poId);
   }
 
+  // Optionally persist the edit as a reusable (nsn, vendor) override so
+  // future awards for the same NSN+vendor skip the waterfall and land clean.
+  let overridePersisted = false;
+  if (persistOverride && line.nsn && line.supplier && line.supplier !== "UNASSIGNED") {
+    const finalUom = update.unit_of_measure !== undefined ? update.unit_of_measure : line.unit_of_measure;
+    const finalCost = update.unit_cost !== undefined ? update.unit_cost : line.unit_cost;
+    const { error: ovErr } = await supabase
+      .from("nsn_review_overrides")
+      .upsert(
+        {
+          nsn: line.nsn,
+          vendor: line.supplier,
+          unit_of_measure: finalUom || null,
+          unit_cost: finalCost ? Number(finalCost) : null,
+          notes: overrideNotes || null,
+          reviewed_by: user.profile?.full_name || user.user.email || "unknown",
+          reviewed_at: new Date().toISOString(),
+        },
+        { onConflict: "nsn,vendor" }
+      );
+    if (!ovErr) overridePersisted = true;
+  }
+
   return NextResponse.json({
     ok: true,
     line: updated,
     cost_auto_resolved: costAutoResolved,
+    override_persisted: overridePersisted,
   });
 }

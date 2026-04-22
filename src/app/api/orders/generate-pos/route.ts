@@ -137,6 +137,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Reviewed-once overrides: when Abe has already reviewed an (NSN, vendor)
+  // pair in the Review Queue, use those values instead of the waterfall and
+  // skip the COST UNVERIFIED flag. Keyed by `${nsn}__${VENDOR_UPPER}`.
+  const allNsnsForOverride = [...new Set(eligible.map((a: any) => a.nsn).filter(Boolean))];
+  const overrideByKey = new Map<string, { unit_of_measure: string | null; unit_cost: number | null; reviewed_by: string; reviewed_at: string }>();
+  if (allNsnsForOverride.length > 0) {
+    const { data: overrides } = await supabase
+      .from("nsn_review_overrides")
+      .select("nsn, vendor, unit_of_measure, unit_cost, reviewed_by, reviewed_at")
+      .in("nsn", allNsnsForOverride);
+    for (const o of overrides || []) {
+      overrideByKey.set(`${o.nsn}__${String(o.vendor || "").trim().toUpperCase()}`, {
+        unit_of_measure: o.unit_of_measure,
+        unit_cost: o.unit_cost !== null ? Number(o.unit_cost) : null,
+        reviewed_by: o.reviewed_by,
+        reviewed_at: o.reviewed_at,
+      });
+    }
+  }
+
   // Normalize null/empty/"null" string into a real null so we can compare UoMs
   // fairly across awards imported from different sources (LamLinks, DIBBS, AX).
   function normUom(v: any): string | null {
@@ -194,6 +214,30 @@ export async function POST(req: NextRequest) {
           reason: trust ? (cost.source || "nsn_costs fallback") : `nsn_costs waterfall — COST UNVERIFIED (UoM "${award.unit_of_measure}" vs "${cost.uom}")`,
           cost,
         };
+      }
+    }
+
+    // Reviewed-override fast-path: if Abe has reviewed this (NSN, vendor) before,
+    // use his values and skip COST UNVERIFIED. Only applies when we landed on a
+    // real supplier (not UNASSIGNED) — override is keyed by the routed vendor.
+    if (routing.supplier !== "UNASSIGNED" && award.nsn) {
+      const ov = overrideByKey.get(`${award.nsn}__${routing.supplier.toUpperCase()}`);
+      if (ov) {
+        const reviewedDate = new Date(ov.reviewed_at).toISOString().slice(0, 10);
+        routing = {
+          supplier: routing.supplier,
+          reason: `reviewed override by ${ov.reviewed_by} on ${reviewedDate}`,
+          cost: {
+            cost: ov.unit_cost !== null ? ov.unit_cost : (routing.cost?.cost ?? 0),
+            source: routing.cost?.source || null,
+            vendor: routing.supplier,
+            uom: ov.unit_of_measure || routing.cost?.uom || null,
+            itemNumber: routing.cost?.itemNumber ?? null,
+          },
+        };
+        // Also overwrite the award's unit_of_measure so it gets persisted to
+        // po_lines.unit_of_measure (Abe already fixed this once).
+        if (ov.unit_of_measure) award.unit_of_measure = ov.unit_of_measure;
       }
     }
 

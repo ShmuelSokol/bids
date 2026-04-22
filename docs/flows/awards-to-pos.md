@@ -78,6 +78,33 @@ What happens after we win a bid. Award arrives, gets grouped into draft POs by c
 | Row checkbox | Toggle individual selection |
 | "Generate POs" button | `POST /api/orders/generate-pos` with selected award IDs |
 
+### `/orders` Review tab
+
+One-line-at-a-time review queue for PO lines on draft POs that need operator attention. Each resolution can be remembered per-NSN+vendor so future PO generations land clean.
+
+**What qualifies a line for the queue:**
+
+| Reason | Rule |
+|---|---|
+| UoM mismatch | `cost_source` contains `COST UNVERIFIED` |
+| Negative margin | `margin_pct < 0` |
+| Low margin | `margin_pct < 10` |
+| Suspiciously high margin | `margin_pct > 50` (usually signals bad cost) |
+| Missing cost | `unit_cost` null/zero |
+| Missing sell price | `sell_price` null/zero |
+| Missing margin | `margin_pct` null |
+
+**UI:**
+- Card showing NSN, description, PO#, supplier, qty, sell price, unit cost, margin (color-coded), `cost_source` trail, and badge chips for each reason flagged.
+- UoM dropdown + unit_cost input + optional note.
+- Three action buttons:
+  - **Save + remember for this NSN** — upserts `nsn_review_overrides` (keyed by `(nsn, vendor)`). Future PO generation for the same pair uses these values, tagged `cost_source = "reviewed override by <user> on <date>"`, and skips the COST UNVERIFIED flag entirely.
+  - **Save this line only** — writes only to this `po_line`; no override.
+  - **Skip** — move to next line without saving.
+- If the NSN+vendor already has an override on file (e.g., reviewed previously but a new award landed before the override took effect), the card shows the existing override above the edit form.
+- "Open PO → switch supplier" link jumps into the regular POs tab with the parent PO expanded if the right fix is a supplier change instead.
+- Prev/Next arrows + counter `X of Y`. Refresh button re-queries the endpoint.
+
 ### `/orders` POs tab
 
 | Element | Result |
@@ -106,7 +133,8 @@ What happens after we win a bid. Award arrives, gets grouped into draft POs by c
 |-------|--------|---------|
 | `GET /api/orders/vendor-prices?nsn=X` | GET | List vendors with prices + last PO date for NSN |
 | `POST /api/orders/generate-pos` | POST | Group selected awards by cheapest vendor (not our CAGE), create draft POs |
-| `POST /api/orders/po-lines/update` | POST | Inline edit UoM or unit_cost; re-runs waterfall on UoM fix |
+| `GET /api/orders/review-lines` | GET | List draft-PO lines flagged for review (UoM issues / suspicious margins / missing data) |
+| `POST /api/orders/po-lines/update` | POST | Inline edit UoM or unit_cost; re-runs waterfall on UoM fix. `persist_override=true` upserts `nsn_review_overrides` |
 | `POST /api/orders/switch-supplier` | POST | Move po_line to different supplier (auto-create PO if needed) |
 | `POST /api/orders/generate-npi` | POST | Multi-PO NPI workbook (7 tabs: RawData/RPCreate/RPV2/APPROVEDVENDOR/EXTERNALITEMDESC/BarCode/TradeAgreement) |
 | `POST /api/orders/submit-po-header` | POST | DMF step 1: push header, AX auto-assigns PO# |
@@ -141,6 +169,7 @@ What happens after we win a bid. Award arrives, gets grouped into draft POs by c
 | `nsn_catalog` | read on NPI | `nsn`, `source` (`AX:<ItemNumber>` form for already-known items) |
 | `nsn_ax_vendor_parts` | read on NPI | `nsn`, `vendor_account`, `ax_item_number` — per-(NSN,vendor) AX item record |
 | `nsn_upc_map` | read on NPI | `nsn`, `upc`, `ax_item_number` — optional UPC alongside NSN barcode. Populated by `scripts/populate-nsn-upc-map.ts` from cached AX `ProductBarcodesV3` dump |
+| `nsn_review_overrides` | read on PO gen, write on review save | `(nsn, vendor)` UNIQUE → `unit_of_measure`, `unit_cost`, `notes`, `reviewed_by`, `reviewed_at`. Review-once state: `generate-pos` checks this first, falls back to waterfall only when no override. Tagged `cost_source = "reviewed override by …"` when used. |
 | `nsn_vendor_prices` | read on switch modal | `vendor`, `price`, `price_source`, `item_number`, `updated_at` |
 | `abe_bids` | read on switch modal | `bid_date` (used as last-PO-date proxy) |
 | `purchase_orders` | W on gen + switch + all DMF stages | `po_number`, `supplier`, `status`, `total_cost`, `line_count`, `created_by`, `ax_po_number`, `ax_correlation_ref`, `dmf_state` (`drafted`/`awaiting_po_number`/`lines_ready`/`awaiting_lines_import`/`posted`), `dmf_last_polled_at`, `dmf_error` |

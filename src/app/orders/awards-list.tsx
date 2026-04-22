@@ -13,8 +13,10 @@ import {
   ShoppingCart,
   Clock,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { SourceTip } from "@/components/source-tip";
+import { ReviewPanel } from "./review-panel";
 
 interface Award {
   id: number;
@@ -73,7 +75,27 @@ export function AwardsList({
   // PO without reloading, strip claimed awards after Generate POs, etc.).
   const [awards, setAwards] = useState<Award[]>(awardsProp);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(purchaseOrdersProp);
-  const [tab, setTab] = useState<"awards" | "pos">("awards");
+  const [tab, setTab] = useState<"awards" | "pos" | "review">("awards");
+
+  // Count lines flagged for review so the tab badge tells Abe how much work
+  // is waiting. Computed client-side from the same data the panel will load;
+  // exact count comes from the API, but this keeps the tab honest without a
+  // server round-trip on every mount.
+  const reviewCount = useMemo(() => {
+    let n = 0;
+    for (const po of purchaseOrders) {
+      if (po.ax_po_number || (po.dmf_state && po.dmf_state !== "drafted")) continue;
+      for (const l of po.po_lines || []) {
+        const m = l.margin_pct;
+        const cs = (l.cost_source || "").toUpperCase();
+        if (cs.includes("COST UNVERIFIED")) { n++; continue; }
+        if (m === null || m === undefined) { n++; continue; }
+        if (m < 0 || m < 10 || m > 50) { n++; continue; }
+        if (!l.unit_cost || Number(l.unit_cost) <= 0) { n++; continue; }
+      }
+    }
+    return n;
+  }, [purchaseOrders]);
   const [shipFilter, setShipFilter] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -502,6 +524,17 @@ export function AwardsList({
         >
           <Package className="h-4 w-4 inline mr-1" />
           Purchase Orders ({purchaseOrders.length})
+        </button>
+        <button
+          onClick={() => setTab("review")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium ${
+            tab === "review"
+              ? "bg-accent text-white"
+              : "bg-card-bg border border-card-border"
+          } ${reviewCount > 0 && tab !== "review" ? "ring-1 ring-amber-500/40" : ""}`}
+        >
+          <AlertTriangle className="h-4 w-4 inline mr-1" />
+          Review ({reviewCount})
         </button>
       </div>
 
@@ -1227,6 +1260,7 @@ export function AwardsList({
           )}
         </div>
       )}
+      {tab === "review" && <ReviewPanel />}
       {/* Validate-for-AX Result Modal */}
       {validateResult && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setValidateResult(null)}>
