@@ -61,14 +61,18 @@ interface PurchaseOrder {
 type ShipStats = { shipped: number; notShipped: number; noStatus: number; shipping: number; partial: number; total: number };
 
 export function AwardsList({
-  awards,
-  purchaseOrders,
+  awards: awardsProp,
+  purchaseOrders: purchaseOrdersProp,
   shipStats,
 }: {
   awards: Award[];
   purchaseOrders: PurchaseOrder[];
   shipStats?: ShipStats;
 }) {
+  // Make awards + purchaseOrders stateful so we can mutate locally (delete a
+  // PO without reloading, strip claimed awards after Generate POs, etc.).
+  const [awards, setAwards] = useState<Award[]>(awardsProp);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(purchaseOrdersProp);
   const [tab, setTab] = useState<"awards" | "pos">("awards");
   const [shipFilter, setShipFilter] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState("");
@@ -757,8 +761,23 @@ export function AwardsList({
                           });
                           const data = await res.json();
                           if (data.ok) {
-                            setMessage(`Deleted ${po.po_number} — ${data.awards_reset} awards reset. Refreshing...`);
-                            setTimeout(() => window.location.reload(), 1000);
+                            // Remove from local state — no reload, no tab
+                            // switch. Also un-flag the associated awards so
+                            // they reappear in the awards tab as selectable.
+                            const deletedAwardIds: number[] = data.award_ids || [];
+                            setPurchaseOrders((prev) => prev.filter((p) => p.id !== po.id));
+                            if (deletedAwardIds.length > 0) {
+                              setAwards((prev) =>
+                                prev.map((a) =>
+                                  deletedAwardIds.includes(a.id)
+                                    ? { ...a, po_generated: false, po_id: null }
+                                    : a
+                                )
+                              );
+                            }
+                            setMessage(`Deleted ${po.po_number} — ${data.awards_reset} awards reset`);
+                            // Clear the message after a bit
+                            setTimeout(() => setMessage(null), 4000);
                           } else {
                             setMessage(data.error || "Delete failed");
                           }

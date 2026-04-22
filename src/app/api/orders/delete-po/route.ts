@@ -36,5 +36,10 @@ export async function POST(req: NextRequest) {
   await supabase.from("po_lines").delete().eq("po_id", po_id);
   await supabase.from("purchase_orders").delete().eq("id", po_id);
 
-  return NextResponse.json({ ok: true, awards_reset: awardIds.length, po_number: po.po_number });
+  return NextResponse.json({
+    ok: true,
+    awards_reset: awardIds.length,
+    award_ids: awardIds,
+    po_number: po.po_number,
+  });
 }
