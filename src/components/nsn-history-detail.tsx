@@ -178,6 +178,22 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
             )}
           </div>
 
+          {/* Match provenance — why this NSN resolves to this SKU + these vendors.
+              The link is authoritative: someone in AX created a barcode row where
+              BarcodeSetupId=NSN with this NSN's 13-digit value on this item. See
+              docs/data-sources.md and scripts/refresh-all-catalogs.ts. */}
+          {data.ax.item_number && (
+            <div className="px-3 py-1.5 text-[10px] text-blue-900 bg-blue-100/30 border-b border-blue-200 leading-snug">
+              <span className="font-semibold">How we matched:</span>{" "}
+              AX has NSN <span className="font-mono">{nsn}</span> recorded as a barcode on item{" "}
+              <span className="font-mono">{data.ax.item_number}</span>
+              {" "}(via <span className="font-mono">ProductBarcodesV3</span>, BarcodeSetupId=NSN).
+              That's an <span className="font-semibold">NSN-direct match from AX</span> — not a P/N cross-reference and not a title/fuzzy match.
+              The vendors below come from <span className="font-mono">VendorProductDescriptionsV2</span>{" "}
+              joined on that ItemNumber — i.e. "who does AX say supplies <span className="font-mono">{data.ax.item_number}</span>".
+            </div>
+          )}
+
           {data.ax.suppliers.length > 0 && (
             <div className="border-b border-blue-200">
               <div className="px-3 py-1 text-[10px] font-semibold text-blue-700">Suppliers ({data.ax.suppliers.length}) <span className="font-normal text-[8px] text-muted">AX VendorProductDescriptionsV2</span></div>

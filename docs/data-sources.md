@@ -76,6 +76,27 @@ For a solicitation with NSN `6515-01-676-3176`:
 
 The bulk import is handled by `scripts/sync-ax-barcodes.ts` which pulls the whole `ProductBarcodesV3` table into the Supabase `nsn_catalog` table. We don't hit AX on every page load — that would be far too slow.
 
+### Three distinct match channels (don't confuse them)
+
+When the solicitation detail panel shows an "AX Vendor Parts" or "Suppliers" card, that's an **NSN-direct match** — never a fuzzy one. The chain:
+
+1. Someone in AX sets up item `MCM98320A625` with a barcode row where `BarcodeSetupId='NSN'` and `BarcodeNumber='5315015254843'`. (This is a manual entry by Yosef / the item master team, not automatic.)
+2. Nightly `scripts/refresh-all-catalogs.ts` reads those NSN-barcode rows, reformats the 13-digit value to `5315-01-525-4843`, and writes `nsn_catalog(nsn='5315-01-525-4843', source='AX:MCM98320A625')`.
+3. `scripts/sync-ax-vendor-parts-to-supabase.ts` pulls `VendorProductDescriptionsV2`, joins on `ItemNumber`, and writes rows into `nsn_ax_vendor_parts(nsn, ax_item_number, vendor_account, vendor_product_number)`.
+4. The solicitation UI's "AX Vendor Parts" / "Suppliers" cards display those rows.
+
+So when Abe sees `MCMAST · 98320A625 · $3.07` on NSN `5315-01-525-4843`, the trail is: **AX declared this NSN lives on item MCM98320A625 → AX also says MCMAST supplies that item as part# 98320A625 → that's how we got here.**
+
+The other two channels are visually distinct and labeled:
+
+| Channel | Visual | Source | Trust |
+|---|---|---|---|
+| **AX NSN barcode** | blue `AX Vendor Parts` card, green "✓ NSN-direct match" badge | `ProductBarcodesV3` → `nsn_catalog` → `nsn_ax_vendor_parts` | Authoritative (AX is the source of truth) |
+| **P/N cross-reference** | yellow `Part Number Matches` card with HIGH / MEDIUM confidence pill | `nsn_matches` table (PUB LOG / master DB P/N join) | Good, but verify mfr CAGE separately |
+| **Fuzzy title** | red `Title-Only Candidates` card with "⚠ FUZZY" pill | nomenclature similarity only | Unreliable — do NOT use without independent verification |
+
+The UI shows these in distinct sections with explicit badges so operators never mistake a fuzzy match for an authoritative one.
+
 ## 3. Master DB
 
 **What it is:** An internal FastAPI service at `masterdb.everreadygroup.com`. 405K item records, 192K with mfr part numbers, ~657 verified NSNs. This is ERG's cross-SKU master, not specific to gov.

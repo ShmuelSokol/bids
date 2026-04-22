@@ -1516,9 +1516,20 @@ export function SolicitationsList({
                                   )}
                                   {axVendorParts.length > 0 && (
                                     <div className="bg-blue-50 rounded-lg p-2 border border-blue-200 text-xs">
-                                      <div className="text-[10px] font-bold text-blue-700 mb-1">
+                                      <div className="text-[10px] font-bold text-blue-700 mb-1 flex items-center gap-1">
                                         AX Vendor Parts ({axVendorParts.length})
+                                        <span className="inline-block rounded bg-green-100 text-green-700 border border-green-200 px-1 text-[9px] font-semibold">
+                                          ✓ NSN-direct match
+                                        </span>
                                       </div>
+                                      {axVendorParts[0]?.ax_item_number && (
+                                        <div className="text-[9px] text-muted mb-1 leading-snug">
+                                          AX has NSN <span className="font-mono">{s.nsn}</span> on item{" "}
+                                          <span className="font-mono font-medium">{axVendorParts[0].ax_item_number}</span>
+                                          {" "}via <span className="font-mono">ProductBarcodesV3</span>. Vendors below come from{" "}
+                                          <span className="font-mono">VendorProductDescriptionsV2</span> joined on that ItemNumber.
+                                        </div>
+                                      )}
                                       <div className="text-[9px] text-muted mb-1 italic">Our vendor chain — not DLA-approved mfr list. For cross-reference.</div>
                                       {axVendorParts.slice(0, 5).map((vp: any, i: number) => (
                                         <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
