@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Building2, MapPin, Upload, Database, Activity, Bug, Send } from "lucide-react";
-import { isLamlinksWritebackLive } from "@/lib/system-settings";
+import { Building2, MapPin, Upload, Database, Activity, Bug, Send, FileText } from "lucide-react";
+import { isLamlinksWritebackLive, getSystemSetting } from "@/lib/system-settings";
 
 export default async function SettingsPage() {
   const writebackLive = await isLamlinksWritebackLive();
+  const invoiceLive = (await getSystemSetting("lamlinks_invoice_writeback_enabled")) === "true";
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -133,13 +134,13 @@ export default async function SettingsPage() {
           </div>
         </Link>
 
-        {/* LamLinks Write-Back Toggle */}
+        {/* LamLinks Bid Write-Back Toggle */}
         <Link
           href="/settings/lamlinks-writeback"
           className={`rounded-xl border-2 ${writebackLive ? "border-green-400 bg-green-50/30" : "border-card-border bg-card-bg"} shadow-sm p-6 hover:border-accent transition-colors group`}
         >
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold group-hover:text-accent">LamLinks Write-Back</h2>
+            <h2 className="text-lg font-semibold group-hover:text-accent">LamLinks Bid Write-Back</h2>
             <Send className={`h-5 w-5 ${writebackLive ? "text-green-600" : "text-muted"} group-hover:text-accent`} />
           </div>
           <p className="text-sm text-muted mb-3">Controls whether DIBS Submit actually transmits bids into LamLinks for DLA.</p>
@@ -148,6 +149,25 @@ export default async function SettingsPage() {
               <span className="text-green-700 font-medium">🟢 LIVE — bids transmit to LamLinks</span>
             ) : (
               <span className="text-gray-600 font-medium">⚪ SIMULATED — DIBS-local only</span>
+            )}
+          </div>
+        </Link>
+
+        {/* LamLinks Invoice Write-Back Toggle */}
+        <Link
+          href="/settings/lamlinks-invoice-writeback"
+          className={`rounded-xl border-2 ${invoiceLive ? "border-green-400 bg-green-50/30" : "border-amber-200 bg-amber-50/20"} shadow-sm p-6 hover:border-accent transition-colors group`}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold group-hover:text-accent">LamLinks Invoice Write-Back</h2>
+            <FileText className={`h-5 w-5 ${invoiceLive ? "text-green-600" : "text-amber-600"} group-hover:text-accent`} />
+          </div>
+          <p className="text-sm text-muted mb-3">Write invoices into LamLinks&apos; kad/kae tables — skip Yosef&apos;s manual desktop-app click-through.</p>
+          <div className="flex gap-4 text-xs">
+            {invoiceLive ? (
+              <span className="text-green-700 font-medium">🟢 LIVE — invoices write to LamLinks</span>
+            ) : (
+              <span className="text-amber-700 font-medium">⏳ PRE-LIVE — pending Q7 confirmation with Yosef</span>
             )}
           </div>
         </Link>

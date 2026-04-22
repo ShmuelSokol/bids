@@ -1,4 +1,6 @@
 import { createServiceClient } from "@/lib/supabase-server";
+import { getSystemSetting } from "@/lib/system-settings";
+import Link from "next/link";
 import { InvoicingDashboard } from "./invoicing-dashboard";
 
 async function getData() {
@@ -76,9 +78,27 @@ async function getData() {
 
 export default async function InvoicingPage() {
   const { awards, poLines, submittedBids, lastInvoiceSync } = await getData();
+  const invoiceWritebackLive = (await getSystemSetting("lamlinks_invoice_writeback_enabled")) === "true";
 
   return (
     <div className="p-4 md:p-8">
+      {invoiceWritebackLive ? (
+        <div className="mb-4 rounded-lg border-2 border-green-400 bg-green-50 px-4 py-2 flex items-center justify-between text-sm">
+          <div>
+            <span className="font-bold text-green-800">🟢 LamLinks Invoice Write-Back is LIVE</span>
+            <span className="text-green-700 ml-2">— clicking &quot;Post to LamLinks&quot; on a selection writes a draft invoice Yosef can Post without desktop-app click-through.</span>
+          </div>
+          <Link href="/settings/lamlinks-invoice-writeback" className="text-xs text-green-800 underline">manage</Link>
+        </div>
+      ) : (
+        <div className="mb-4 rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-2 flex items-center justify-between text-sm">
+          <div>
+            <span className="font-bold text-amber-800">⏳ LamLinks Invoice Write-Back is PRE-LIVE</span>
+            <span className="text-amber-700 ml-2">— today&apos;s Generate EDI 810 flow still works. Write-back goes LIVE after Q7 test with Yosef (see <Link href="/settings/lamlinks-invoice-writeback" className="underline">settings</Link>).</span>
+          </div>
+          <Link href="/settings/lamlinks-invoice-writeback" className="text-xs text-amber-800 underline">manage</Link>
+        </div>
+      )}
       <InvoicingDashboard
         awards={awards}
         poLines={poLines}
