@@ -174,16 +174,46 @@ REM hundreds of popups per workday. This consolidates to ONE persistent
 REM process that spawns child syncs internally via child_process.spawn
 REM with windowsHide:true — zero recurring popups.
 REM
-REM Also runs 24/7 (no 6am-8pm window), so Abe's late-night or weekend
-REM work syncs live.
+REM Runs 24/7 (no 6am-8pm window), so Abe's late-night or weekend work
+REM syncs live as long as the user session is active on this box.
 REM
-REM If the daemon dies, log out and back in, OR run:
-REM   schtasks /run /tn "DIBS - Recurring Daemon"
+REM Command uses "start /min /wait" so Task Scheduler *waits* for the
+REM daemon to exit — which lets the restart-on-failure settings below
+REM kick in if the daemon ever crashes.
+REM
+REM If the daemon dies: Task Scheduler auto-restarts it within 1 min.
+REM If the whole machine restarts: daemon starts on next login.
+REM Manual restart: schtasks /run /tn "DIBS - Recurring Daemon"
 REM -----------------------------------------------------------------------
 schtasks /create /tn "DIBS - Recurring Daemon" ^
-    /tr "cmd /c start \"DIBS Recurring Daemon\" /min \"%DISPATCHER%\" dibs-recurring-daemon" ^
+    /tr "cmd /c start \"DIBS Recurring Daemon\" /min /wait \"%DISPATCHER%\" dibs-recurring-daemon" ^
     /sc onlogon ^
     /ru "%RUN_AS_USER%" /it /f
+echo.
+
+REM Add restart-on-failure + do-not-duplicate settings.
+REM schtasks.exe /create doesn't expose these flags, so we poke the task
+REM object via PowerShell's ScheduledTasks module (Windows 8 / Server 2012+).
+REM RestartInterval PT1M + RestartCount 99 = auto-restart every minute for
+REM up to 99 tries if the daemon exits with a non-zero code.
+REM MultipleInstances=IgnoreNew prevents a duplicate from spawning if the
+REM task is triggered while an instance is already running.
+echo Applying restart-on-failure settings via PowerShell...
+powershell -NoProfile -Command ^
+    "$ErrorActionPreference='Stop';" ^
+    "$t = Get-ScheduledTask -TaskName 'DIBS - Recurring Daemon';" ^
+    "$s = $t.Settings;" ^
+    "$s.RestartInterval = 'PT1M';" ^
+    "$s.RestartCount = 99;" ^
+    "$s.MultipleInstances = 'IgnoreNew';" ^
+    "$s.ExecutionTimeLimit = 'PT0S';" ^
+    "Set-ScheduledTask -TaskName 'DIBS - Recurring Daemon' -Settings $s | Out-Null;" ^
+    "Write-Host '  OK — restart-on-failure set (1 min interval, up to 99 attempts)'"
+if errorlevel 1 (
+    echo WARNING: failed to apply restart-on-failure settings. Task will still run
+    echo          but won't auto-recover from crashes. Set manually in Task Scheduler GUI:
+    echo          Properties - Settings - "If the task fails, restart every: 1 minute"
+)
 echo.
 
 echo =====================================================================
