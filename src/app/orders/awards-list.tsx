@@ -84,6 +84,8 @@ export function AwardsList({
   const [switchingLine, setSwitchingLine] = useState<{ id: number; nsn: string; currentSupplier: string } | null>(null);
   const [vendorPrices, setVendorPrices] = useState<any[]>([]);
   const [poReceipts, setPoReceipts] = useState<any[]>([]);
+  // Bulk selection of POs for batch actions on the POs tab.
+  const [selectedPoIds, setSelectedPoIds] = useState<Set<number>>(new Set());
   // Inline-edit state for PO lines: {lineId: "uom"|"cost"} tracks which
   // cell is currently editable. editValue is the text being typed.
   const [editingCell, setEditingCell] = useState<{ lineId: number; field: "uom" | "cost" } | null>(null);
@@ -738,22 +740,80 @@ export function AwardsList({
             </div>
           ) : (
             <>
-              <div className="flex justify-end">
-                <button
-                  onClick={() => downloadXlsx(purchaseOrders.map((p) => p.id))}
-                  disabled={downloadingId === "all"}
-                  className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-2"
-                >
-                  {downloadingId === "all" ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Building ZIP...
-                    </>
-                  ) : (
-                    <>Download All as ZIP ({purchaseOrders.length} POs)</>
-                  )}
-                </button>
-              </div>
+              {(() => {
+                const eligibleForHeaderDmf = purchaseOrders.filter((p: any) => p.supplier !== "UNASSIGNED" && (!p.dmf_state || p.dmf_state === "drafted"));
+                const eligibleForLinesDmf = purchaseOrders.filter((p: any) => p.dmf_state === "lines_ready");
+                const eligibleForNpi = purchaseOrders.filter((p: any) => (p.po_lines || []).some((l: any) => !l.ax_item_number || !l.vendor_product_number_ax));
+                const selectedIds = Array.from(selectedPoIds);
+                const selectedEligibleHeader = selectedIds.filter((id) => eligibleForHeaderDmf.some((p: any) => p.id === id));
+                const selectedEligibleLines = selectedIds.filter((id) => eligibleForLinesDmf.some((p: any) => p.id === id));
+                const selectedEligibleNpi = selectedIds.filter((id) => eligibleForNpi.some((p: any) => p.id === id));
+                const allChecked = purchaseOrders.length > 0 && selectedPoIds.size === purchaseOrders.length;
+                const someChecked = selectedPoIds.size > 0 && !allChecked;
+                return (
+                  <div className="sticky top-0 z-10 bg-card-bg border border-card-border rounded-lg p-3 flex items-center gap-3 flex-wrap">
+                    <label className="flex items-center gap-2 text-xs font-medium">
+                      <input
+                        type="checkbox"
+                        checked={allChecked}
+                        ref={(el) => { if (el) el.indeterminate = someChecked; }}
+                        onChange={(e) => setSelectedPoIds(e.target.checked ? new Set(purchaseOrders.map((p) => p.id)) : new Set())}
+                      />
+                      {selectedPoIds.size === 0 ? "Select" : `${selectedPoIds.size} of ${purchaseOrders.length} selected`}
+                    </label>
+                    {selectedPoIds.size === 0 && (
+                      <span className="text-xs text-muted">Check POs below to enable bulk actions</span>
+                    )}
+                    {selectedPoIds.size > 0 && (
+                      <>
+                        <button
+                          onClick={() => downloadFromEndpoint("/api/orders/generate-npi", selectedEligibleNpi, `dibs-npi-batch-${Date.now()}.xlsx`)}
+                          disabled={selectedEligibleNpi.length === 0}
+                          className="px-3 py-1.5 rounded border-2 border-amber-400 bg-amber-50 text-amber-800 text-xs font-medium disabled:opacity-40"
+                          title="One NPI RawData sheet covering every selected PO's missing AX items + add-supplier rows"
+                        >
+                          📝 NPI — {selectedEligibleNpi.length} PO{selectedEligibleNpi.length !== 1 ? "s" : ""}
+                        </button>
+                        <button
+                          onClick={() => downloadFromEndpoint("/api/orders/dmf-header", selectedEligibleHeader, `dibs-po-headers-batch-${Date.now()}.xlsx`)}
+                          disabled={selectedEligibleHeader.length === 0}
+                          className="px-3 py-1.5 rounded bg-accent text-white text-xs font-medium disabled:opacity-40"
+                          title="Single header DMF sheet with one row per selected PO"
+                        >
+                          Header DMF — {selectedEligibleHeader.length} PO{selectedEligibleHeader.length !== 1 ? "s" : ""}
+                        </button>
+                        <button
+                          onClick={() => downloadFromEndpoint("/api/orders/dmf-lines", selectedEligibleLines, `dibs-po-lines-batch-${Date.now()}.xlsx`)}
+                          disabled={selectedEligibleLines.length === 0}
+                          className="px-3 py-1.5 rounded bg-accent text-white text-xs font-medium disabled:opacity-40"
+                          title="Lines DMF sheet for POs that already have their AX PO number (state=lines_ready)"
+                        >
+                          Lines DMF — {selectedEligibleLines.length} PO{selectedEligibleLines.length !== 1 ? "s" : ""}
+                        </button>
+                        <button
+                          onClick={() => pollAx(selectedIds)}
+                          className="px-3 py-1.5 rounded border border-card-border text-xs font-medium"
+                          title="Ask AX what state the selected POs are in now"
+                        >
+                          Check AX — {selectedIds.length}
+                        </button>
+                        <span className="ml-auto" />
+                      </>
+                    )}
+                    <button
+                      onClick={() => downloadXlsx(selectedPoIds.size > 0 ? Array.from(selectedPoIds) : purchaseOrders.map((p) => p.id))}
+                      disabled={downloadingId === "all"}
+                      className="ml-auto px-3 py-1.5 rounded border border-card-border text-xs font-medium disabled:opacity-50 inline-flex items-center gap-2"
+                    >
+                      {downloadingId === "all" ? (
+                        <><Loader2 className="h-3 w-3 animate-spin" /> Building ZIP...</>
+                      ) : (
+                        <>ZIP ({selectedPoIds.size > 0 ? selectedPoIds.size : purchaseOrders.length} PO{(selectedPoIds.size || purchaseOrders.length) !== 1 ? "s" : ""})</>
+                      )}
+                    </button>
+                  </div>
+                );
+              })()}
               {purchaseOrders.map((po) => (
               <div
                 key={po.id}
@@ -762,6 +822,18 @@ export function AwardsList({
                 <div className="px-6 py-4 border-b border-card-border flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedPoIds.has(po.id)}
+                        onChange={(e) => {
+                          setSelectedPoIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(po.id); else next.delete(po.id);
+                            return next;
+                          });
+                        }}
+                        className="mr-1"
+                      />
                       <span className="font-mono font-bold">
                         <SourceTip source="DIBS generated — not yet in AX until DMF posted">{po.po_number}</SourceTip>
                       </span>
