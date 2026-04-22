@@ -127,6 +127,19 @@ export async function POST(req: NextRequest) {
     return a.trim().toUpperCase() === b.trim().toUpperCase();
   }
 
+  // UoM disagreement is only grounds to route to UNASSIGNED when BOTH UoMs
+  // are populated AND they differ. If the award's UoM is missing (very common
+  // — 2026-04 audit found ~30% of recent awards have unit_of_measure=null due
+  // to a LamLinks k81 import gap), we can't validate, so trust the vendor
+  // and continue. Same if the vendor's UoM is missing.
+  //
+  // Before this fix, any null UoM collapsed into UNASSIGNED, so a batch of
+  // awards with distinct suppliers would produce a single lumped PO.
+  function uomBlocks(awardUom: string | null | undefined, vendorUom: string | null | undefined): boolean {
+    if (!awardUom || !vendorUom) return false;
+    return !sameUom(awardUom, vendorUom);
+  }
+
   type Routing = { supplier: string; reason: string; cost: CostRow | null };
   const routingByAward = new Map<number, Routing>();
   const bySupplier = new Map<string, any[]>();
@@ -143,10 +156,10 @@ export async function POST(req: NextRequest) {
         uom: award.bid_uom || null,
         itemNumber: award.bid_item_number || null,
       };
-      if (!sameUom(award.unit_of_measure, cost.uom) && cost.uom) {
+      if (uomBlocks(award.unit_of_measure, cost.uom)) {
         routing = {
           supplier: "UNASSIGNED",
-          reason: `UoM mismatch: award=${award.unit_of_measure || "?"} vs bid-vendor=${cost.uom}`,
+          reason: `UoM mismatch: award=${award.unit_of_measure} vs bid-vendor=${cost.uom}`,
           cost,
         };
       } else {
@@ -157,10 +170,10 @@ export async function POST(req: NextRequest) {
       const cost = waterfallByNsn.get(award.nsn);
       if (!cost || !cost.vendor) {
         routing = { supplier: "UNASSIGNED", reason: "no cost/vendor in nsn_costs", cost: cost ?? null };
-      } else if (!sameUom(award.unit_of_measure, cost.uom)) {
+      } else if (uomBlocks(award.unit_of_measure, cost.uom)) {
         routing = {
           supplier: "UNASSIGNED",
-          reason: `UoM mismatch: award=${award.unit_of_measure || "?"} vs vendor=${cost.uom || "?"}`,
+          reason: `UoM mismatch: award=${award.unit_of_measure} vs vendor=${cost.uom}`,
           cost,
         };
       } else {

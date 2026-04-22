@@ -158,6 +158,18 @@ export async function POST(req: NextRequest) {
         created_by: decidedBy,
       });
     }
+    // Tag bid_decisions rows as DIBS-originated so later reporting can
+    // distinguish them from Abe-typed-in-LamLinks bids. Best-effort —
+    // failure here doesn't affect the actual submission.
+    if (queueRows.length > 0) {
+      const submittedSolsArr = queueRows.map((q) => q.solicitation_number);
+      const submittedNsnsArr = queueRows.map((q) => q.nsn);
+      await supabase
+        .from("bid_decisions")
+        .update({ source_system: "dibs" })
+        .in("solicitation_number", submittedSolsArr)
+        .in("nsn", submittedNsnsArr);
+    }
     if (queueRows.length > 0) {
       // UPSERT-style: ignore duplicates (unique constraint on sol+nsn+status)
       const { data: inserted, error: enqErr } = await supabase
