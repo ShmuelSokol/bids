@@ -108,6 +108,9 @@ export function AwardsList({
   const [poReceipts, setPoReceipts] = useState<any[]>([]);
   // Bulk selection of POs for batch actions on the POs tab.
   const [selectedPoIds, setSelectedPoIds] = useState<Set<number>>(new Set());
+  // Filter toggle on POs tab: hide lines whose NSN has <=1 AX supplier, so
+  // Abe can quickly review only NSNs where a supplier switch is meaningful.
+  const [onlyMultiSupplier, setOnlyMultiSupplier] = useState(false);
   // Inline-edit state for PO lines: {lineId: "uom"|"cost"} tracks which
   // cell is currently editable. editValue is the text being typed.
   const [editingCell, setEditingCell] = useState<{ lineId: number; field: "uom" | "cost" } | null>(null);
@@ -887,10 +890,27 @@ export function AwardsList({
                         <>ZIP ({selectedPoIds.size > 0 ? selectedPoIds.size : purchaseOrders.length} PO{(selectedPoIds.size || purchaseOrders.length) !== 1 ? "s" : ""})</>
                       )}
                     </button>
+                    <div className="ml-auto flex items-center gap-2">
+                      <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={onlyMultiSupplier}
+                          onChange={(e) => setOnlyMultiSupplier(e.target.checked)}
+                        />
+                        Only lines with 2+ AX suppliers
+                      </label>
+                    </div>
                   </div>
                 );
               })()}
-              {purchaseOrders.map((po) => (
+              {purchaseOrders
+                .map((po) => {
+                  if (!onlyMultiSupplier) return po;
+                  const filtered = (po.po_lines || []).filter((l: any) => (l.ax_supplier_count || 0) > 1);
+                  return { ...po, po_lines: filtered };
+                })
+                .filter((po) => !onlyMultiSupplier || (po.po_lines || []).length > 0)
+                .map((po) => (
               <div
                 key={po.id}
                 className="rounded-xl border border-card-border bg-card-bg shadow-sm overflow-hidden"
@@ -1077,6 +1097,7 @@ export function AwardsList({
                         <th className="px-4 py-2 text-right font-medium">Sell Price</th>
                         <th className="px-4 py-2 text-right font-medium">Margin</th>
                         <th className="px-4 py-2 text-left font-medium">Contract</th>
+                        <th className="px-3 py-2 text-right font-medium" title="Number of distinct suppliers AX has on file for this NSN (from nsn_vendor_prices). &gt;1 means Abe can switch to a cheaper vendor.">AX&nbsp;Suppliers</th>
                         <th className="px-4 py-2 text-left font-medium w-20"></th>
                       </tr>
                     </thead>
@@ -1238,6 +1259,19 @@ export function AwardsList({
                           <td className="px-4 py-1.5 font-mono text-[10px]">
                             <SourceTip source="po_lines.contract_number — from awards.contract_number (LamLinks k81_tab.piidno_k81, the DLA contract identifier)">
                               {line.contract_number?.slice(0, 20)}
+                            </SourceTip>
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            <SourceTip source="Count of distinct vendors for this NSN in nsn_vendor_prices (sourced from AX PurchasePriceAgreements + AX PO history). &gt;1 = a supplier switch is possible.">
+                              {line.ax_supplier_count > 1 ? (
+                                <span className="inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200 font-medium text-[10px]">
+                                  {line.ax_supplier_count}
+                                </span>
+                              ) : line.ax_supplier_count === 1 ? (
+                                <span className="text-muted text-[10px]">1</span>
+                              ) : (
+                                <span className="text-muted text-[10px]">—</span>
+                              )}
                             </SourceTip>
                           </td>
                           <td className="px-4 py-1.5">

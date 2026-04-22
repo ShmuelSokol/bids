@@ -122,6 +122,8 @@ One-line-at-a-time review queue for PO lines on draft POs that need operator att
 | Inline unit_cost cell | Click → input; save tags `cost_source` as "manual override by <user>" |
 | "Switch" on line | Supplier switch modal (also available on Recent PO History rows inside the modal) |
 | SourceTip (hover on any field) | Shows where value came from (via portal + fixed positioning — escapes PO card `overflow:hidden`) |
+| `AX Suppliers` column | Count of distinct vendors for the NSN in `nsn_vendor_prices`. Blue pill when >1 (supplier switch possible), grey "1" or "—" otherwise. |
+| "Only lines with 2+ AX suppliers" toggle | Top-right of the PO toolbar. Hides lines whose NSN has ≤1 vendor in AX and collapses POs with no remaining lines — lets Abe scan only the switch-candidates. |
 
 ### `/purchase-orders` (legacy)
 

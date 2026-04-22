@@ -36,6 +36,9 @@ export async function GET() {
   const poById = new Map(drafts!.map((p) => [p.id, p]));
 
   // Paginate po_lines — avoid Supabase's 1K default.
+  // NOTE: ax_item_number is NOT a column on po_lines; it's enriched from
+  // nsn_catalog at page-load time. For the review endpoint we do that same
+  // enrichment ourselves below.
   const lines: any[] = [];
   const CHUNK = 1000;
   for (let i = 0; i < draftIds.length; i += CHUNK) {
@@ -44,7 +47,7 @@ export async function GET() {
     while (true) {
       const { data, error } = await supabase
         .from("po_lines")
-        .select("id, po_id, nsn, description, quantity, unit_cost, unit_of_measure, sell_price, margin_pct, supplier, cost_source, vendor_item_number, ax_item_number, contract_number")
+        .select("id, po_id, nsn, description, quantity, unit_cost, unit_of_measure, sell_price, margin_pct, supplier, cost_source, vendor_item_number, contract_number")
         .in("po_id", batch)
         .range(from, from + 999);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -53,6 +56,20 @@ export async function GET() {
       from += 1000;
     }
   }
+
+  // Enrich each line with ax_item_number from nsn_catalog (same shape as
+  // /orders/page.tsx — source is stored as "AX:<ItemNumber>").
+  const lineNsns = [...new Set(lines.map((l) => l.nsn).filter(Boolean))];
+  const axItemByNsn = new Map<string, string>();
+  for (let i = 0; i < lineNsns.length; i += 500) {
+    const chunk = lineNsns.slice(i, i + 500);
+    const { data } = await supabase.from("nsn_catalog").select("nsn, source").in("nsn", chunk);
+    for (const c of data || []) {
+      const m = /^AX:(.+)$/.exec((c.source || "").trim());
+      if (m) axItemByNsn.set(c.nsn, m[1].trim());
+    }
+  }
+  for (const l of lines) l.ax_item_number = axItemByNsn.get(l.nsn) || null;
 
   // Flag + reason
   type Flagged = typeof lines[number] & { reasons: string[]; po_number: string };

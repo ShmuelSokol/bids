@@ -87,11 +87,36 @@ async function getData() {
       }
     }
   }
+  // Count distinct AX suppliers per NSN (from nsn_vendor_prices — the same
+  // source the "Switch" modal uses). Lets Abe filter the POs tab to lines
+  // with multiple vendor options in AX so he can pick the right one.
+  const supplierCountByNsn = new Map<string, number>();
+  if (lineNsns.length > 0) {
+    for (let i = 0; i < lineNsns.length; i += 500) {
+      const chunk = lineNsns.slice(i, i + 500);
+      const { data } = await supabase
+        .from("nsn_vendor_prices")
+        .select("nsn, vendor")
+        .in("nsn", chunk);
+      const seen = new Map<string, Set<string>>();
+      for (const r of data || []) {
+        const v = String(r.vendor || "").trim().toUpperCase();
+        if (!v) continue;
+        if (!seen.has(r.nsn)) seen.set(r.nsn, new Set());
+        seen.get(r.nsn)!.add(v);
+      }
+      for (const [nsn, set] of seen) {
+        supplierCountByNsn.set(nsn, (supplierCountByNsn.get(nsn) || 0) + set.size);
+      }
+    }
+  }
+
   for (const po of allPos) {
     for (const l of po.po_lines || []) {
       l.ax_item_number = axItemByNsn.get(l.nsn) || null;
       l.vendor_product_number_ax =
         vendorPartByKey.get(vendorPartKey(l.nsn, l.supplier || "")) || null;
+      l.ax_supplier_count = supplierCountByNsn.get(l.nsn) || 0;
     }
   }
 
