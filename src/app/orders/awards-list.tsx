@@ -897,8 +897,9 @@ export function AwardsList({
                       </SourceTip>
                     </div>
                     <div className="text-sm text-muted mt-0.5">
-                      <SourceTip source="AX nsn_costs.vendor — routed by cost waterfall">{po.supplier}</SourceTip> · {po.line_count} items ·{" "}
-                      {formatDateShort(po.created_at)}
+                      <SourceTip source="purchase_orders.supplier — AX vendor account. Priority 1: awards.bid_vendor (frozen at bid time). Priority 2: nsn_costs.vendor (cheapest AX vendor right now).">{po.supplier}</SourceTip>{" · "}
+                      <SourceTip source="purchase_orders.line_count — number of awards grouped under this PO">{po.line_count} items</SourceTip>{" · "}
+                      <SourceTip source="purchase_orders.created_at — when DIBS generated this PO">{formatDateShort(po.created_at)}</SourceTip>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -978,7 +979,10 @@ export function AwardsList({
                   </SourceTip>
                   {po.ax_po_number && (
                     <span className="text-muted">
-                      AX PO: <code className="font-mono text-foreground">{po.ax_po_number}</code>
+                      AX PO:{" "}
+                      <SourceTip source="purchase_orders.ax_po_number — assigned by AX on DMF header import, picked up by poll-ax via VENDORORDERREFERENCE match">
+                        <code className="font-mono text-foreground">{po.ax_po_number}</code>
+                      </SourceTip>
                     </span>
                   )}
                   {/* NPI button — show whenever any line lacks an AX item, OR the line's supplier isn't yet set up on that AX item */}
@@ -1056,7 +1060,9 @@ export function AwardsList({
                           className={`border-b border-card-border/50 ${costUnverified ? "bg-amber-50/50" : ""}`}
                         >
                           <td className="px-4 py-1.5 font-mono text-accent">
-                            {line.nsn}
+                            <SourceTip source="DIBS po_lines.nsn — derived from awards.fsc + awards.niin at PO generation time">
+                              {line.nsn}
+                            </SourceTip>
                           </td>
                           <td className="px-3 py-1.5 font-mono text-[10px]">
                             {line.ax_item_number ? (
@@ -1079,7 +1085,9 @@ export function AwardsList({
                             )}
                           </td>
                           <td className="px-4 py-1.5 truncate max-w-[200px]">
-                            {line.description}
+                            <SourceTip source="DIBS po_lines.description — inherited from awards.description at PO generation">
+                              {line.description}
+                            </SourceTip>
                             {costUnverified && (
                               <div className="text-[9px] text-amber-700 mt-0.5 font-medium" title={line.cost_source}>
                                 ⚠ UoM mismatch — click UoM or Unit Cost to fix
@@ -1092,7 +1100,9 @@ export function AwardsList({
                             )}
                           </td>
                           <td className="px-4 py-1.5 text-right">
-                            {line.quantity}
+                            <SourceTip source="DIBS po_lines.quantity — inherited from awards.quantity (DLA contract award qty)">
+                              {line.quantity}
+                            </SourceTip>
                           </td>
                           <td className="px-3 py-1.5 text-center">
                             {isEditingUom ? (
@@ -1117,13 +1127,15 @@ export function AwardsList({
                                 disabled={isSaving}
                               />
                             ) : (
-                              <button
-                                onClick={() => { setEditingCell({ lineId: line.id, field: "uom" }); setEditValue(line.unit_of_measure || ""); }}
-                                className={`text-xs font-mono hover:bg-accent/10 px-1.5 py-0.5 rounded ${costUnverified ? "bg-amber-100 text-amber-700 border border-amber-300" : "text-muted"}`}
-                                title="Click to edit"
-                              >
-                                {line.unit_of_measure && line.unit_of_measure !== "null" ? line.unit_of_measure : "—"}
-                              </button>
+                              <SourceTip source="po_lines.unit_of_measure — from awards.unit_of_measure (LamLinks k81.cln_ui), editable. If missing, vendor UoM is assumed when computing cost.">
+                                <button
+                                  onClick={() => { setEditingCell({ lineId: line.id, field: "uom" }); setEditValue(line.unit_of_measure || ""); }}
+                                  className={`text-xs font-mono hover:bg-accent/10 px-1.5 py-0.5 rounded ${costUnverified ? "bg-amber-100 text-amber-700 border border-amber-300" : "text-muted"}`}
+                                  title="Click to edit"
+                                >
+                                  {line.unit_of_measure && line.unit_of_measure !== "null" ? line.unit_of_measure : "—"}
+                                </button>
+                              </SourceTip>
                             )}
                           </td>
                           <td className="px-4 py-1.5 text-right font-mono">
@@ -1151,41 +1163,49 @@ export function AwardsList({
                                 disabled={isSaving}
                               />
                             ) : (
-                              <button
-                                onClick={() => { setEditingCell({ lineId: line.id, field: "cost" }); setEditValue(line.unit_cost ? String(line.unit_cost) : ""); }}
-                                className={`text-xs hover:bg-accent/10 px-1.5 py-0.5 rounded ${costUnverified ? "text-amber-700" : ""}`}
-                                title="Click to edit cost"
-                              >
-                                {costUnverified ? (
-                                  <span className="font-medium" title={line.cost_source}>⚠ click to enter</span>
-                                ) : line.unit_cost ? (
-                                  `$${Number(line.unit_cost).toFixed(2)}`
-                                ) : (
-                                  "—"
-                                )}
-                              </button>
+                              <SourceTip source={`po_lines.unit_cost — ${line.cost_source || "computed from nsn_costs waterfall at generation"}. Click to manually override.`}>
+                                <button
+                                  onClick={() => { setEditingCell({ lineId: line.id, field: "cost" }); setEditValue(line.unit_cost ? String(line.unit_cost) : ""); }}
+                                  className={`text-xs hover:bg-accent/10 px-1.5 py-0.5 rounded ${costUnverified ? "text-amber-700" : ""}`}
+                                  title="Click to edit cost"
+                                >
+                                  {costUnverified ? (
+                                    <span className="font-medium">⚠ click to enter</span>
+                                  ) : line.unit_cost ? (
+                                    `$${Number(line.unit_cost).toFixed(2)}`
+                                  ) : (
+                                    "—"
+                                  )}
+                                </button>
+                              </SourceTip>
                             )}
                           </td>
                           <td className="px-4 py-1.5 text-right font-mono">
-                            ${line.sell_price?.toFixed(2)}
+                            <SourceTip source="po_lines.sell_price — carried from awards.unit_price (the price DLA actually paid us on this award)">
+                              ${line.sell_price?.toFixed(2)}
+                            </SourceTip>
                           </td>
                           <td className="px-4 py-1.5 text-right">
                             {line.margin_pct !== null ? (
-                              <span
-                                className={`font-medium ${
-                                  line.margin_pct >= 20
-                                    ? "text-green-600"
-                                    : "text-yellow-600"
-                                }`}
-                              >
-                                {line.margin_pct}%
-                              </span>
+                              <SourceTip source="po_lines.margin_pct — computed as (sell_price - unit_cost) / sell_price. Green ≥ 20%, yellow < 20%.">
+                                <span
+                                  className={`font-medium ${
+                                    line.margin_pct >= 20
+                                      ? "text-green-600"
+                                      : "text-yellow-600"
+                                  }`}
+                                >
+                                  {line.margin_pct}%
+                                </span>
+                              </SourceTip>
                             ) : (
                               "—"
                             )}
                           </td>
                           <td className="px-4 py-1.5 font-mono text-[10px]">
-                            {line.contract_number?.slice(0, 20)}
+                            <SourceTip source="po_lines.contract_number — from awards.contract_number (LamLinks k81_tab.piidno_k81, the DLA contract identifier)">
+                              {line.contract_number?.slice(0, 20)}
+                            </SourceTip>
                           </td>
                           <td className="px-4 py-1.5">
                             <button
