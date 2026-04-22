@@ -777,18 +777,18 @@ export function AwardsList({
                         <button
                           onClick={() => downloadFromEndpoint("/api/orders/dmf-header", selectedEligibleHeader, `dibs-po-headers-batch-${Date.now()}.xlsx`)}
                           disabled={selectedEligibleHeader.length === 0}
-                          className="px-3 py-1.5 rounded bg-accent text-white text-xs font-medium disabled:opacity-40"
-                          title="Single header DMF sheet with one row per selected PO"
+                          className="px-3 py-1.5 rounded bg-green-600 text-white text-xs font-medium disabled:opacity-40 inline-flex items-center gap-1"
+                          title="Generate PO header DMF sheet for selected drafts. Import into AX to create the POs, then come back for lines."
                         >
-                          Header DMF — {selectedEligibleHeader.length} PO{selectedEligibleHeader.length !== 1 ? "s" : ""}
+                          🚀 Submit to AX (Header) — {selectedEligibleHeader.length} PO{selectedEligibleHeader.length !== 1 ? "s" : ""}
                         </button>
                         <button
                           onClick={() => downloadFromEndpoint("/api/orders/dmf-lines", selectedEligibleLines, `dibs-po-lines-batch-${Date.now()}.xlsx`)}
                           disabled={selectedEligibleLines.length === 0}
-                          className="px-3 py-1.5 rounded bg-accent text-white text-xs font-medium disabled:opacity-40"
-                          title="Lines DMF sheet for POs that already have their AX PO number (state=lines_ready)"
+                          className="px-3 py-1.5 rounded bg-green-600 text-white text-xs font-medium disabled:opacity-40 inline-flex items-center gap-1"
+                          title="Generate PO lines DMF sheet for POs that have their AX PO number (state=lines_ready). Import into AX to populate the line items."
                         >
-                          Lines DMF — {selectedEligibleLines.length} PO{selectedEligibleLines.length !== 1 ? "s" : ""}
+                          🚀 Submit to AX (Lines) — {selectedEligibleLines.length} PO{selectedEligibleLines.length !== 1 ? "s" : ""}
                         </button>
                         <button
                           onClick={() => pollAx(selectedIds)}
@@ -796,6 +796,49 @@ export function AwardsList({
                           title="Ask AX what state the selected POs are in now"
                         >
                           Check AX — {selectedIds.length}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const deletableIds = selectedIds.filter((id) => {
+                              const p = purchaseOrders.find((pp: any) => pp.id === id);
+                              return p && !p.ax_po_number && (!p.dmf_state || p.dmf_state === "drafted");
+                            });
+                            if (deletableIds.length === 0) {
+                              setMessage("No selected POs are eligible to delete (already posted to AX)");
+                              setTimeout(() => setMessage(null), 3000);
+                              return;
+                            }
+                            if (!confirm(`Delete ${deletableIds.length} PO${deletableIds.length !== 1 ? "s" : ""}? Their awards will return to the Awards tab. This cannot be undone.`)) return;
+                            const res = await fetch("/api/orders/delete-pos-batch", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ po_ids: deletableIds }),
+                            });
+                            const data = await res.json();
+                            if (data.ok) {
+                              const deletedSet: Set<number> = new Set(data.deleted_po_ids || []);
+                              const awardIds: number[] = data.award_ids || [];
+                              setPurchaseOrders((prev) => prev.filter((p: any) => !deletedSet.has(p.id)));
+                              if (awardIds.length > 0) {
+                                setAwards((prev) =>
+                                  prev.map((a) =>
+                                    awardIds.includes(a.id) ? { ...a, po_generated: false, po_id: null } : a
+                                  )
+                                );
+                              }
+                              setSelectedPoIds(new Set());
+                              const parts = [`Deleted ${data.deleted} PO${data.deleted !== 1 ? "s" : ""}`, `${data.awards_reset} awards returned`];
+                              if (data.skipped?.length) parts.push(`${data.skipped.length} skipped`);
+                              setMessage(parts.join(" · "));
+                              setTimeout(() => setMessage(null), 5000);
+                            } else {
+                              setMessage(data.error || "Bulk delete failed");
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded border border-red-300 bg-red-50 text-red-700 text-xs font-medium"
+                          title="Delete selected draft POs. POs already in AX are skipped."
+                        >
+                          🗑 Delete — {selectedIds.length}
                         </button>
                         <span className="ml-auto" />
                       </>
