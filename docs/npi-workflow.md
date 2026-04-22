@@ -50,8 +50,8 @@ Source: `ThisWorkbook.runfillinprocedure`. Full dump in `scripts/` as extracted 
 | **RPV2** | 5 | `DEFAULTORDERTYPE="Purch"`, `PRODUCTCOVERAGEGROUPID="Req."`, `RAWMATERIALPICKINGPRINCIPLE="OrderPicking"`, `UNITCONVERSIONSEQUENCEGROUPID="EA Only"` | `ITEMNUMBER` = RawData.Item# |
 | **APPROVEDVENDOR** | 2 | — | `APPROVEDVENDORACCOUNTNUMBER` = RawData.Vendor; `ITEMNUMBER` = RawData.Item# |
 | **EXTERNALITEMDESC** | 3 | — | `ITEMNUMBER`, `VENDORACCOUNTNUMBER`, `VENDORPRODUCTNUMBER` = RawData.Item#, Vendor, External |
-| **BarCode** | 6 | **`BARCODESETUPID="NSN"`** (macro hardcoded "UPC" — DIBS overrides to "NSN" per ssokol), `ISDEFAULTSCANNEDBARCODE="Yes"`, `PRODUCTQUANTITY="1"`, `PRODUCTQUANTITYUNITSYMBOL="EA"` | `ITEMNUMBER`, `BARCODE` = RawData.Item#, BarcodeValue |
-| **TradeAgreement** | 14 | — (header-only; macro body is commented out in current template) | — |
+| **BarCode** | 6 | **NSN row**: `BARCODESETUPID="NSN"`, `ISDEFAULTSCANNEDBARCODE="Yes"`, `PRODUCTQUANTITY="1"`, `PRODUCTQUANTITYUNITSYMBOL="EA"`. **Optional UPC row**: same item#, `BARCODESETUPID="UPC"`, `ISDEFAULTSCANNEDBARCODE="No"`. NSN stays default scanned; UPC is secondary. | NSN row: `ITEMNUMBER`, `BARCODE` = Item#, 13-digit NSN (dashes stripped). UPC row: sourced from `nsn_upc_map` (populated from AX ProductBarcodesV3 — see `scripts/populate-nsn-upc-map.ts`). UPC row only emits alongside an NSN row (if AX already has the NSN, it has the UPC too). |
+| **TradeAgreement** | 14 | `PRICECURRENCYCODE="USD"`, `PRICESITEID="S01"`, `PURCHASEPRICEQUANTITY=1`, `QUANTITYUNITSYMBOL="EA"`, `TOQUANTITY=".000000"`, `PRICEAPPLICABLEFROM/TODATE="1900-01-01 00:00:00"`, `WILLDELIVERYDATECONTROLDISREGARDLEADTIME="Yes"`, `WILLSEARCHCONTINUE="Yes"`, `TRADEAGREEMENTJOURNALNUMBER=""` (operator fills in after creating journal in AX) | `ITEMNUMBER`, `PRICE`, `VENDORACCOUNTNUMBER` from PO line; `LINENUMBER` sequential |
 
 **add-supplier mode** (NSN already in AX, just adding a new vendor): DIBS writes rows only into APPROVEDVENDOR + EXTERNALITEMDESC. RPCreate, RPV2, BarCode stay headers-only. Matches the macro's behavior when RawData rows have the Item# already present in AX.
 
@@ -61,8 +61,33 @@ Source: `ThisWorkbook.runfillinprocedure`. Full dump in `scripts/` as extracted 
 - **AX-side DM project name isn't pinned down yet.** Yosef was moving toward a "one-touch" DM project that auto-maps all 6 import tabs. Until that's confirmed, operators map each tab manually per import.
 - **No "check AX back" loop yet.** DIBS doesn't automatically notice when a new item lands in AX. The operator refreshes the Orders page manually; the next `populate-nsn-costs-from-ax` nightly run updates `nsn_catalog`. Future: real-time check endpoint.
 
+## Dedup rules
+
+Different sheets dedup at different grains because AX's DMF expects different import keys per entity.
+
+| Sheet | Dedup grain | Why |
+|---|---|---|
+| RawData | none — all rows kept | informational audit of every (NSN, Vendor) pair in the selection |
+| RPCreate | Item# | one item master record regardless of vendor count |
+| RPV2 | Item# | one item master record regardless of vendor count |
+| APPROVEDVENDOR | (Item#, Vendor) | one supplier relationship per item; skipped if already in AX |
+| EXTERNALITEMDESC | (Item#, Vendor) | one external part# per (item, vendor); skipped if already in AX |
+| BarCode | (Item#, SetupID) | one NSN row per item + optional one UPC row per item |
+| TradeAgreement | (Item#, Vendor, Price) | emit only when AX cost is missing or diverges >$0.005 |
+
+## When each sheet fires
+
+| Sheet | Trigger |
+|---|---|
+| RPCreate, RPV2 | Item doesn't exist in AX yet (new item) |
+| APPROVEDVENDOR, EXTERNALITEMDESC | Vendor not yet in `nsn_ax_vendor_parts` for this NSN |
+| BarCode (NSN) | NSN not yet in `nsn_catalog` — fires even for existing items that just need a new NSN barcode |
+| BarCode (UPC) | UPC present in `nsn_upc_map` AND the NSN row is also firing (prevents redundant writes when AX already has both) |
+| TradeAgreement | Our cost differs from `nsn_costs` for (NSN, Vendor), OR AX has nothing on file |
+
 ## Canonical files
 
 - `src/app/api/orders/generate-npi/route.ts` — the generator
 - `src/app/orders/awards-list.tsx` — "Generate NPI" button on each PO with unfilled-in AX data
+- `scripts/populate-nsn-upc-map.ts` — backfills `nsn_upc_map` from cached `data/d365/barcodes.json`. Run whenever AX barcodes are refreshed.
 - Template: `\\nyevrvdc001\Users\ssokol\Documents\New Product Import Dashboard.xlsm`
