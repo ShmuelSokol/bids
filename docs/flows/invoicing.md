@@ -207,25 +207,48 @@ Ran against 50 most recent `cinsta_kad = 'Posted'` invoices. Key observations:
 - **kad_tab is small**: 20 columns, 5 auto (PK + timestamps + user), 2 FKs constant in the sample (`idnk31_kad=203`, `idnk06_kad=1` — likely customer + org), 2 user-entered (`cin_no_kad`, `cinnum_kad` invoice numbers), 2 value fields (`mslval_kad`, `ar_val_kad`), 9 hardcodable zeroes.
 - **kae_tab is smaller**: 13 columns, 4 auto, 1 FK, 4 constants (`cilcls_kae='Material'`, `cil_no_kae=1`, `pinval_kae=0`, `xinval_kae=0`), 4 variable (`cildes_kae`, `cilqty_kae`, `cil_up_kae`, `cil_ui_kae` = EA/PG/PK/BX, `cilext_kae`).
 
-### Questions for Yosef (from the script output)
+### Questions answered from SQL (2026-04-22)
 
-1. `cinsta_kad` — does `'Not Posted'` mean what we think (draft shown in LamLinks UI, not yet transmitted to AX)? What's the transition trigger?
-2. `upname_kad` — is this just an audit field, or does LamLinks' posting logic filter on it?
-3. `idnk31_kad=203` constant — that's the customer FK to k31_tab. Is 203 a fixed "ERG DLA" customer, or will it vary?
-4. `idnk06_kad=1` — what is k06? (Company / org / something else?)
-5. `pinval_kad / xinval_kad / mslval_kad / nmsval_kad / ppcval_kad / ar_val_kad` — which is the authoritative total? Our sample shows `mslval_kad = ar_val_kad` and everything else 0; is that typical or sample-biased?
-6. Does AX read directly from kad/kae, or is there an intermediate integration?
-7. What IS the "post" action the client calls? Just an UPDATE on `cinsta_kad`?
+Q1-Q5 from an earlier list (see git history) were answered by `scripts/answer-invoice-questions.ts` without needing Yosef:
 
-### Proposed phased path to a Yosef-testable write-back
+1. **`cinsta_kad` state machine**: "Posted" (253,695), "Not Posted" (44, mostly abandoned drafts), "Voided" (2). `Not Posted` IS the draft state but is rarely used actively. Transition is an in-place UPDATE on the same row; `uptime_kad` bumps when state flips while `cisdte_kad` stays put as the create timestamp.
+2. **`upname_kad` is purely audit** — many users over time (ajoseph, jmogitz, tbellamy, caugustin, warehouse2, shippingii, etc.). No posting logic filters on it. DIBS can write `'ajoseph   '` or the logged-in user.
+3. **`idnk31_kad` varies per DLA sub-agency**. idnk31=203 ("DoD", a_code=96412) is the generic 115K-invoice default. 100+ other k31 rows exist for specific activity codes (SPM2DS, SPE4A0, SPE2DP, etc.). **DIBS must look up the right idnk31 per invoice based on the contract's 6-char DLA prefix** (fall back to 203 if no exact match).
+4. **`idnk06_kad` is payment terms**, not company/org. idnk06=1 ("Net 30 days") is used on 238K/253K invoices. Others: 109=Net 0, 5=1%10-Net-20, 110=Net 15, 111=Net 10. **DIBS default = 1 (Net 30)** unless contract specifies otherwise.
+5. **`ar_val_kad = mslval_kad = sum of line extensions`** on 30/30 sampled Posted invoices. Every other value field (pinval, xinval, nmsval, cshval, crmval, otcval, ppcval) was 0. ERG doesn't use the multi-component fields. **DIBS sets `mslval_kad = ar_val_kad = sum of cilext_kae` across all lines**; zero the rest.
+
+### CRITICAL: invoice-chain id allocation is NOT via kdy_tab
+
+While answering Q1-Q5 we discovered the ka-chain tables (`ka8`, `ka9`, `kad`, `kae`, `kaj`) all use **SQL Server `IDENTITY` columns** — seed=1, increment=1, no `kdy_tab` entry. Different mechanism from the bid chain (`k33/k34/k35`) which relies on `kdy_tab`.
+
+**What this means for the write-back**:
+
+```sql
+-- Don't specify the PK column. MSSQL auto-allocates atomically.
+INSERT INTO kad_tab (cinsta_kad, cin_no_kad, cinnum_kad, idnk31_kad, idnk06_kad, mslval_kad, ar_val_kad, ...)
+OUTPUT inserted.idnkad_kad  -- returns the auto-generated id
+VALUES ('Not Posted      ', '...', '...', <k31>, 1, <total>, <total>, ...);
+```
+
+No collision possible — `IDENTITY` is a serializable sequence managed by the DB engine. Simpler than the bid chain.
+
+### Questions still needing Yosef (2 instead of 7)
+
+6. **Does AX read directly from `kad/kae`, or is there an intermediate integration?** When `cinsta_kad` flips to `'Posted'`, what downstream system picks it up (if any)? Or is this LamLinks-internal accounting with no external propagation?
+7. **What does the "Post" action do exactly?** Most likely: `UPDATE kad_tab SET cinsta_kad = 'Posted'` + `UPDATE ka9_tab SET idnkae_ka9 = <new kae id>` to link the job line to the invoice. But confirm — any side effects (file drop, email, external API)? Best captured by having Yosef walk through one real invoice posting in LamLinks while we tail the relevant tables live.
+
+### Original 7-question list (pre-investigation)
+
+### Proposed phased path (updated 2026-04-22)
 
 1. **Phase 0 (done):** schema mapped + field classifications produced.
-2. **Phase 1:** Yosef answers the 7 questions above. Without that, any INSERT is a guess.
-3. **Phase 2:** build `scripts/generate-invoice-insert-sql.ts` as a dry-run generator mirroring `scripts/generate-bid-insert-sql.ts`. Input: a Supabase `invoices_to_post` table (or a CSV Yosef uploads); output: INSERT SQL for kad + kae + UPDATE ka9. Behind `--execute` flag. Insert at `cinsta_kad = 'Not Posted'` so Yosef still has the UI step to confirm.
-4. **Phase 3:** pick ONE real shipment and use the dry-run generator end-to-end with Yosef watching. If the row appears in LamLinks UI exactly as if he'd typed it, the contract is met.
-5. **Phase 4:** scale up.
+2. **Phase 1a (done):** Q1-Q5 answered from SQL inspection. See `scripts/answer-invoice-questions.ts`. Also discovered ka-chain uses IDENTITY not kdy_tab — huge simplification for the write-back.
+3. **Phase 1b (pending):** 20-min Yosef session. Walk through one real invoice posting in the LamLinks UI while tailing `kad_tab`, `ka9_tab`, `kae_tab` live. Answers the remaining Q6/Q7 (AX integration path + exact "Post" action) in one pass.
+4. **Phase 2:** build `scripts/generate-invoice-insert-sql.ts` as a dry-run generator. Inputs: selected DIBS invoices (from an `invoices_to_post` Supabase table or the existing /invoicing UI). Outputs: INSERT SQL for kad + kae + UPDATE ka9.idnkae_ka9. Uses `IDENTITY` auto-allocation (just omit PK columns in INSERT, grab id via `OUTPUT inserted.idnkad_kad`). Insert at `cinsta_kad='Not Posted'` so Yosef still has the UI Post step as a human checkpoint.
+5. **Phase 3:** pick ONE real shipment, use the generator end-to-end with Yosef watching. If the row appears in LamLinks UI exactly as if he'd typed it, contract is met.
+6. **Phase 4:** scale up. Add it to the DIBS `/invoicing` UI as a "Post to LamLinks" button alongside the existing EDI generation.
 
-**Do not try to skip phases for the upcoming meeting.** Spend the meeting on Phase 1 (questions) and let him walk through one recent invoice end-to-end in the LamLinks UI while you watch. That conversation is the spec for Phase 2.
+**Don't skip Phase 1b.** We still don't know what the LamLinks client does beyond UPDATE cinsta_kad. 20 minutes with Yosef + live DB tail saves weeks of trial-and-error.
 
 ### Referenced scripts
 
