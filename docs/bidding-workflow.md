@@ -36,7 +36,17 @@ The NSN matched (AX first, Master DB second). Pricing ran. A suggested bid is at
 
 **Columns:** `is_sourceable = true`, `suggested_price != null`, `return_by_date >= today`, `already_bid = false`, no row in `bid_decisions`.
 
-**Abe's view:** Solicitations page, "Sourceable" tab. The default view. This is where he spends his time.
+**Abe's view:** Solicitations page. The default view. This is where he spends his time.
+
+The sourceable pile is visually split into **three match-confidence buckets** at the top of the page (large cards):
+
+| Card | Filter predicate | Meaning |
+|---|---|---|
+| **AX NSN Matched** (green) | `is_sourceable && source === "ax"` | Authoritative — NSN is declared as a barcode on an AX item in `ProductBarcodesV3`. Safe to batch-quote. |
+| **Potential Matches** (yellow) | `is_sourceable && source !== "ax"` | Sourceable via Master DB or P/N cross-reference, not an authoritative AX NSN. Verify before bidding. |
+| **Non-Sourced** (grey) | `!is_sourceable` | No NSN or P/N match anywhere. Never done business — bidding would be a cold start. |
+
+Rows missing a `suggested_price` still appear in their respective match bucket (the lack of a price doesn't disqualify NSN-match membership). They show with an amber-ringed checkbox. Select-All includes them, but the bulk Quote-at-Suggested button counts them separately: e.g. `Quote 98 at Suggested [27 lack price]` with a side note telling Abe to open the priceless rows individually to set a manual bid.
 
 Each row shows:
 

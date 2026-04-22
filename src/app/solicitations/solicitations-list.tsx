@@ -213,7 +213,8 @@ export function SolicitationsList({
   // Compute counts client-side — uses the shared isOpenSolicitation() so
   // dashboard, server-side counts, and this client all agree on dates.
   const counts = useMemo(() => {
-    let sourceable = 0, quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0, llActive = 0, dibbsOnly = 0;
+    let sourceable = 0, axMatched = 0, potentialMatched = 0, nonSourced = 0;
+    let quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0, llActive = 0, dibbsOnly = 0;
     for (const s of solicitations) {
       const open = isOpenSolicitation(s.return_by_date);
       if (s.data_source === "lamlinks" && open) llActive++;
@@ -222,9 +223,16 @@ export function SolicitationsList({
       if (s.bid_status === "submitted") { submitted++; continue; }
       if (s.bid_status === "skipped") { skipped++; continue; }
       if (s.already_bid) { alreadyBid++; continue; }
-      if (s.is_sourceable && !s.bid_status && open) sourceable++;
+      if (!open) continue;
+      // Three-way match-confidence split:
+      //   ax_matched     — source=='ax'       (ProductBarcodesV3, authoritative)
+      //   potential      — sourceable via anything else (Master DB or P/N cross-ref)
+      //   non_sourced    — not sourceable and not yet done business with this NSN
+      if (s.is_sourceable && s.source === "ax") { axMatched++; sourceable++; continue; }
+      if (s.is_sourceable) { potentialMatched++; sourceable++; continue; }
+      nonSourced++;
     }
-    return { total: solicitations.length, sourceable, quoted, submitted, skipped, alreadyBid, llActive, dibbsOnly };
+    return { total: solicitations.length, sourceable, axMatched, potentialMatched, nonSourced, quoted, submitted, skipped, alreadyBid, llActive, dibbsOnly };
   }, [solicitations]);
 
   async function handleFindSuppliers(sol: Solicitation) {
@@ -568,6 +576,12 @@ export function SolicitationsList({
     else { setSortField(field); setSortAsc(false); }
   }
 
+  // True for any filter that shows eligible-to-quote rows — the bulk-select
+  // checkbox column, Quote-batch actions, and checkbox in each row all share
+  // this gate so operator can select-all and quote from any of the three
+  // match-confidence buckets.
+  const isQuotableFilter = filter === "sourceable" || filter === "ax_matched" || filter === "potential_matched";
+
   const filtered = useMemo(() => {
     let items = solicitations.filter((s) => {
       // Single source of truth for "is this sol still open" — same helper
@@ -576,6 +590,9 @@ export function SolicitationsList({
 
       if (filter === "sourceable") return s.is_sourceable && !s.bid_status && !s.already_bid && isOpen;
       if (filter === "new_only") return s.is_sourceable && !s.bid_status && !s.already_bid && isOpen;
+      if (filter === "ax_matched") return s.is_sourceable && s.source === "ax" && !s.bid_status && !s.already_bid && isOpen;
+      if (filter === "potential_matched") return s.is_sourceable && s.source !== "ax" && !s.bid_status && !s.already_bid && isOpen;
+      if (filter === "non_sourced") return !s.is_sourceable && !s.bid_status && !s.already_bid && isOpen;
       if (filter === "already_bid") return s.already_bid;
       if (filter === "quoted") return s.bid_status === "quoted";
       if (filter === "submitted") return s.bid_status === "submitted";
@@ -776,10 +793,52 @@ export function SolicitationsList({
         <span className="text-foreground font-medium">Solicitations</span>
       </div>
 
-      {/* Pipeline Stats */}
+      {/* Match-confidence cards — the three buckets Abe filters by before
+          bidding. AX NSN Matched is the highest-confidence pile; Potential
+          Matches need review; Non-Sourced are items we've never traded. */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+        {[
+          {
+            key: "ax_matched",
+            label: "AX NSN Matched",
+            sub: "Authoritative AX ProductBarcodesV3 link — highest confidence, safe for batch-quote",
+            count: counts.axMatched,
+            color: "border-green-400 bg-green-50 hover:bg-green-100",
+            ring: "ring-green-400",
+          },
+          {
+            key: "potential_matched",
+            label: "Potential Matches",
+            sub: "Sourceable via Master DB or P/N cross-ref — verify before bidding",
+            count: counts.potentialMatched,
+            color: "border-yellow-300 bg-yellow-50 hover:bg-yellow-100",
+            ring: "ring-yellow-400",
+          },
+          {
+            key: "non_sourced",
+            label: "Non-Sourced",
+            sub: "No NSN/part match — never done business with these items",
+            count: counts.nonSourced,
+            color: "border-gray-300 bg-gray-50 hover:bg-gray-100",
+            ring: "ring-gray-400",
+          },
+        ].map((step) => (
+          <button
+            key={step.key}
+            onClick={() => setFilter(step.key)}
+            className={`rounded-lg border-2 p-4 text-left transition-all ${step.color} ${filter === step.key ? `ring-2 ${step.ring}` : ""}`}
+          >
+            <div className="text-3xl font-bold">{step.count}</div>
+            <div className="text-sm font-semibold mt-1">{step.label}</div>
+            <div className="text-[11px] text-muted mt-1 leading-snug">{step.sub}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Status / pipeline stats (smaller, below the big match cards) */}
       <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mb-2">
         {[
-          { key: "sourceable", label: "Sourceable", count: counts.sourceable, color: "border-green-300 bg-green-50", icon: Zap },
+          { key: "sourceable", label: "Sourceable (all)", count: counts.sourceable, color: "border-green-200 bg-green-50/60", icon: Zap },
           { key: "quoted", label: "Quoted", count: counts.quoted, color: "border-blue-300 bg-blue-50", icon: DollarSign },
           { key: "submitted", label: "Submitted", count: counts.submitted, color: "border-purple-300 bg-purple-50", icon: Send },
           { key: "skipped", label: "Skipped", count: counts.skipped, color: "border-gray-300 bg-gray-50", icon: X },
@@ -800,7 +859,7 @@ export function SolicitationsList({
         {[
           { key: "ll_active", label: "LamLinks FSCs", count: counts.llActive, color: "border-cyan-300 bg-cyan-50 text-cyan-800" },
           { key: "dibbs_only", label: "DIBBS Expansion", count: counts.dibbsOnly, color: "border-orange-300 bg-orange-50 text-orange-800" },
-          { key: "all_unsourced", label: "No Source", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped - counts.alreadyBid, color: "border-amber-200 bg-amber-50 text-amber-800" },
+          { key: "all_unsourced", label: "No Source (inc. closed)", count: counts.total - counts.sourceable - counts.quoted - counts.submitted - counts.skipped - counts.alreadyBid, color: "border-amber-200 bg-amber-50 text-amber-800" },
           { key: "all", label: "All", count: counts.total, color: "border-card-border bg-card-bg" },
         ].map((f) => (
           <button key={f.key} onClick={() => setFilter(f.key)}
@@ -846,12 +905,16 @@ export function SolicitationsList({
               )}
             </>
           )}
-          {filter === "sourceable" && filtered.length > 0 && (
+          {isQuotableFilter && filtered.length > 0 && (
             <>
               <button
                 onClick={() => {
+                  // Select-all: every eligible row, including the ones missing a
+                  // suggested_price. Those stay in the list so Abe can open them
+                  // to enter a price manually; the bulk-quote action only submits
+                  // the subset that has a price.
                   const ids = filtered
-                    .filter((s) => s.is_sourceable && !s.bid_status && !s.already_bid && (s.suggested_price ?? 0) > 0)
+                    .filter((s) => s.is_sourceable && !s.bid_status && !s.already_bid)
                     .map((s) => s.id);
                   setSelectedSourceable(
                     selectedSourceable.size === ids.length ? new Set() : new Set(ids)
@@ -861,16 +924,34 @@ export function SolicitationsList({
               >
                 {selectedSourceable.size > 0 ? `Deselect (${selectedSourceable.size})` : "Select All"}
               </button>
-              {selectedSourceable.size > 0 && (
-                <button
-                  onClick={handleQuoteSelectedAtSuggested}
-                  disabled={bulkQuoting}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white disabled:opacity-50"
-                >
-                  {bulkQuoting ? <Loader2 className="h-3 w-3 animate-spin" /> : <DollarSign className="h-3 w-3" />}
-                  Quote {selectedSourceable.size} at Suggested
-                </button>
-              )}
+              {selectedSourceable.size > 0 && (() => {
+                const selectedRows = filtered.filter((s) => selectedSourceable.has(s.id));
+                const withPrice = selectedRows.filter((s) => (s.suggested_price ?? 0) > 0).length;
+                const withoutPrice = selectedRows.length - withPrice;
+                return (
+                  <>
+                    <button
+                      onClick={handleQuoteSelectedAtSuggested}
+                      disabled={bulkQuoting || withPrice === 0}
+                      title={withPrice === 0 ? "None of the selected rows have a suggested price yet" : undefined}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white disabled:opacity-50"
+                    >
+                      {bulkQuoting ? <Loader2 className="h-3 w-3 animate-spin" /> : <DollarSign className="h-3 w-3" />}
+                      Quote {withPrice} at Suggested
+                      {withoutPrice > 0 && (
+                        <span className="ml-1 inline-block rounded bg-amber-400/80 text-amber-950 px-1.5 py-0.5 text-[10px] font-semibold">
+                          {withoutPrice} lack price
+                        </span>
+                      )}
+                    </button>
+                    {withoutPrice > 0 && (
+                      <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        {withoutPrice} selected row{withoutPrice !== 1 ? "s" : ""} {withoutPrice !== 1 ? "have" : "has"} no suggested price — open {withoutPrice !== 1 ? "them" : "it"} to enter a manual bid
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
             </>
           )}
         </div>
@@ -1061,7 +1142,7 @@ export function SolicitationsList({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-muted bg-gray-50/50">
-                {(filter === "quoted" || filter === "sourceable") && <th className="px-3 py-2 w-8"></th>}
+                {(filter === "quoted" || isQuotableFilter) && <th className="px-3 py-2 w-8"></th>}
                 <th className="px-3 py-2 font-medium"><div>NSN / Item</div><div className="text-[8px] font-normal text-muted">LL k08 + AX + PUB LOG</div></th>
                 <th className="px-3 py-2 font-medium"><div>Sol #</div><div className="text-[8px] font-normal text-muted">LL k10</div></th>
                 <th className="px-3 py-2 text-right"><SortHeader field="quantity">Qty</SortHeader><div className="text-[8px] font-normal text-muted">LL</div></th>
@@ -1113,19 +1194,19 @@ export function SolicitationsList({
                             }} className="rounded" />
                         </td>
                       )}
-                      {filter === "sourceable" && (
+                      {isQuotableFilter && (
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={selectedSourceable.has(s.id)}
-                            disabled={!s.is_sourceable || !!s.bid_status || !!s.already_bid || !s.suggested_price}
-                            title={!s.suggested_price ? "No suggested price — can't auto-quote" : ""}
+                            disabled={!s.is_sourceable || !!s.bid_status || !!s.already_bid}
+                            title={!s.suggested_price ? "No suggested price — selectable but won't auto-quote; open to bid manually" : ""}
                             onChange={(e) => {
                               const next = new Set(selectedSourceable);
                               if (e.target.checked) next.add(s.id); else next.delete(s.id);
                               setSelectedSourceable(next);
                             }}
-                            className="rounded"
+                            className={`rounded ${!s.suggested_price ? "ring-1 ring-amber-400" : ""}`}
                           />
                         </td>
                       )}
@@ -1709,11 +1790,16 @@ export function SolicitationsList({
           <div className="text-center py-12 text-muted">
             <p className="text-lg font-medium">
               {filter === "sourceable" ? "No sourceable solicitations" :
+               filter === "ax_matched" ? "No AX NSN-matched solicitations" :
+               filter === "potential_matched" ? "No potential matches" :
+               filter === "non_sourced" ? "No non-sourced solicitations" :
                filter === "quoted" ? "No quoted bids yet" :
                "No solicitations"}
             </p>
             <p className="text-sm mt-1">
-              {filter === "sourceable" ? 'Click "Scrape Now" then "Match NSNs"' : "Review sourceable items first"}
+              {filter === "sourceable" || filter === "ax_matched" || filter === "potential_matched" ? 'Click "Scrape Now" then "Match NSNs"' :
+               filter === "non_sourced" ? "Items here have no AX / Master DB match — run NSN match after next scrape." :
+               "Review sourceable items first"}
             </p>
           </div>
         )}
