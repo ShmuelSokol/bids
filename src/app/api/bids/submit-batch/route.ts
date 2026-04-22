@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
+import { createServiceClient, getCurrentUser, hasAdminAccess } from "@/lib/supabase-server";
 import { trackEvent, requestContext } from "@/lib/track";
 import { isLamlinksWritebackLive } from "@/lib/system-settings";
 
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   const validKeySet = new Set(pairs.map((p) => `${p.solicitation_number}__${p.nsn}`));
 
   // Pre-check: auth rule — non-admin can only submit their own quoted bids
-  const isAdmin = user.profile?.role === "admin";
+  const isAdmin = hasAdminAccess(user.profile?.role);
   const { data: existing } = await supabase
     .from("bid_decisions")
     .select("solicitation_number, nsn, decided_by, status")

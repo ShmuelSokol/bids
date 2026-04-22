@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
+import { createServiceClient, getCurrentUser, hasAdminAccess } from "@/lib/supabase-server";
 import { trackEvent, requestContext } from "@/lib/track";
 
 const VALID_STATUSES = new Set(["quoted", "submitted", "skipped"]);
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (existing?.decided_by && existing.decided_by !== decidedBy) {
-    const isAdmin = user.profile?.role === "admin";
+    const isAdmin = hasAdminAccess(user.profile?.role);
     if (!isAdmin) {
       return NextResponse.json(
         {

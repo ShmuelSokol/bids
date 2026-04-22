@@ -1,10 +1,13 @@
 import Link from "next/link";
-import { Building2, MapPin, Upload, Database, Activity, Bug, Send, FileText } from "lucide-react";
+import { Building2, MapPin, Upload, Database, Activity, Bug, Send, FileText, Users } from "lucide-react";
 import { isLamlinksWritebackLive, getSystemSetting } from "@/lib/system-settings";
+import { getCurrentUser } from "@/lib/supabase-server";
 
 export default async function SettingsPage() {
   const writebackLive = await isLamlinksWritebackLive();
   const invoiceLive = (await getSystemSetting("lamlinks_invoice_writeback_enabled")) === "true";
+  const me = await getCurrentUser();
+  const isSuperAdmin = me?.profile?.role === "superadmin";
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -171,6 +174,22 @@ export default async function SettingsPage() {
             )}
           </div>
         </Link>
+
+        {/* Users & Roles (Superadmin Only) */}
+        {isSuperAdmin && (
+          <Link href="/settings/users" className="rounded-xl border-2 border-purple-200 bg-purple-50/30 shadow-sm p-6 hover:border-purple-400 transition-colors group">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold group-hover:text-purple-700">Users &amp; Roles</h2>
+              <Users className="h-5 w-5 text-purple-400 group-hover:text-purple-600" />
+            </div>
+            <p className="text-sm text-muted mb-3">Manage who can access DIBS and what they can do. Shows each user&apos;s last-online time.</p>
+            <div className="flex gap-4 text-xs text-muted">
+              <span>Superadmin only</span>
+              <span>Role promote/demote</span>
+              <span>Live last-seen</span>
+            </div>
+          </Link>
+        )}
 
         {/* Bug Management (Admin Only) */}
         <Link href="/settings/bugs" className="rounded-xl border-2 border-red-200 bg-red-50/30 shadow-sm p-6 hover:border-red-400 transition-colors group">

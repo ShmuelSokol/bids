@@ -1,12 +1,12 @@
-import { getCurrentUser } from "@/lib/supabase-server";
+import { getCurrentUser, hasAdminAccess } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import { BugManager } from "./bug-manager";
 
 export default async function BugsPage() {
   const user = await getCurrentUser().catch(() => null);
 
-  // Admin only
-  if (!user?.profile?.role || user.profile.role !== "admin") {
+  // Admin only (superadmin included via hasAdminAccess)
+  if (!user?.profile?.role || !hasAdminAccess(user.profile.role)) {
     redirect("/");
   }
 

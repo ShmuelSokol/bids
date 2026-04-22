@@ -142,7 +142,7 @@ When you learn something new that future sessions would benefit from, add it to 
 - **fsc_expansion** (464) — solicitation vs bid rates by FSC
 - **usaspending_awards** (10K) — DLA awards from USASpending
 - **sync_log** — tracks every scrape/enrich with details
-- **profiles** — auth users with roles
+- **profiles** — auth users with roles. Constraint allows `superadmin` / `admin` / `manager` / `viewer`. `superadmin` can manage other users at `/settings/users` (change roles, cannot demote the last superadmin or change own role). Existing admin-gated code (bug manager, cross-user bid overrides, etc.) now uses `hasAdminAccess(role)` helper which returns true for BOTH `admin` and `superadmin` — so a superadmin retains every admin privilege plus role management.
 
 ## Key env vars (in .env, NOT committed)
 - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY

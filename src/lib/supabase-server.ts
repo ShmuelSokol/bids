@@ -74,6 +74,18 @@ export function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
+/**
+ * Role hierarchy helpers.
+ *
+ * Strictly: superadmin > admin > manager > viewer.
+ * `hasAdminAccess` returns true for superadmin AND admin so that all
+ * existing admin-gated code (bug manager, cross-user overrides, etc.)
+ * keeps working for superadmins without touching every call site.
+ */
+export function hasAdminAccess(role: string | null | undefined): boolean {
+  return role === "admin" || role === "superadmin";
+}
+
 export async function getCurrentUser() {
   try {
     const supabase = await createServerClient();

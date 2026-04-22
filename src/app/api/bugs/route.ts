@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/supabase-server";
+import { getCurrentUser, hasAdminAccess } from "@/lib/supabase-server";
 
 const OWNER = "ShmuelSokol";
 const REPO = "bids";
@@ -11,7 +11,7 @@ const REPO = "bids";
 
 async function checkAdmin(req: NextRequest) {
   const user = await getCurrentUser().catch(() => null);
-  if (!user?.profile?.role || user.profile.role !== "admin") {
+  if (!user?.profile?.role || !hasAdminAccess(user.profile.role)) {
     return null;
   }
   return user;

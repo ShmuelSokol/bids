@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
+import { createServiceClient, getCurrentUser, hasAdminAccess } from "@/lib/supabase-server";
 import { trackEvent, requestContext } from "@/lib/track";
 
 /**
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServiceClient();
   const decidedBy = user.profile?.full_name || user.user.email || "unknown";
-  const isAdmin = user.profile?.role === "admin";
+  const isAdmin = hasAdminAccess(user.profile?.role);
 
   // Pull every targeted solicitation in one round-trip so we can
   // validate (sourceable, not already bid) and also know each one's
