@@ -122,22 +122,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  function sameUom(a: string | null | undefined, b: string | null | undefined): boolean {
-    if (!a || !b) return false;
-    return a.trim().toUpperCase() === b.trim().toUpperCase();
+  // Normalize null/empty/"null" string into a real null so we can compare UoMs
+  // fairly across awards imported from different sources (LamLinks, DIBBS, AX).
+  function normUom(v: any): string | null {
+    if (v == null) return null;
+    const s = String(v).trim();
+    if (!s || s.toLowerCase() === "null") return null;
+    return s.toUpperCase();
   }
-
-  // UoM disagreement is only grounds to route to UNASSIGNED when BOTH UoMs
-  // are populated AND they differ. If the award's UoM is missing (very common
-  // — 2026-04 audit found ~30% of recent awards have unit_of_measure=null due
-  // to a LamLinks k81 import gap), we can't validate, so trust the vendor
-  // and continue. Same if the vendor's UoM is missing.
-  //
-  // Before this fix, any null UoM collapsed into UNASSIGNED, so a batch of
-  // awards with distinct suppliers would produce a single lumped PO.
-  function uomBlocks(awardUom: string | null | undefined, vendorUom: string | null | undefined): boolean {
-    if (!awardUom || !vendorUom) return false;
-    return !sameUom(awardUom, vendorUom);
+  function sameUom(a: any, b: any): boolean {
+    const na = normUom(a), nb = normUom(b);
+    return na !== null && nb !== null && na === nb;
+  }
+  // Is the cost calculation trustworthy for this line? Yes if UoMs match OR
+  // if either UoM is missing (can't verify, but can't disprove either).
+  // No if both are present AND differ (e.g. award="PG" vs vendor="B10") —
+  // multiplying cost × qty would produce a wrong total in that case.
+  function costTrustworthy(awardUom: any, vendorUom: any): boolean {
+    const a = normUom(awardUom), v = normUom(vendorUom);
+    if (!a || !v) return true;  // can't verify; default to trust
+    return a === v;
   }
 
   type Routing = { supplier: string; reason: string; cost: CostRow | null };
@@ -147,8 +151,10 @@ export async function POST(req: NextRequest) {
   for (const award of eligible) {
     let routing: Routing;
 
+    // Routing rule (rewritten 2026-04-22 per user feedback): always route by
+    // vendor when one exists. UoM mismatch affects cost trustworthiness per
+    // line, not routing. One PO per real supplier.
     if (award.bid_vendor) {
-      // Priority 1: use the vendor stored at enrichment/bid time
       const cost: CostRow = {
         cost: award.bid_cost || 0,
         source: `bid-time vendor (${award.bid_vendor})`,
@@ -156,28 +162,23 @@ export async function POST(req: NextRequest) {
         uom: award.bid_uom || null,
         itemNumber: award.bid_item_number || null,
       };
-      if (uomBlocks(award.unit_of_measure, cost.uom)) {
-        routing = {
-          supplier: "UNASSIGNED",
-          reason: `UoM mismatch: award=${award.unit_of_measure} vs bid-vendor=${cost.uom}`,
-          cost,
-        };
-      } else {
-        routing = { supplier: cost.vendor!.trim(), reason: cost.source!, cost };
-      }
+      const trust = costTrustworthy(award.unit_of_measure, cost.uom);
+      routing = {
+        supplier: cost.vendor!.trim(),
+        reason: trust ? cost.source! : `${cost.source!} — COST UNVERIFIED (UoM "${award.unit_of_measure}" vs "${cost.uom}")`,
+        cost,
+      };
     } else {
-      // Fallback: current waterfall from nsn_costs
       const cost = waterfallByNsn.get(award.nsn);
       if (!cost || !cost.vendor) {
         routing = { supplier: "UNASSIGNED", reason: "no cost/vendor in nsn_costs", cost: cost ?? null };
-      } else if (uomBlocks(award.unit_of_measure, cost.uom)) {
+      } else {
+        const trust = costTrustworthy(award.unit_of_measure, cost.uom);
         routing = {
-          supplier: "UNASSIGNED",
-          reason: `UoM mismatch: award=${award.unit_of_measure} vs vendor=${cost.uom}`,
+          supplier: cost.vendor.trim(),
+          reason: trust ? (cost.source || "nsn_costs fallback") : `nsn_costs waterfall — COST UNVERIFIED (UoM "${award.unit_of_measure}" vs "${cost.uom}")`,
           cost,
         };
-      } else {
-        routing = { supplier: cost.vendor.trim(), reason: cost.source || "nsn_costs fallback", cost };
       }
     }
 
@@ -201,13 +202,20 @@ export async function POST(req: NextRequest) {
     const lineDrafts = supplierAwards.map((a: any) => {
       const routing = routingByAward.get(a.id);
       const onRealSupplier = supplier !== "UNASSIGNED";
-      const unitCost = onRealSupplier ? routing?.cost?.cost ?? 0 : 0;
+      // Only use the vendor's cost when the UoMs are trustworthy; if they
+      // differ (and the routing reason flags it), zero the cost and surface
+      // the "COST UNVERIFIED" reason so Abe sees margin=0 and fixes it
+      // manually (typically via supplier-switch). This is the safe split:
+      // group by vendor for routing, but don't multiply an incompatible
+      // cost × qty that would produce a negative-margin PO.
+      const costUnverified = (routing?.reason || "").includes("COST UNVERIFIED");
+      const unitCost = onRealSupplier && !costUnverified ? routing?.cost?.cost ?? 0 : 0;
       const qty = a.quantity || 1;
       return {
         award: a,
         unit_cost: unitCost,
         total_cost: unitCost * qty,
-        cost_source: onRealSupplier ? routing?.cost?.source ?? null : routing?.reason ?? null,
+        cost_source: onRealSupplier ? routing?.reason ?? null : "UNASSIGNED",
         vendor_item_number: onRealSupplier ? routing?.cost?.itemNumber ?? null : null,
       };
     });
