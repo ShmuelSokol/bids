@@ -36,6 +36,11 @@ export const WIKI_PAGES = [
     subtitle: "Incident retrospective + plan forward",
   },
   {
+    slug: "ax-po-writeback",
+    title: "AX PO Write-Back",
+    subtitle: "Header DMF → poll for PO# → Lines DMF → posted",
+  },
+  {
     slug: "npi-workflow",
     title: "NPI Workflow (AX new items + add-supplier)",
     subtitle: "How DIBS generates the New Product Import RawData for AX",

@@ -133,7 +133,9 @@ When you learn something new that future sessions would benefit from, add it to 
 - **nsn_catalog** (24K) — AX NSN→item mappings
 - **nsn_costs** (24K) — best cost per NSN (waterfall applied)
 - **nsn_vendor_prices** (34K) — per-vendor pricing for supplier switch (5,930 NSNs with 2+ vendors)
-- **purchase_orders** + **po_lines** — generated POs from awards
+- **nsn_ax_vendor_parts** — per-(NSN, vendor) AX item record (used by NPI to decide add-supplier vs new-item)
+- **nsn_upc_map** (74) — optional UPC per NSN from AX ProductBarcodesV3; powers UPC row in NPI BarCode tab. Refresh via `scripts/populate-nsn-upc-map.ts`.
+- **purchase_orders** + **po_lines** — generated POs from awards. `purchase_orders.dmf_state` drives the AX write-back state machine (`drafted` → `awaiting_po_number` → `lines_ready` → `awaiting_lines_import` → `posted`). `ax_po_number` populated after AX auto-assigns.
 - **fsc_heatmap** (332) — hot/warm/cold FSC categories
 - **fsc_expansion** (464) — solicitation vs bid rates by FSC
 - **usaspending_awards** (10K) — DLA awards from USASpending

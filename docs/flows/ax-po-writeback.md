@@ -1,6 +1,20 @@
-# Flow: AX Purchase Order Write-Back (proposed)
+# Flow: AX Purchase Order Write-Back
 
-Not built. This page is the spec + working assumptions.
+**Built + wired as of 2026-04-22.** Flow A (DIBS generates header + lines DMF workbooks, AX auto-assigns PO#) is implemented. NPI is a separate precondition flow (see `docs/npi-workflow.md`).
+
+UI entry: `/orders` POs tab, per-PO action buttons + bulk toolbar. State machine in `purchase_orders.dmf_state`:
+
+```
+drafted → awaiting_po_number → lines_ready → awaiting_lines_import → posted
+```
+
+Transitions:
+- `drafted` → `awaiting_po_number`: `POST /api/orders/submit-po-header` uploads header xlsx, marks state.
+- `awaiting_po_number` → `lines_ready`: `POST /api/orders/poll-ax-po-number` reads AX `PurchaseOrderHeadersV2?$filter=VendorOrderReference eq '<ax_correlation_ref>'` and writes `ax_po_number`.
+- `lines_ready` → `awaiting_lines_import`: `POST /api/orders/submit-po-lines` uploads lines xlsx.
+- `awaiting_lines_import` → `posted`: `POST /api/orders/check-ax-lines` polls `PurchaseOrderLinesV2?$filter=PurchaseOrderNumber eq '<ax_po_number>'` and confirms line count.
+
+Operator then clicks "Send Confirmation" in AX; Dynamics emails PDF to vendor. DIBS' job ends at `posted`.
 
 ## Architecture locked 2026-04-15 — Flow A
 
