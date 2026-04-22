@@ -135,26 +135,96 @@ export async function POST(req: NextRequest) {
     }, { status: 400 });
   }
 
-  // Build the xlsx (RawData only — user pastes into their xlsm template
-  // and runs the macro to populate the other tabs).
+  // Build xlsx with ALL 7 tabs pre-populated, replicating Yosef's
+  // `runfillinprocedure` VBA macro (extracted 2026-04-22, 169 lines).
+  // User can upload this directly to AX DM workspace — no need to run
+  // the macro in Excel first.
+  //
+  // Rules per ssokol:
+  //   - BARCODESETUPID = "NSN" (macro defaults to "UPC" but we're
+  //     feeding NSN data)
+  //   - add-supplier rows: skip RPCreate/RPV2/BarCode (item + barcode
+  //     already exist in AX); only populate APPROVEDVENDOR + EXTERNALITEMDESC
+  //   - TradeAgreement section is commented out in the live macro, so
+  //     the sheet ships with headers only (expected by the DM project)
   const wb = new ExcelJS.Workbook();
   wb.creator = "DIBS";
-  const ws = wb.addWorksheet("RawData");
-  ws.addRow(["Item#", "Description", "Vendor", "External", "BarcodeValue", "Price"]);
-  for (const r of npiRows) {
-    ws.addRow([r.itemNumber, r.description, r.vendor, r.external, r.barcode, r.price]);
-  }
-  ws.columns.forEach((c) => (c.width = 22));
 
-  // Also add a "_DIBS_Notes" sheet with mode + source line traceability
-  // so operators know which rows are new-item vs add-supplier, and
-  // DIBS-side audit can be done later.
-  const notes = wb.addWorksheet("_DIBS_Notes");
-  notes.addRow(["Item#", "Mode", "DIBS po_line.id", "NSN", "Supplier"]);
+  // 1) RawData — identical to the template (so operators could re-run the
+  // macro if they wanted, though they shouldn't need to).
+  const rawData = wb.addWorksheet("RawData");
+  rawData.addRow(["Item#", "Description", "Vendor", "External", "BarcodeValue", "Price"]);
   for (const r of npiRows) {
-    notes.addRow([r.itemNumber, r.mode, r.source_line_id, r.barcode, r.vendor]);
+    rawData.addRow([r.itemNumber, r.description, r.vendor, r.external, r.barcode, r.price]);
   }
-  notes.columns.forEach((c) => (c.width = 18));
+
+  // 2) RPCreate — 16 columns, new-item rows only
+  const rpCreate = wb.addWorksheet("RPCreate");
+  rpCreate.addRow([
+    "ITEMNUMBER", "BOMUNITSYMBOL", "INVENTORYRESERVATIONHIERARCHYNAME", "INVENTORYUNITSYMBOL",
+    "ITEMMODELGROUPID", "PRODUCTGROUPID", "PRODUCTNAME", "PRODUCTNUMBER",
+    "PRODUCTSEARCHNAME", "PRODUCTSUBTYPE", "PRODUCTTYPE", "PURCHASEUNITSYMBOL",
+    "SALESUNITSYMBOL", "SEARCHNAME", "STORAGEDIMENSIONGROUPNAME", "TRACKINGDIMENSIONGROUPNAME",
+  ]);
+  for (const r of npiRows) {
+    if (r.mode !== "new-item") continue;
+    rpCreate.addRow([
+      r.itemNumber, "EA", "Warehouse", "EA",
+      "FIFO-Stock", "FG-NonRX", r.description, r.itemNumber,
+      r.description, "Product", "Item", "EA",
+      "EA", r.description, "SiteWHLoc", "None",
+    ]);
+  }
+
+  // 3) RPV2 — 5 columns, new-item rows only
+  const rpv2 = wb.addWorksheet("RPV2");
+  rpv2.addRow(["ITEMNUMBER", "DEFAULTORDERTYPE", "PRODUCTCOVERAGEGROUPID", "RAWMATERIALPICKINGPRINCIPLE", "UNITCONVERSIONSEQUENCEGROUPID"]);
+  for (const r of npiRows) {
+    if (r.mode !== "new-item") continue;
+    rpv2.addRow([r.itemNumber, "Purch", "Req.", "OrderPicking", "EA Only"]);
+  }
+
+  // 4) APPROVEDVENDOR — always populated (both new-item and add-supplier)
+  const approved = wb.addWorksheet("APPROVEDVENDOR");
+  approved.addRow(["APPROVEDVENDORACCOUNTNUMBER", "ITEMNUMBER"]);
+  for (const r of npiRows) {
+    approved.addRow([r.vendor, r.itemNumber]);
+  }
+
+  // 5) EXTERNALITEMDESC — always populated (both modes)
+  const externalItem = wb.addWorksheet("EXTERNALITEMDESC");
+  externalItem.addRow(["ITEMNUMBER", "VENDORACCOUNTNUMBER", "VENDORPRODUCTNUMBER"]);
+  for (const r of npiRows) {
+    externalItem.addRow([r.itemNumber, r.vendor, r.external]);
+  }
+
+  // 6) BarCode — new-item rows only; BARCODESETUPID = "NSN"
+  const barcode = wb.addWorksheet("BarCode");
+  barcode.addRow(["ITEMNUMBER", "BARCODESETUPID", "BARCODE", "ISDEFAULTSCANNEDBARCODE", "PRODUCTQUANTITY", "PRODUCTQUANTITYUNITSYMBOL"]);
+  for (const r of npiRows) {
+    if (r.mode !== "new-item") continue;
+    barcode.addRow([r.itemNumber, "NSN", r.barcode, "Yes", "1", "EA"]);
+  }
+
+  // 7) TradeAgreement — headers only (macro body is commented out)
+  const trade = wb.addWorksheet("TradeAgreement");
+  trade.addRow([
+    "TRADEAGREEMENTJOURNALNUMBER", "LINENUMBER", "ITEMNUMBER", "PRICE",
+    "PRICEAPPLICABLEFROMDATE", "PRICEAPPLICABLETODATE", "PRICECURRENCYCODE", "PRICESITEID",
+    "PURCHASEPRICEQUANTITY", "QUANTITYUNITSYMBOL", "TOQUANTITY", "VENDORACCOUNTNUMBER",
+    "WILLDELIVERYDATECONTROLDISREGARDLEADTIME", "WILLSEARCHCONTINUE",
+  ]);
+
+  // Audit tab — mode + source line traceability (DIBS-side only)
+  const notes = wb.addWorksheet("_DIBS_Notes");
+  notes.addRow(["Item#", "Mode", "DIBS po_line.id", "NSN (13-digit)", "Supplier", "External Part#"]);
+  for (const r of npiRows) {
+    notes.addRow([r.itemNumber, r.mode, r.source_line_id, r.barcode, r.vendor, r.external]);
+  }
+
+  for (const ws of [rawData, rpCreate, rpv2, approved, externalItem, barcode, trade, notes]) {
+    ws.columns.forEach((c) => (c.width = 20));
+  }
 
   // Log for audit
   await supabase.from("sync_log").insert({

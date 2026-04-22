@@ -8,23 +8,17 @@ When a PO line in DIBS lands on an NSN that AX doesn't know yet, OR on a vendor 
 
 It's a macro-enabled workbook with 7 tabs:
 
-- **RawData** — the only one you fill by hand (or from DIBS). 6 cols: `Item# | Description | Vendor | External | BarcodeValue | Price`
-- **RPCreate**, **RPV2**, **APPROVEDVENDOR**, **EXTERNALITEMDESC**, **BarCode**, **TradeAgreement** — auto-populated by the macro
-
-`ThisWorkbook.runfillingprocedure` is the macro that reads RawData and fans it out to the other tabs.
+- **RawData** — input tab
+- **RPCreate**, **RPV2**, **APPROVEDVENDOR**, **EXTERNALITEMDESC**, **BarCode**, **TradeAgreement** — the 6 tabs AX DMF actually imports. In the xlsm template they're filled by the VBA macro `ThisWorkbook.runfillinprocedure` (169 lines, extracted via COM 2026-04-22). **DIBS now runs the same transform directly** so the xlsx it produces has all 7 tabs pre-populated — skip the Excel round-trip entirely.
 
 ## The flow
 
-1. **DIBS generates the RawData rows** per PO (see next section).
-2. Operator downloads the xlsx from DIBS.
-3. Opens the NPI Dashboard xlsm template.
-4. **Pastes the DIBS rows into RawData** (overwriting any existing content). A `_DIBS_Notes` tab in the DIBS download shows mode + source line for each row (traceability — don't paste that one into RawData).
-5. Runs the macro: `Developer → Macros → ThisWorkbook.runfillingprocedure`
-6. Saves the file as a plain xlsx (drop the macro).
-7. Uploads to AX at https://szy-prod.operations.dynamics.com/?cmp=szyh&mi=DM_DataManagementWorkspaceMenuItem. Yosef's one-touch project (setup pending) should handle the multi-tab mapping automatically. Until that's set up, map tab by tab manually.
-8. Wait for AX to confirm import success.
-9. Back in DIBS, refresh the Orders page — the formerly-red "not in AX" tags on the affected lines turn green (new items appear in AX catalog, vendor relationships land in VendorProductDescriptions).
-10. Now the regular "Download Header DMF" / "Download Lines DMF" → "Push to AX" flow works on those POs.
+1. **DIBS generates a fully-filled xlsx** (all 7 tabs including RawData + `_DIBS_Notes` audit) via `/api/orders/generate-npi`.
+2. Operator downloads it.
+3. Upload directly to AX at https://szy-prod.operations.dynamics.com/?cmp=szyh&mi=DM_DataManagementWorkspaceMenuItem. Yosef's one-touch DM project (name pending) should handle the multi-tab mapping. Until that's set up, map tab by tab manually (RPCreate, RPV2, APPROVEDVENDOR, EXTERNALITEMDESC, BarCode — RawData, TradeAgreement, `_DIBS_Notes` are skipped by the import mapping).
+4. Wait for AX to confirm import success.
+5. Back in DIBS, refresh the Orders page — the formerly-red "not in AX" tags on the affected lines turn green (new items appear in AX catalog, vendor relationships land in VendorProductDescriptions).
+6. Now the regular "Submit to AX (Header)" / "Submit to AX (Lines)" flow works on those POs.
 
 ## How DIBS builds the RawData rows
 
@@ -46,12 +40,26 @@ For each PO line in the selection:
 
 DIBS tags each row in the `_DIBS_Notes` tab so operators can sanity-check what mode each row lands in.
 
+## Macro transform details (extracted from VBA)
+
+Source: `ThisWorkbook.runfillinprocedure`. Full dump in `scripts/` as extracted on 2026-04-22 via COM automation (after enabling `HKCU:\...\Excel\Security\AccessVBOM=1`).
+
+| Output Sheet | Cols | Defaults (constants) | Source of per-row values |
+|---|---|---|---|
+| **RPCreate** | 16 | `BOMUNITSYMBOL="EA"`, `INVENTORYRESERVATIONHIERARCHYNAME="Warehouse"`, `INVENTORYUNITSYMBOL="EA"`, `ITEMMODELGROUPID="FIFO-Stock"`, `PRODUCTGROUPID="FG-NonRX"`, `PRODUCTSUBTYPE="Product"`, `PRODUCTTYPE="Item"`, `PURCHASEUNITSYMBOL="EA"`, `SALESUNITSYMBOL="EA"`, `STORAGEDIMENSIONGROUPNAME="SiteWHLoc"`, `TRACKINGDIMENSIONGROUPNAME="None"` | `ITEMNUMBER`, `PRODUCTNUMBER` = RawData.Item#; `PRODUCTNAME`, `PRODUCTSEARCHNAME`, `SEARCHNAME` = RawData.Description |
+| **RPV2** | 5 | `DEFAULTORDERTYPE="Purch"`, `PRODUCTCOVERAGEGROUPID="Req."`, `RAWMATERIALPICKINGPRINCIPLE="OrderPicking"`, `UNITCONVERSIONSEQUENCEGROUPID="EA Only"` | `ITEMNUMBER` = RawData.Item# |
+| **APPROVEDVENDOR** | 2 | — | `APPROVEDVENDORACCOUNTNUMBER` = RawData.Vendor; `ITEMNUMBER` = RawData.Item# |
+| **EXTERNALITEMDESC** | 3 | — | `ITEMNUMBER`, `VENDORACCOUNTNUMBER`, `VENDORPRODUCTNUMBER` = RawData.Item#, Vendor, External |
+| **BarCode** | 6 | **`BARCODESETUPID="NSN"`** (macro hardcoded "UPC" — DIBS overrides to "NSN" per ssokol), `ISDEFAULTSCANNEDBARCODE="Yes"`, `PRODUCTQUANTITY="1"`, `PRODUCTQUANTITYUNITSYMBOL="EA"` | `ITEMNUMBER`, `BARCODE` = RawData.Item#, BarcodeValue |
+| **TradeAgreement** | 14 | — (header-only; macro body is commented out in current template) | — |
+
+**add-supplier mode** (NSN already in AX, just adding a new vendor): DIBS writes rows only into APPROVEDVENDOR + EXTERNALITEMDESC. RPCreate, RPV2, BarCode stay headers-only. Matches the macro's behavior when RawData rows have the Item# already present in AX.
+
 ## Limits + TODOs
 
-- **Macros aren't preserved by the download.** DIBS generates a plain xlsx with RawData populated. The user has to paste into the xlsm template and run the macro themselves. A future iteration could preserve macros via direct ZIP manipulation (keeping `vbaProject.bin` intact) for a one-click experience. For now, copy/paste is the handoff.
-- **Collision check is local-only.** We check against `nsn_catalog.source` + `nsn_ax_vendor_parts.ax_item_number` (both cached from AX). If a SKU was created in AX after our last nightly catalog refresh, we could generate a duplicate. Likelihood is low (~1%) but non-zero; Yosef would see the DMF import error and adjust. A future addition: live OData check against `ReleasedProductsV2` before returning the sheet.
-- **AX-side project that accepts the NPI workbook isn't pinned down yet.** Yosef was moving toward a "one-touch" DM project; once that name is confirmed, document it here + link directly to the project URL from DIBS.
-- **No "check AX back" loop yet.** DIBS doesn't automatically notice when a new item lands in AX. For now the operator refreshes the Orders page manually; the next `populate-nsn-costs-from-ax` nightly run will update `nsn_catalog`. A real-time check endpoint is a future build.
+- **Collision check is local-only.** We check against `nsn_catalog.source` + `nsn_ax_vendor_parts.ax_item_number` (both cached from AX). If a SKU was created in AX after our last nightly catalog refresh, we could generate a duplicate. Likelihood is low (~1%) but non-zero; Yosef would see the DMF import error and adjust. Future: live OData check against `ReleasedProductsV2` before returning the sheet.
+- **AX-side DM project name isn't pinned down yet.** Yosef was moving toward a "one-touch" DM project that auto-maps all 6 import tabs. Until that's confirmed, operators map each tab manually per import.
+- **No "check AX back" loop yet.** DIBS doesn't automatically notice when a new item lands in AX. The operator refreshes the Orders page manually; the next `populate-nsn-costs-from-ax` nightly run updates `nsn_catalog`. Future: real-time check endpoint.
 
 ## Canonical files
 
