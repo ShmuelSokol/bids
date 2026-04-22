@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase-server";
 import { isSourceableOpen, buildFilterContext } from "@/lib/solicitation-filters";
-import { isLamlinksWritebackLive } from "@/lib/system-settings";
+import { isLamlinksWritebackLive, getLamlinksWorkerHealth } from "@/lib/system-settings";
 import { SolicitationsList } from "./solicitations-list";
 import Link from "next/link";
 
@@ -158,15 +158,37 @@ export default async function SolicitationsPage({
 }) {
   const { solicitations, counts, lastSync } = await getData();
   const writebackLive = await isLamlinksWritebackLive();
+  const workerHealth = await getLamlinksWorkerHealth();
   const params = await searchParams;
+
+  // If toggle is ON but worker hasn't checked in within 2 min, submits will queue forever.
+  // Abe would see "submitted X bids" without anything actually reaching DLA. Loud warning.
+  const writebackStalled = writebackLive && !workerHealth.online;
 
   return (
     <div className="p-4 md:p-8">
-      {writebackLive && (
+      {writebackStalled && (
+        <div className="mb-4 rounded-lg border-2 border-red-500 bg-red-50 px-4 py-3 flex items-center justify-between text-sm">
+          <div>
+            <div className="font-bold text-red-800">🔴 LamLinks worker is OFFLINE — submitted bids will queue but NOT transmit to DLA</div>
+            <div className="text-red-700 mt-1 text-xs">
+              Worker last heartbeat: {workerHealth.lastHeartbeat ? new Date(workerHealth.lastHeartbeat).toLocaleString() : "never"}
+              {workerHealth.ageSeconds !== null && ` (${Math.floor(workerHealth.ageSeconds / 60)} min ago)`}.
+              {" "}Start it on NYEVRVSQL001 — <code className="font-mono">schtasks /run /tn &quot;DIBS - Recurring Daemon&quot;</code> — or log into that box to fire the auto-start trigger.
+              Until fixed, don&apos;t use the Submit button on Quoted bids; copy to LamLinks manually.
+            </div>
+          </div>
+          <Link href="/settings/lamlinks-writeback" className="text-xs text-red-800 underline shrink-0 ml-4">manage</Link>
+        </div>
+      )}
+      {writebackLive && !writebackStalled && (
         <div className="mb-4 rounded-lg border-2 border-green-400 bg-green-50 px-4 py-2 flex items-center justify-between text-sm">
           <div>
             <span className="font-bold text-green-800">🟢 LamLinks Write-Back is LIVE</span>
             <span className="text-green-700 ml-2">— clicking Submit on Quoted bids will transmit them to LamLinks for DLA.</span>
+            {workerHealth.ageSeconds !== null && (
+              <span className="text-green-600 text-xs ml-2">(worker: {workerHealth.ageSeconds}s ago)</span>
+            )}
           </div>
           <Link href="/settings/lamlinks-writeback" className="text-xs text-green-800 underline">manage</Link>
         </div>

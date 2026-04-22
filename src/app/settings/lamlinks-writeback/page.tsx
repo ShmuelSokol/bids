@@ -1,4 +1,4 @@
-import { isLamlinksWritebackLive } from "@/lib/system-settings";
+import { isLamlinksWritebackLive, getLamlinksWorkerHealth } from "@/lib/system-settings";
 import { createServiceClient } from "@/lib/supabase-server";
 import { Toggle } from "./toggle";
 
@@ -19,6 +19,7 @@ async function getQueueStats() {
 
 export default async function LamLinksWritebackSettingsPage() {
   const live = await isLamlinksWritebackLive();
+  const health = await getLamlinksWorkerHealth();
   const { byStatus, recent } = await getQueueStats();
 
   return (
@@ -54,6 +55,25 @@ export default async function LamLinksWritebackSettingsPage() {
           </div>
           <Toggle initialValue={live} />
         </div>
+      </div>
+
+      <div className={`rounded-xl border-2 ${health.online ? "border-green-400 bg-green-50/30" : "border-red-400 bg-red-50/30"} p-6 mb-6`}>
+        <h2 className="text-lg font-semibold mb-2">Worker Health</h2>
+        <div className="text-sm mb-2">
+          {health.online ? (
+            <span className="text-green-800 font-medium">🟢 Worker ONLINE — last heartbeat {health.ageSeconds}s ago</span>
+          ) : (
+            <span className="text-red-800 font-medium">🔴 Worker OFFLINE — {health.lastHeartbeat ? `last heartbeat ${Math.floor((health.ageSeconds || 0) / 60)} min ago (${new Date(health.lastHeartbeat).toLocaleString()})` : "never checked in"}</span>
+          )}
+        </div>
+        <div className="text-xs text-muted">
+          Healthy threshold: under 2 min. The daemon writes a heartbeat on every poll (~every 30s). If this stays stale while the toggle is LIVE, Abe&apos;s submits will queue but not transmit.
+        </div>
+        {!health.online && (
+          <div className="text-xs mt-2 text-red-700">
+            Fix: on NYEVRVSQL001, run <code className="font-mono">schtasks /run /tn &quot;DIBS - Recurring Daemon&quot;</code>, or sign out and back in to fire the auto-start trigger.
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-card-border bg-card-bg p-6 mb-6">

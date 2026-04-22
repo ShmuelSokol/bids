@@ -174,8 +174,21 @@ async function writeOneBid(
   }
 }
 
+async function writeHeartbeat(supabase: any) {
+  // Update the worker heartbeat on every poll (whether toggle is on or off).
+  // UI reads this to decide whether to show "LamLinks worker is offline" warning.
+  await supabase.from("system_settings").upsert(
+    { key: "lamlinks_worker_last_heartbeat", value: new Date().toISOString(), description: "ISO timestamp from the LamLinks worker's last poll — UI uses this to detect stale workers" },
+    { onConflict: "key" },
+  );
+}
+
 async function processOnePass(): Promise<{ processed: number; failed: number; waiting: number }> {
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+
+  // Always write heartbeat, even if the feature flag is off — tells the UI
+  // the worker is alive, just idle.
+  await writeHeartbeat(supabase);
 
   if (!(await getWritebackEnabled(supabase))) {
     console.log(`[${new Date().toISOString()}] writeback disabled — skipping poll`);
