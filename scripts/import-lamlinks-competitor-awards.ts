@@ -63,7 +63,11 @@ async function main() {
     LEFT JOIN k08_tab k08 ON k08.idnk08_k08 = kc4.idnk08_kc4
     LEFT JOIN k10_tab k10 ON k10.idnk10_k10 = kc4.idnk10_kc4
     WHERE kc4.adddte_kc4 >= DATEADD(year, -2, GETDATE())
-      AND kc4.a_cage_kc4 IS NOT NULL
+      -- Removed: a_cage_kc4 IS NOT NULL — LamLinks sometimes records an
+      -- award as "Awarded" before the awardee CAGE is published. Those
+      -- rows are still useful to track (DIBBS.gov may have the winner
+      -- even when LL hasn't caught up). We store them with cage=null and
+      -- surface as "Awarded — winner unknown" in the UI.
       AND k08.fsc_k08 IS NOT NULL
       AND k08.niin_k08 IS NOT NULL
       AND RTRIM(LTRIM(kc4.c_stat_kc4)) != 'Removed'
@@ -81,35 +85,43 @@ async function main() {
   const rows: any[] = [];
   let ourCount = 0;
   let compCount = 0;
+  let unknownCount = 0;
   for (const r of raw) {
-    const cage = r.cage?.trim();
-    if (!cage) continue;
+    // cage may be null (LL shows "Awarded" before winner name lands) —
+    // keep the row, tag it unknown, so the UI can show "Awarded — winner
+    // unknown" rather than swallow the award entirely.
+    const cage = r.cage?.trim() || null;
     const fsc = r.fsc?.trim();
     const niin = r.niin?.trim();
     if (!fsc || !niin) continue;
     const contract = r.contract_number?.trim() || r.piid?.trim() || "";
     if (!contract) continue;
 
-    const key = `${contract}_${fsc}_${niin}_${cage}`;
+    const key = `${contract}_${fsc}_${niin}_${cage || "UNKNOWN"}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
     if (cage === "0AG09") ourCount++;
-    else compCount++;
+    else if (cage) compCount++;
+    else unknownCount++;
 
     rows.push({
       contract_number: contract,
-      cage,
+      cage, // may be null
       fsc,
       niin,
       unit_price: r.unit_price ? Number(r.unit_price) : null,
       quantity: r.quantity ? Number(r.quantity) : 1,
       description: r.description?.trim() || "",
       award_date: etNaiveToUtcIso(r.award_date),
-      data_source: cage === "0AG09" ? "lamlinks_kc4_self" : "lamlinks_kc4_competitor",
+      data_source: cage === "0AG09"
+        ? "lamlinks_kc4_self"
+        : cage
+          ? "lamlinks_kc4_competitor"
+          : "lamlinks_kc4_unknown_awardee",
     });
   }
-  console.log(`Deduped to ${rows.length} unique rows (${ourCount} ours, ${compCount} competitors)`);
+  console.log(`Deduped to ${rows.length} unique rows (${ourCount} ours, ${compCount} competitors, ${unknownCount} unknown-awardee)`);
 
   // Upsert in batches of 200
   let saved = 0;
@@ -143,7 +155,7 @@ async function main() {
 
   await sb.from("sync_log").insert({
     action: "lamlinks_competitor_awards_import",
-    details: { raw: raw.length, deduped: rows.length, ours: ourCount, competitors: compCount, saved, errors },
+    details: { raw: raw.length, deduped: rows.length, ours: ourCount, competitors: compCount, unknown_awardees: unknownCount, saved, errors },
   });
 }
 

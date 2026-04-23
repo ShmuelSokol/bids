@@ -55,6 +55,7 @@ interface Solicitation {
   last_award_price: number | null;
   data_source: string | null;
   competitor_cage: string | null;
+  last_award_winner: string | null;
   award_count: number | null;
   bid_status: string | null;
   final_price: number | null;
@@ -1503,6 +1504,50 @@ export function SolicitationsList({
                               {s.already_bid && (
                                 <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium">
                                   Already Bid{s.last_bid_price ? ` @$${s.last_bid_price.toFixed(2)}` : ""}{s.last_bid_date ? ` ${formatDateShort(s.last_bid_date)}` : ""}
+                                </span>
+                              )}
+                              {/* Outcome pill — shows after we've bid AND an award
+                                  has landed (or we at least know who won). Color
+                                  tells the story: green = we won, red = lost,
+                                  amber = award happened but winner unknown, gray
+                                  = still pending. */}
+                              {s.already_bid && (s.last_award_winner || (s as any).competitor_cage) && (
+                                (() => {
+                                  const winner = (s.last_award_winner || "").trim().toUpperCase();
+                                  const compCage = ((s as any).competitor_cage || "").trim().toUpperCase();
+                                  const winPrice = s.last_bid_price != null ? ` @$${Number(s.last_bid_price).toFixed(2)}` : "";
+                                  if (winner === "0AG09") {
+                                    return (
+                                      <SourceTip source="awards.cage='0AG09' — we won this contract">
+                                        <span className="text-[9px] px-1 rounded bg-green-100 text-green-800 font-semibold border border-green-300">
+                                          ✓ WE WON{winPrice}
+                                        </span>
+                                      </SourceTip>
+                                    );
+                                  }
+                                  if (winner && winner !== "0AG09") {
+                                    return (
+                                      <SourceTip source={`awards.cage='${winner}' — competitor won this contract`}>
+                                        <span className="text-[9px] px-1 rounded bg-red-100 text-red-800 font-semibold border border-red-300">
+                                          ✗ LOST to {winner}{winPrice}
+                                        </span>
+                                      </SourceTip>
+                                    );
+                                  }
+                                  if (compCage) {
+                                    return (
+                                      <span className="text-[9px] px-1 rounded bg-red-100 text-red-800 font-semibold border border-red-300">
+                                        ✗ LOST to {compCage}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()
+                              )}
+                              {/* Award happened but winner name not in LL yet */}
+                              {s.already_bid && !s.last_award_winner && !(s as any).competitor_cage && (s.award_count ?? 0) > 0 && (
+                                <span className="text-[9px] px-1 rounded bg-amber-100 text-amber-800 border border-amber-300" title="LamLinks shows the sol as awarded but hasn't published the winner's CAGE yet. Check DIBBS.gov.">
+                                  ⚠ Awarded — winner unknown
                                 </span>
                               )}
                               {s.procurement_type && s.procurement_type !== "RFQ" && (
