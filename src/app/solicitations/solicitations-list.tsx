@@ -1981,7 +1981,11 @@ export function SolicitationsList({
                                             ))}
                                           </div>
                                         )}
-                                        {fuzzy.length > 0 && (
+                                        {/* Fuzzy title-only candidates — only show when we do NOT
+                                            already have an authoritative AX / Master DB link.
+                                            If is_sourceable is true, the fuzzy result is noise
+                                            left over from the title-similarity pass. */}
+                                        {fuzzy.length > 0 && !s.is_sourceable && (
                                           <div className="bg-red-50 rounded-lg p-2 border border-red-300 text-xs">
                                             <div className="text-[10px] font-bold text-red-800 mb-1">⚠ Title-Only Candidates — VERIFY before bidding ({fuzzy.length})</div>
                                             <div className="text-[10px] text-red-700 mb-1 leading-tight">

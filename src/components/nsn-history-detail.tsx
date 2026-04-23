@@ -397,53 +397,82 @@ export function NsnHistoryDetail({ nsn }: { nsn: string }) {
         </div>
       )}
 
-      {data.matches.length > 0 && (
-        <div>
-          <div className="text-xs font-bold text-purple-700 mb-1">
-            Part-number Matches ({data.matches.length})
+      {/* Part-number match table.
+          When AX already has an authoritative link to this NSN (data.ax.item_number
+          is set), we hide the fuzzy TITLE_SIMILARITY rows — they're noise left over
+          from the title-matching pass and confuse operators into thinking they
+          shouldn't trust a match they actually can trust. Exact P/N matches
+          (HIGH / MEDIUM confidence) still show because they're informative even
+          when AX already knows the item. */}
+      {(() => {
+        const hasAxLink = !!data.ax?.item_number;
+        const shown = hasAxLink
+          ? data.matches.filter((m) => !m.match_type?.startsWith("TITLE_SIMILARITY"))
+          : data.matches;
+        const suppressed = data.matches.length - shown.length;
+        if (shown.length === 0 && suppressed === 0) return null;
+        if (shown.length === 0) {
+          // All matches were fuzzy and suppressed — leave a tiny hint instead of
+          // rendering a useless empty card.
+          return (
+            <div className="text-[10px] text-muted italic">
+              {suppressed} fuzzy title-only candidate{suppressed !== 1 ? "s" : ""} hidden — AX already has this NSN.
+            </div>
+          );
+        }
+        return (
+          <div>
+            <div className="text-xs font-bold text-purple-700 mb-1">
+              Part-number Matches ({shown.length})
+              {suppressed > 0 && (
+                <span className="ml-2 text-[10px] text-muted font-normal italic">
+                  · {suppressed} fuzzy title-only candidate{suppressed !== 1 ? "s" : ""} hidden (AX has the NSN)
+                </span>
+              )}
+            </div>
+            <div className="rounded border border-card-border overflow-auto max-h-32">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-muted bg-gray-50">
+                    <th className="text-left px-2 py-1">Match</th>
+                    <th className="text-left px-2 py-1">P/N</th>
+                    <th className="text-left px-2 py-1">Description</th>
+                    <th className="text-left px-2 py-1">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((m, i) => {
+                    const isFuzzy = m.match_type?.startsWith("TITLE_SIMILARITY");
+                    return (
+                      <tr key={i} className={`border-t border-card-border/30 ${isFuzzy ? "bg-red-50/50" : ""}`}>
+                        <td className="px-2 py-0.5">
+                          <span
+                            className={`text-[9px] px-1 rounded font-medium ${
+                              isFuzzy
+                                ? "bg-red-200 text-red-800"
+                                : m.confidence === "HIGH"
+                                ? "bg-green-100 text-green-700"
+                                : m.confidence === "MEDIUM"
+                                ? "bg-yellow-100 text-yellow-700"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
+                            title={isFuzzy ? "Title-similarity only — may belong to a different NSN. Verify before using as mfr part#." : m.match_type || undefined}
+                          >
+                            {isFuzzy ? "FUZZY" : m.confidence}
+                          </span>
+                        </td>
+                        <td className="px-2 py-0.5 font-mono text-[10px]">{m.matched_part_number || "—"}</td>
+                        <td className="px-2 py-0.5 truncate max-w-[260px]">{m.matched_description || "—"}</td>
+                        <td className="px-2 py-0.5 text-muted">{m.matched_source || "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="rounded border border-card-border overflow-auto max-h-32">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-muted bg-gray-50">
-                  <th className="text-left px-2 py-1">Match</th>
-                  <th className="text-left px-2 py-1">P/N</th>
-                  <th className="text-left px-2 py-1">Description</th>
-                  <th className="text-left px-2 py-1">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.matches.map((m, i) => {
-                  const isFuzzy = m.match_type?.startsWith("TITLE_SIMILARITY");
-                  return (
-                    <tr key={i} className={`border-t border-card-border/30 ${isFuzzy ? "bg-red-50/50" : ""}`}>
-                      <td className="px-2 py-0.5">
-                        <span
-                          className={`text-[9px] px-1 rounded font-medium ${
-                            isFuzzy
-                              ? "bg-red-200 text-red-800"
-                              : m.confidence === "HIGH"
-                              ? "bg-green-100 text-green-700"
-                              : m.confidence === "MEDIUM"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : "bg-gray-100 text-gray-600"
-                          }`}
-                          title={isFuzzy ? "Title-similarity only — may belong to a different NSN. Verify before using as mfr part#." : m.match_type || undefined}
-                        >
-                          {isFuzzy ? "FUZZY" : m.confidence}
-                        </span>
-                      </td>
-                      <td className="px-2 py-0.5 font-mono text-[10px]">{m.matched_part_number || "—"}</td>
-                      <td className="px-2 py-0.5 truncate max-w-[260px]">{m.matched_description || "—"}</td>
-                      <td className="px-2 py-0.5 text-muted">{m.matched_source || "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
