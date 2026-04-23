@@ -19,6 +19,7 @@
 -- TOP N is replaced with a higher limit at runtime by sync-shipping.ts.
 
 SELECT TOP 50
+    kaj.idnkaj_kaj                                       AS idnkaj,
     RTRIM(kaj.shpnum_kaj)                                AS ship_number,
     RTRIM(kaj.shpsta_kaj)                                AS ship_status,
     COALESCE(kaj.shptme_kaj, kaj.insdte_kaj)             AS ship_date,

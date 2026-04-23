@@ -37,6 +37,7 @@ async function main() {
   // duplicate any shipment with a missing CLIN. Coerce missing values to
   // empty strings so the dedup actually catches repeat syncs.
   const shipments = result.recordset.map((r: any) => ({
+    idnkaj: r.idnkaj != null ? Number(r.idnkaj) : null,
     ship_number: r.ship_number?.trim() || "",
     ship_status: r.ship_status?.trim() || "",
     ship_date: r.ship_date,
@@ -57,10 +58,27 @@ async function main() {
     data_source: "lamlinks",
   }));
 
+  // Dedupe within the batch by upsert key — multiple kaj rows can share
+  // the same (ship_number, contract_number, clin) while having different
+  // idnkaj values, which makes Postgres refuse the upsert.
+  // Keep the highest idnkaj (most recent kaj row) per key.
+  const deduped = new Map<string, typeof shipments[number]>();
+  for (const s of shipments) {
+    const key = `${s.ship_number}|${s.contract_number}|${s.clin}`;
+    const existing = deduped.get(key);
+    if (!existing || (s.idnkaj ?? 0) > (existing.idnkaj ?? 0)) {
+      deduped.set(key, s);
+    }
+  }
+  const dedupedShipments = [...deduped.values()];
+  if (dedupedShipments.length < shipments.length) {
+    console.log(`  Deduped ${shipments.length - dedupedShipments.length} duplicate (ship#, contract, clin) rows`);
+  }
+
   // Upsert to shipments table
   let saved = 0;
-  for (let i = 0; i < shipments.length; i += 100) {
-    const batch = shipments.slice(i, i + 100);
+  for (let i = 0; i < dedupedShipments.length; i += 100) {
+    const batch = dedupedShipments.slice(i, i + 100);
     const { error } = await sb
       .from("ll_shipments")
       .upsert(batch, { onConflict: "ship_number,contract_number,clin" });

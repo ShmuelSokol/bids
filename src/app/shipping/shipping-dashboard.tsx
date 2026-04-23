@@ -7,6 +7,7 @@ import { formatDateShort, formatDateTime } from "@/lib/dates";
 
 interface Shipment {
   id: number;
+  idnkaj: number | null;
   ship_number: string;
   ship_status: string;
   ship_date: string;
@@ -23,6 +24,36 @@ interface Shipment {
   contract_number: string;
   nsn: string | null;
   description: string;
+  // WAWF/EDI status from ll_shipments_with_edi view
+  wawf_810_status?: string;
+  wawf_810_at?: string | null;
+  wawf_856_status?: string;
+  wawf_856_at?: string | null;
+  edi_health?: "complete" | "problem" | "pending_ack" | "asn_ack_only" | "in_flight" | "not_started";
+}
+
+const EDI_HEALTH_LABEL: Record<string, string> = {
+  complete: "✓ Acked",
+  pending_ack: "810 Sent",
+  asn_ack_only: "856 Ack",
+  in_flight: "856 Sent",
+  not_started: "Not Sent",
+  problem: "Problem",
+};
+const EDI_HEALTH_COLOR: Record<string, string> = {
+  complete: "bg-green-100 text-green-800 border-green-300",
+  pending_ack: "bg-blue-100 text-blue-800 border-blue-300",
+  asn_ack_only: "bg-sky-100 text-sky-800 border-sky-300",
+  in_flight: "bg-amber-100 text-amber-800 border-amber-300",
+  not_started: "bg-gray-100 text-gray-600 border-gray-200",
+  problem: "bg-red-100 text-red-800 border-red-300",
+};
+
+function daysAgo(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
 
 const statusColors: Record<string, string> = {
@@ -42,9 +73,11 @@ function getStatusColor(status: string) {
 export function ShippingDashboard({
   shipments,
   lastSync,
+  lastEdiSync,
 }: {
   shipments: Shipment[];
   lastSync: string | null;
+  lastEdiSync?: string | null;
 }) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,7 +146,8 @@ export function ShippingDashboard({
           <h1 className="text-2xl font-bold">Shipping</h1>
           <p className="text-muted mt-1 text-sm">
             {shipments.length} shipments loaded from LamLinks
-            {lastSync && <span className="ml-2 text-[10px]">Last sync: {formatDateTime(lastSync)}</span>}
+            {lastSync && <span className="ml-2 text-[10px]">Ship sync: {formatDateTime(lastSync)}</span>}
+            {lastEdiSync && <span className="ml-2 text-[10px]">EDI sync: {formatDateTime(lastEdiSync)}</span>}
           </p>
         </div>
       </div>
@@ -205,18 +239,25 @@ export function ShippingDashboard({
                 <th className="px-3 py-2 font-medium">Tracking<div className="text-[7px] font-normal text-muted">LL k81</div></th>
                 <th className="px-3 py-2 font-medium">Ship Date<div className="text-[7px] font-normal text-muted">LL k81</div></th>
                 <th className="px-3 py-2 font-medium">Status<div className="text-[7px] font-normal text-muted">LL k81</div></th>
+                <th className="px-3 py-2 font-medium">WAWF<div className="text-[7px] font-normal text-muted">LL kbr</div></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-3 py-12 text-center text-muted">
+                  <td colSpan={14} className="px-3 py-12 text-center text-muted">
                     <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm font-medium">No shipments found</p>
                     <p className="text-xs mt-1">Run <code className="bg-gray-100 px-1 rounded">npx tsx scripts/sync-shipping.ts</code> to sync from LamLinks</p>
                   </td>
                 </tr>
-              ) : filtered.map((s) => (
+              ) : filtered.map((s) => {
+                const health = s.edi_health ?? "not_started";
+                const healthLabel = EDI_HEALTH_LABEL[health] ?? "—";
+                const healthColor = EDI_HEALTH_COLOR[health] ?? EDI_HEALTH_COLOR.not_started;
+                const mostRecent = s.wawf_810_at || s.wawf_856_at;
+                const daysSince = daysAgo(mostRecent);
+                return (
                 <tr key={s.id} className="border-b border-card-border/50 hover:bg-gray-50">
                   <td className="px-3 py-2 font-mono">{s.ship_number}</td>
                   <td className="px-3 py-2 font-mono text-[10px]">{s.contract_number}</td>
@@ -239,8 +280,22 @@ export function ShippingDashboard({
                       {s.ship_status}
                     </span>
                   </td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${healthColor}`}
+                      title={
+                        `856: ${s.wawf_856_status ?? "—"}${s.wawf_856_at ? ` @ ${formatDateShort(s.wawf_856_at)}` : ""}\n` +
+                        `810: ${s.wawf_810_status ?? "—"}${s.wawf_810_at ? ` @ ${formatDateShort(s.wawf_810_at)}` : ""}`
+                      }
+                    >
+                      {healthLabel}
+                      {daysSince !== null && health !== "not_started" && (
+                        <span className="ml-1 opacity-70">· {daysSince}d</span>
+                      )}
+                    </span>
+                  </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
