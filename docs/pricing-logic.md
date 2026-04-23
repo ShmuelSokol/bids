@@ -1,5 +1,29 @@
 # Pricing Logic
 
+> **Update 2026-04-23** — two new overlays encoded in
+> `src/app/api/dibbs/reprice/route.ts` on top of the base strategies:
+>
+> **Quantity scale-down** (on UNDERCUT_COMPETITOR base). Current sol qty vs
+> last award qty:
+> - ≥1.5× → additional −1%
+> - ≥3× → additional −2%
+> - ≥5× → additional −3%
+>
+> Rationale (Abe, sol `SPE2DP-26-T-3013` / NSN 6505-01-671-1859):
+> *"last win was for 2 cases, current bid is for 10 cases, competitor would
+> probably lower price on current bid"*.
+>
+> **Recent-quote cluster** (overrides any base when it fires). When Abe has
+> bid the same NSN ≥2 times in the last 90 days AND stddev/median ≤ 7% AND
+> the median is below the base pick, the median becomes the suggestion.
+>
+> Rationale (Abe, sol `SPE2DP-26-T-3015` / NSN 6505-01-224-0176): *"my last
+> quotes in last 3 months for similar quantities were in the 69.00 range"* —
+> his quoting pattern leads award data when pricing is stable.
+>
+> Floor is always `max(cost * 1.10, $2)`. See the inline docstring in the
+> reprice route for the full decision tree.
+
 > *"A bid that's too high loses. A bid that's too low wins unprofitably. The whole game is finding the edge."*
 
 Pricing was Abe's most expensive problem. We built the engine from **2,591 historical bid-to-cost matches** — every bid we submitted where we later knew the cost and the outcome. This isn't a theoretical model. It's empirically fit to our own wins and losses.
