@@ -22,7 +22,7 @@ async function paginateAll(supabase: any, table: string, select: string, options
 async function getData() {
   const supabase = createServiceClient();
 
-  const cols = "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, data_source, competitor_cage, award_count";
+  const cols = "id, nsn, nomenclature, solicitation_number, quantity, issue_date, return_by_date, fsc, set_aside, procurement_type, is_sourceable, source, source_item, suggested_price, our_cost, margin_pct, cost_source, price_source, channel, fob, est_shipping, potential_value, already_bid, last_bid_price, last_bid_date, data_source, competitor_cage, award_count, file_reference, file_reference_date, internal_edi_reference";
 
   // Helper: load all rows matching an is_sourceable filter, paginated.
   // Two hard-coded range calls (0-999 + 1000-1999) silently capped at 2K
