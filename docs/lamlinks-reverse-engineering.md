@@ -236,6 +236,26 @@ If credentials exist → we can call `api.lamlinks.com/api/llsm/create` from a D
 
 If credentials don't exist → Yosef needs to contact the LL vendor (the son) for API access. The fact that other clients have integrations (`apibeta alan`, `apibeta aerometals`, `apibeta WFL` show up as known hosts in llprun.exe strings) makes this a standard product offering, not a custom ask.
 
+### The `put_client_quote` payload — what fields a quote needs
+
+The exact inner XML schema isn't a string literal (FoxPro builds it per-field via `xml_tag_and_value_to_string` calls inside the caller), but the internal cursor that gathers the fields is fully visible at llprun.exe line 729381. The cursor is called `bsh_tab` ("batch send header"), and it joins 7 source tables to collect every field the API needs:
+
+| Source | Fields | Purpose |
+|---|---|---|
+| `kd8_tab` | q_time, bidtyp, orefno, qtemal, mfg_pn, valday, fobcod, insmat, acc_sd, qclxml | Core quote record |
+| `kda_tab` | dlyaro, qte_ui, qteqty, uprice | **Delivery days, UoM, qty, unit price** |
+| `kdh_tab` | q_mode | Quote mode |
+| `k34_tab` | mcage, pn_rev, szip | Mfr CAGE + part rev + FOB ZIP |
+| `k08_tab` | fsc, niin, p_desc | NSN + description |
+| `ka7_tab` | d_code, d_name | DLA/DoD distribution codes |
+| `k14_tab` (via xx1 join) | u_name | "Our POC" — the LL user this quote is attributed to |
+| terms view | trmdes, dis_pc, disday, netday, trmsid, dla_id | Payment terms (trmsid fetched from "Lamlinks Corp API" — LL calls its own API) |
+| memos | a_note, q_note, p_note, m_note | Four free-text fields |
+
+So DIBS's `put_client_quote` wrapper effectively needs to pass the same data we're currently writing to k34/k35. Mapping DIBS pricing + vendor info into this schema is straightforward once we know the exact XML tag names — which will emerge the moment we call `are_you_listening` or `sol_no_to_quote_info` and see a real response (any return payload will use the same `xml_tag_and_value_to_string` element names).
+
+Also interesting: `idnk14_to_sally_credentials` (llprun line 729351) confirms the per-user lookup — LL maps `idnk14_k14` (user ID) to its kah_tab Sally Credentials row. When DIBS calls the API, we attribute the quote to a specific k14 user (probably `ajoseph` or a service account) and use that user's credentials.
+
 ### Security finding worth flagging
 
 `api_secret` is stored in plaintext XML in `kah_tab.<memo_col>`. Anyone with `SELECT` on `kah_tab` can read every LL user's key pair. Worth mentioning to Yosef — not a DIBS problem to fix, but ERG should know.
@@ -432,3 +452,4 @@ Most of the original open questions were made moot by finding the REST API. What
 
 - 2026-04-23 (early) — initial writeup covering kdd_tab, VSE handlers, state machines, DB tables, cursor-conflict explanation.
 - 2026-04-23 (later, same day) — deeper grep pass uncovered the HTTP REST API (`api.lamlinks.com`), LLSM (the C# service), `j87_tab` (local job queue), and credential storage in `kah_tab`. Integration path rewritten: REST call to `put_client_quote` now the recommended write surface, with `kdd_tab` Client Management demoted to Path C. Added `scripts/ll-find-sally-credentials.ts` to probe for existing credentials. Several "open questions" resolved or obsoleted by the new path.
+- 2026-04-23 (evening) — decoded the `<Request>`/`<Response>` envelope shape (common to all REST functions), and the 7-table join `bsh_tab` cursor that shows every field a `put_client_quote` payload needs. DIBS's integration is now mappable end-to-end — the only remaining unknown is the exact lowercase tag names inside `req_data` (resolvable by calling a read function once and inspecting the response).
