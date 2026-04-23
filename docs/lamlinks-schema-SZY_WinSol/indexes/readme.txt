@@ -1,0 +1,1 @@
+PK__readme__B228A5BEABEBF9B3 [PK]: (table_name) CLUSTERED

@@ -1,0 +1,1 @@
+CIX_imported_and_deleted_orders_orders_sales_order: (sales_order) CLUSTERED

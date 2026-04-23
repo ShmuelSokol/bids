@@ -1,0 +1,1 @@
+pkc_r_arrc_custmr [PK]: (CUSTMR) CLUSTERED

@@ -1,0 +1,26 @@
+-- dbo.def_poph  (0 rows)
+CREATE TABLE dbo.def_poph (
+  PRODCT               varchar(20) NOT NULL,
+  RECPT                varchar(5) NOT NULL,
+  RECLIN               varchar(3) NOT NULL,
+  PURORD               varchar(6) NOT NULL,
+  PURORDLIN            varchar(3) NOT NULL,
+  SUPPLR               varchar(6) NOT NULL,
+  PODAT                date NOT NULL,
+  RECDAT               date NOT NULL,
+  BUYUOM               varchar(4) NOT NULL,
+  SKU                  varchar(4) NOT NULL,
+  BUYPRIUOM            varchar(4) NOT NULL,
+  CURRNCY              varchar(4) NOT NULL,
+  PURPRI               numeric(12,4) NOT NULL,
+  PURDIS               varchar(11) NOT NULL,
+  TOTDOLLAN            numeric(12,4) NOT NULL,
+  ORDQTY               numeric(10,2) NOT NULL,
+  RECQTY               numeric(10,2) NOT NULL,
+  RECQTYSKU            numeric(10,2) NOT NULL,
+  TYPE                 varchar(1) NOT NULL,
+  CURSEQ               numeric(5,0) NOT NULL,
+  CALLEATIM            numeric(3,0) NOT NULL,
+  EXPDAT               date NOT NULL,
+  PRIBRE               varchar(1) NOT NULL
+);

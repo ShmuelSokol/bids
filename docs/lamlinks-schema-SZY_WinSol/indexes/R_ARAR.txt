@@ -1,0 +1,1 @@
+pkc_r_arar_custmr_invoice [PK]: (CUSTMR, INVOICE) CLUSTERED

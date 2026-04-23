@@ -1,0 +1,1 @@
+PK__imported_and_del__24A9E2A6 [PK]: (action_code) CLUSTERED

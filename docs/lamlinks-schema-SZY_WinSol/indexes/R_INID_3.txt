@@ -1,0 +1,1 @@
+pkc_r_inid_3_invoice_linek [PK]: (INVOICE, LINEK) CLUSTERED

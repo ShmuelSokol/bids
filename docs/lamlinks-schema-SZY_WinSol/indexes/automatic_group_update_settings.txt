@@ -1,0 +1,1 @@
+PK_automatic_group_update_settings [PK]: (groupName) CLUSTERED

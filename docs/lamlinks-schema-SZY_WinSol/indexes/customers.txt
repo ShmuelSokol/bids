@@ -1,0 +1,1 @@
+pk_customers_custmr [PK]: (CUSTMR) CLUSTERED

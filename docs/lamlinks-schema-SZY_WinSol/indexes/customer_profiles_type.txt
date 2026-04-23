@@ -1,0 +1,1 @@
+pk__customer_profiles_type__type [PK]: (type) CLUSTERED

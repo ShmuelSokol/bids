@@ -1,0 +1,19 @@
+-- dbo.def_inid_3  (0 rows)
+CREATE TABLE dbo.def_inid_3 (
+  INVOICE              varchar(7) NOT NULL,
+  LINEK                varchar(3) NOT NULL,
+  SUPCHA               varchar(2) NOT NULL,
+  CUSTMR               varchar(7) NOT NULL,
+  NOTINV               varchar(7) NOT NULL,
+  SUPCHADES            varchar(25) NOT NULL,
+  UNITS                numeric(4,0) NOT NULL,
+  RATE                 numeric(6,2) NOT NULL,
+  PERVAL               numeric(4,0) NOT NULL,
+  AMT                  numeric(8,2) NOT NULL,
+  GLACCT               varchar(8) NOT NULL,
+  WHSE                 varchar(2) NOT NULL,
+  SHIPTO               varchar(6) NOT NULL,
+  PROTAX               varchar(8) NOT NULL,
+  TAXGRO               varchar(8) NOT NULL,
+  TAXOVE               varchar(1) NOT NULL
+);

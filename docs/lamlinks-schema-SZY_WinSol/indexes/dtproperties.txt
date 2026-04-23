@@ -1,0 +1,1 @@
+pk_dtproperties [PK]: (id, property) CLUSTERED

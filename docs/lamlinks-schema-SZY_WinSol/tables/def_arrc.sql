@@ -1,0 +1,28 @@
+-- dbo.def_arrc  (0 rows)
+CREATE TABLE dbo.def_arrc (
+  CUSTMR               varchar(7) NOT NULL,
+  INVCPAI              numeric(4,0) NOT NULL,
+  DAYPAI               numeric(6,0) NOT NULL,
+  AVGDAY               numeric(4,0) NOT NULL,
+  AVGDAYLYR            numeric(5,0) NOT NULL,
+  SALMTD               numeric(10,2) NOT NULL,
+  SALNEX               numeric(10,2) NOT NULL,
+  SALYTD               numeric(11,2) NOT NULL,
+  SALLYT               numeric(11,2) NOT NULL,
+  LASSALDAT            date NOT NULL,
+  HIGARTYR             numeric(10,2) NOT NULL,
+  HIGARLYR             numeric(10,2) NOT NULL,
+  ORDTYR               numeric(4,0) NOT NULL,
+  ORDLYT               numeric(4,0) NOT NULL,
+  LASPAYDAT            date NOT NULL,
+  LASPAYAMT            numeric(9,2) NOT NULL,
+  ARBAL                numeric(10,2) NOT NULL,
+  OUTSHIPBL            numeric(10,2) NOT NULL,
+  LASSALAMT            numeric(9,2) NOT NULL,
+  OUTBO                numeric(9,2) NOT NULL,
+  PAIYTD               numeric(10,2) NOT NULL,
+  WAVGDAY              numeric(11,2) NOT NULL,
+  WAVGDAYLYT           numeric(4,0) NOT NULL,
+  ORDNEX               numeric(4,0) NOT NULL,
+  DUEDATOLD            date NOT NULL
+);

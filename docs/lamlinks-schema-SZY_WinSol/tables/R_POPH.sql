@@ -1,0 +1,26 @@
+-- dbo.R_POPH  (298369 rows)
+CREATE TABLE dbo.R_POPH (
+  PRODCT               char(20) NOT NULL,
+  RECPT                char(5) NOT NULL,
+  RECLIN               char(3) NOT NULL,
+  PURORD               varchar(6),
+  PURORDLIN            char(3),
+  SUPPLR               varchar(6),
+  PODAT                datetime,
+  RECDAT               datetime,
+  BUYUOM               varchar(4),
+  SKU                  varchar(4),
+  BUYPRIUOM            varchar(4),
+  PURPRI               numeric(12,4),
+  PURDIS               varchar(11),
+  TOTDOLLAN            numeric(12,4),
+  ORDQTY               numeric(10,2),
+  RECQTY               numeric(10,2),
+  RECQTYSKU            numeric(10,2),
+  TYPE                 char(1),
+  CURSEQ               numeric(5,0),
+  CALLEATIM            numeric(3,0),
+  EXPDAT               datetime,
+  PRIBRE               char(1),
+  PRIMARY KEY (PRODCT, RECPT, RECLIN)
+);

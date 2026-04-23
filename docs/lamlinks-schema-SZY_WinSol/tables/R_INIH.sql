@@ -1,0 +1,25 @@
+-- dbo.R_INIH  (1743139 rows)
+CREATE TABLE dbo.R_INIH (
+  INVOICE              char(7) NOT NULL,
+  INVCDAT              datetime,
+  SALORD               varchar(6),
+  DOCMNT               varchar(8),
+  CUSTMR               char(7),
+  SALREP               char(2),
+  ORDSOU               char(1),
+  CUSTMRPO             varchar(12),
+  ORDDAT               datetime,
+  SHIPTO               char(6),
+  PAYOFF               varchar(7),
+  TERMS                varchar(6),
+  ARTOT                numeric(10,2),
+  SALES                numeric(10,2),
+  COS                  numeric(10,2),
+  SUPCHA               numeric(10,2),
+  SALOFF               char(2),
+  TAX                  numeric(8,2),
+  SASALES              numeric(13,2),
+  SACOS                numeric(13,2),
+  SAGMPER              numeric(6,2),
+  PRIMARY KEY (INVOICE)
+);

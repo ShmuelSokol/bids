@@ -1,0 +1,1 @@
+pkc_r_inidp_invoice_line [PK]: (INVOICE, LINE) CLUSTERED

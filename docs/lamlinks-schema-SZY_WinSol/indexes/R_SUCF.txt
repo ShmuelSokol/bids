@@ -1,0 +1,1 @@
+pkc_r_sucf_custmr [PK]: (CUSTMR) CLUSTERED

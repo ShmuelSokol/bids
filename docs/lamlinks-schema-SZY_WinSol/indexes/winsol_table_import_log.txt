@@ -1,0 +1,1 @@
+PK__winsol_table_imp__3A179ED3 [PK]: (table_name) CLUSTERED

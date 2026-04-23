@@ -1,0 +1,1 @@
+PK__temp_deb__32136E5F52C11DEB [PK]: (dt) CLUSTERED

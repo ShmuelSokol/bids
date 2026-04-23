@@ -1,0 +1,23 @@
+-- dbo.def_inid_2  (0 rows)
+CREATE TABLE dbo.def_inid_2 (
+  INVOICE              varchar(7) NOT NULL,
+  LINEK                varchar(3) NOT NULL,
+  RECTYP               varchar(1) NOT NULL,
+  LINE                 varchar(3) NOT NULL,
+  PRODCT               varchar(20) NOT NULL,
+  NULLFIE6             varchar(1) NOT NULL,
+  CUSTMR               varchar(7) NOT NULL,
+  NOTINV               varchar(7) NOT NULL,
+  SETREM               varchar(1) NOT NULL,
+  GENDET               varchar(1) NOT NULL,
+  PRIDOC               varchar(1) NOT NULL,
+  LIFE                 varchar(1) NOT NULL,
+  COMMENT              varchar(30) NOT NULL,
+  MODHEAD              varchar(3) NOT NULL,
+  MODLASLIN            varchar(3) NOT NULL,
+  MODLASRES            varchar(3) NOT NULL,
+  MODREF               varchar(25) NOT NULL,
+  MODQUO               varchar(1) NOT NULL,
+  MODINVC              varchar(1) NOT NULL,
+  MODSLI               varchar(1) NOT NULL
+);

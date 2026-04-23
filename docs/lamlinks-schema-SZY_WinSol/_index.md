@@ -1,0 +1,109 @@
+# LamLinks `llk_db1` schema dump
+
+Generated 2026-04-23T18:29:17.411Z by `scripts/dump-lamlinks-schema.ts`.
+
+## Counts
+- **Tables**: 93
+- **Foreign keys**: 12 (see `foreign-keys.txt`)
+- **Indexes**: 56 (see `indexes/`)
+- **Triggers**: 2 (see `triggers/`)
+- **Stored procedures**: 21 (see `procedures/`)
+- **Views**: 0 (see `views/`)
+- **Functions**: 1 (see `functions/`)
+- **SQL Agent jobs**: 31 (see `agent-jobs.json`)
+
+## Tables
+
+  - `ar_analysis` — 12 cols, 87587 rows
+  - `ar_analysis_rev1` — 12 cols, 36687 rows
+  - `ar_analysis_rev2` — 12 cols, 36241 rows
+  - `automatic_group_update_settings` — 8 cols, 1 rows
+  - `customer_profiles` — 5 cols, 261 rows
+  - `customer_profiles_category` — 3 cols, 10 rows
+  - `customer_profiles_profile` — 3 cols, 13 rows
+  - `customer_profiles_type` — 3 cols, 24 rows
+  - `customers` — 16 cols, 2474 rows
+  - `dates_profiles` — 2 cols, 3237 rows
+  - `def_arar` — 14 cols, 0 rows
+  - `def_arrc` — 25 cols, 0 rows
+  - `def_ici1` — 109 cols, 0 rows
+  - `def_icsd` — 30 cols, 0 rows
+  - `def_icwm` — 29 cols, 0 rows
+  - `def_inid_2` — 20 cols, 0 rows
+  - `def_inid_3` — 16 cols, 0 rows
+  - `def_inid_l` — 3 cols, 0 rows
+  - `def_inidp` — 111 cols, 0 rows
+  - `def_inih` — 141 cols, 0 rows
+  - `def_inihp` — 14 cols, 0 rows
+  - `def_insh` — 8 cols, 0 rows
+  - `def_poph` — 23 cols, 0 rows
+  - `def_popi` — 121 cols, 0 rows
+  - `def_pos` — 49 cols, 0 rows
+  - `def_sucf` — 8 cols, 0 rows
+  - `def_sucu` — 93 cols, 0 rows
+  - `def_sucu_backup` — 93 cols, 0 rows
+  - `def_sush` — 13 cols, 0 rows
+  - `DELETED_OLD_ORDERS_OEOO_1` — 50 cols, 5772 rows
+  - `DELETED_OLD_ORDERS_OEOO_2` — 92 cols, 5772 rows
+  - `DELETED_OLD_ORDERS_OEOO_P` — 85 cols, 6474 rows
+  - `DELETED_OLD_ORDERS_OEOO_S` — 18 cols, 5 rows
+  - `DELETED_OLD_ORDERS_ORDERS` — 5 cols, 5772 rows
+  - `DELETED_OLD_ORDERS_shipto` — 27 cols, 5772 rows
+  - `dtproperties` — 7 cols, 0 rows
+  - `excluded_customers` — 1 cols, 4 rows
+  - `group_update_log` — 5 cols, 7 rows
+  - `group_update_log_tables` — 5 cols, 42 rows
+  - `imported_and_deleted_orders_actions` — 2 cols, 5 rows
+  - `imported_and_deleted_orders_mistakes` — 91 cols, 577 rows
+  - `IMPORTED_AND_DELETED_ORDERS_OEOO_1` — 49 cols, 29873 rows
+  - `imported_and_deleted_orders_oeoo_1_backup` — 49 cols, 109750 rows
+  - `IMPORTED_AND_DELETED_ORDERS_OEOO_2` — 90 cols, 29873 rows
+  - `imported_and_deleted_orders_oeoo_2_backup` — 90 cols, 109750 rows
+  - `IMPORTED_AND_DELETED_ORDERS_OEOO_P` — 83 cols, 38297 rows
+  - `imported_and_deleted_orders_oeoo_p_backup` — 83 cols, 141114 rows
+  - `IMPORTED_AND_DELETED_ORDERS_OEOO_S` — 16 cols, 302 rows
+  - `imported_and_deleted_orders_oeoo_s_backup` — 16 cols, 2602 rows
+  - `imported_and_deleted_orders_orders` — 8 cols, 246257 rows
+  - `imported_and_deleted_orders_shipto` — 25 cols, 29842 rows
+  - `IMPORTED_AND_DELETED_ORDERS_TRANSFER_OEOO_1` — 49 cols, 29873 rows
+  - `IMPORTED_AND_DELETED_ORDERS_TRANSFER_OEOO_2` — 90 cols, 29873 rows
+  - `IMPORTED_AND_DELETED_ORDERS_TRANSFER_OEOO_P` — 83 cols, 38297 rows
+  - `IMPORTED_AND_DELETED_ORDERS_TRANSFER_OEOO_S` — 16 cols, 302 rows
+  - `imported_and_deleted_orders_transfer_shipto` — 25 cols, 29842 rows
+  - `invoice_profiles` — 6 cols, 104084 rows
+  - `invoices` — 21 cols, 49696 rows
+  - `LastClosing` — 1 cols, 1 rows
+  - `lines` — 23 cols, 217105 rows
+  - `NYCZips` — 1 cols, 337 rows
+  - `philiZips` — 1 cols, 87 rows
+  - `R_ARAR` — 14 cols, 1710607 rows
+  - `R_ARRC` — 4 cols, 1162855 rows
+  - `R_ICI1` — 5 cols, 113203 rows
+  - `R_ICSD` — 2 cols, 113203 rows
+  - `R_ICWM` — 9 cols, 116334 rows
+  - `R_INID_2` — 8 cols, 1046862 rows
+  - `R_INID_3` — 4 cols, 118583 rows
+  - `R_INID_L` — 3 cols, 6000279 rows
+  - `R_INIDP` — 23 cols, 4834820 rows
+  - `R_INIH` — 21 cols, 1743139 rows
+  - `R_INIHP` — 14 cols, 1863362 rows
+  - `R_INSH` — 8 cols, 235509 rows
+  - `R_POPH` — 22 cols, 298369 rows
+  - `R_POPI` — 8 cols, 145508 rows
+  - `R_POS` — 10 cols, 3496 rows
+  - `R_SUCF` — 4 cols, 1167147 rows
+  - `R_SUCU` — 16 cols, 1167147 rows
+  - `R_SUSH` — 9 cols, 21005 rows
+  - `readme` — 2 cols, 1 rows
+  - `report_tables` — 2 cols, 40 rows
+  - `t_activelistings` — 7 cols, 9382 rows
+  - `t_skutopf` — 3 cols, 1630 rows
+  - `temp_apih` — 32 cols, 91638 rows
+  - `temp_apihg` — 7 cols, 117945 rows
+  - `temp_apvf` — 26 cols, 3417 rows
+  - `temp_debug_log` — 1 cols, 215 rows
+  - `temp_ici1` — 109 cols, 42809 rows
+  - `temp_pooo1` — 30 cols, 1882 rows
+  - `temp_wofp` — 4 cols, 1053 rows
+  - `temp_wofpd` — 8 cols, 12255 rows
+  - `winsol_table_import_log` — 7 cols, 22 rows

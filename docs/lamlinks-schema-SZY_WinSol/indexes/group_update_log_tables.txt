@@ -1,0 +1,1 @@
+pk_group_update_log_tables_report_name_table_name [PK]: (group_name, table_name) CLUSTERED

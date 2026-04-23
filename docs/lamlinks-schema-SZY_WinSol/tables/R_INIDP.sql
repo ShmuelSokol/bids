@@ -1,0 +1,27 @@
+-- dbo.R_INIDP  (4834820 rows)
+CREATE TABLE dbo.R_INIDP (
+  INVOICE              char(7) NOT NULL,
+  LINE                 char(3) NOT NULL,
+  PRODCT               varchar(20),
+  PERVAL               numeric(4,0),
+  TAT                  char(3),
+  PER                  varchar(4),
+  LISPRI               numeric(8,2),
+  OPENQTY              numeric(8,2),
+  ORDQTY               numeric(9,2),
+  INVQTY               numeric(9,2),
+  SHIQTY               numeric(9,2),
+  BOQTY                numeric(9,2),
+  CANQTY               numeric(9,2),
+  UNICST               numeric(10,4),
+  LINEXT               numeric(10,2),
+  SKU                  varchar(4),
+  WGHTCST              numeric(10,4),
+  PRODCTDES            varchar(35),
+  SASALES              numeric(13,2),
+  Z_SELCOD             varchar(4),
+  Z_SELRAT             numeric(4,0),
+  Z_SELQTY             numeric(9,2),
+  Z_SELPRI             numeric(8,2),
+  PRIMARY KEY (INVOICE, LINE)
+);

@@ -1,0 +1,1 @@
+pk_ar_analysis_rev1 [PK]: (month_ending, CUSTMR, INVOICE) CLUSTERED

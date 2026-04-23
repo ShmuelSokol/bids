@@ -1,0 +1,1 @@
+pk__dates_profiles__invcdat_profile [PK]: (invcdat, profile) CLUSTERED
