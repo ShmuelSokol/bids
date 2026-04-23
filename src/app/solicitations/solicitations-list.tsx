@@ -21,6 +21,7 @@ import { calculateBidScore, type BidScore } from "@/lib/bid-score";
 import { formatDateShort, formatDateTime, formatTime } from "@/lib/dates";
 import { isOpenSolicitation } from "@/lib/solicitation-filters";
 import { NsnHistoryDetail } from "@/components/nsn-history-detail";
+import { LlPidPopover } from "@/components/ll-pid-popover";
 import { SourceTip } from "@/components/source-tip";
 import { SourcingModal } from "./sourcing-modal";
 import { fscLabel } from "@/lib/fsc-names";
@@ -1467,6 +1468,7 @@ export function SolicitationsList({
                           <div>
                             <div className="flex items-center gap-1 flex-wrap">
                               <SourceTip source="LamLinks k08_tab.fsc_k08 + niin_k08. Matched to AX via ProductBarcodesV3."><span className="font-mono text-xs text-accent">{s.nsn}</span></SourceTip>
+                              <LlPidPopover nsn={s.nsn} compact />
                               {s.bid_status && (
                                 <span className={`text-[10px] px-1 rounded ${
                                   s.bid_status === "quoted" ? "bg-blue-100 text-blue-700" :
