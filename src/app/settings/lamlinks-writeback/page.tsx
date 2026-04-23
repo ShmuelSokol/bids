@@ -77,7 +77,16 @@ export default async function LamLinksWritebackSettingsPage() {
       </div>
 
       <div className="rounded-xl border border-card-border bg-card-bg p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-3">Write Queue</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Write Queue</h2>
+          <a
+            href="/settings/lamlinks-writeback/queue"
+            className="text-xs inline-flex items-center gap-1 rounded border border-accent text-accent px-2 py-1 hover:bg-accent/5"
+            title="Auto-refreshing queue with status filters + worker health"
+          >
+            Open live monitor →
+          </a>
+        </div>
         <div className="flex gap-4 text-sm mb-4">
           <div>
             <div className="text-xs text-muted">Pending</div>
