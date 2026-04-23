@@ -30,14 +30,20 @@ const config = {
 const SESSION_NAME = "dibs_ll_trace";
 const DEFAULT_HOST = "COOKIE";
 
-async function startSession(host: string) {
+async function startSession(host: string, fileMode: boolean) {
   const pool = await sql.connect(config);
   // Drop any previous session with this name (ignore errors)
   try {
     await pool.request().query(`IF EXISTS (SELECT * FROM sys.server_event_sessions WHERE name = '${SESSION_NAME}')
       DROP EVENT SESSION [${SESSION_NAME}] ON SERVER`);
   } catch {}
-  // Create the session — filter by client_hostname so we only see this box's traffic
+  // Target: ring buffer for short interactive traces, event_file for long
+  // (multi-hour) captures where we don't want events evicted. File lives
+  // on SQL Server's LOG directory and rolls at 200 MB.
+  const target = fileMode
+    ? `ADD TARGET package0.event_file(SET filename = N'D:\\MSSQL11.MSSQLSERVER\\MSSQL\\LOG\\${SESSION_NAME}.xel',
+        max_file_size = 200, max_rollover_files = 10)`
+    : `ADD TARGET package0.ring_buffer(SET max_memory = 16384, max_events_limit = 20000)`;
   await pool.request().query(`
     CREATE EVENT SESSION [${SESSION_NAME}] ON SERVER
     ADD EVENT sqlserver.sql_batch_completed(
@@ -52,13 +58,14 @@ async function startSession(host: string) {
       ACTION (sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.session_id, sqlserver.username, sqlserver.database_name)
       WHERE sqlserver.client_hostname = N'${host}'
     )
-    ADD TARGET package0.ring_buffer(SET max_memory = 8192, max_events_limit = 5000)
-    WITH (MAX_MEMORY = 8192 KB, EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS,
+    ${target}
+    WITH (MAX_MEMORY = 16384 KB, EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS,
           MAX_DISPATCH_LATENCY = 3 SECONDS, TRACK_CAUSALITY = ON)
   `);
   await pool.request().query(`ALTER EVENT SESSION [${SESSION_NAME}] ON SERVER STATE = START`);
   await pool.close();
   console.log(`✅ XE session started — filtering by client_hostname='${host}'`);
+  console.log(`   Target: ${fileMode ? "event_file (persistent, unlimited)" : "ring_buffer (20K events, in-memory)"}`);
   console.log(`   Have Abe perform the action you want to trace, then:`);
   console.log(`     npx tsx scripts/trace-ll-client.ts read`);
   console.log(`   When done:`);
@@ -67,18 +74,32 @@ async function startSession(host: string) {
 
 async function readEvents(max: number) {
   const pool = await sql.connect(config);
+  // Detect which target this session is using and read from the right place.
   const r = await pool.request().query(`
-    SELECT CAST(t.target_data AS XML) AS xml_data
+    SELECT t.target_name, CAST(t.target_data AS XML) AS xml_data
     FROM sys.dm_xe_sessions s
     JOIN sys.dm_xe_session_targets t ON t.event_session_address = s.address
-    WHERE s.name = '${SESSION_NAME}' AND t.target_name = 'ring_buffer'
+    WHERE s.name = '${SESSION_NAME}'
   `);
   if (r.recordset.length === 0) {
     console.log(`Session '${SESSION_NAME}' not found. Start it first.`);
     await pool.close();
     return;
   }
-  const xml = r.recordset[0].xml_data as string;
+  let xml: string;
+  if (r.recordset[0].target_name === "event_file") {
+    // File-based session — shred the .xel file(s)
+    const f = await pool.request().query(`
+      SELECT TOP ${Math.max(1, max)} CAST(event_data AS XML) AS xd
+      FROM sys.fn_xe_file_target_read_file(
+        'D:\\MSSQL11.MSSQLSERVER\\MSSQL\\LOG\\${SESSION_NAME}*.xel', NULL, NULL, NULL
+      )
+      ORDER BY timestamp_utc DESC
+    `);
+    xml = "<events>" + f.recordset.map((row: any) => row.xd).join("") + "</events>";
+  } else {
+    xml = r.recordset[0].xml_data as string;
+  }
   // Parse events inline via a second query (uses SQL Server's XML shredding).
   const events = await pool.request()
     .input("xml", sql.NVarChar, xml)
@@ -141,20 +162,37 @@ async function oneShot(host: string, seconds: number) {
 async function main() {
   const cmd = process.argv[2];
   try {
+    const fileMode = process.argv.includes("--file");
     if (cmd === "start") {
-      await startSession(process.argv[3] || DEFAULT_HOST);
+      // First positional arg (skipping --file) is the host
+      const host = process.argv.slice(3).find((a) => !a.startsWith("--")) || DEFAULT_HOST;
+      await startSession(host, fileMode);
     } else if (cmd === "read") {
-      await readEvents(Number(process.argv[3]) || 200);
+      await readEvents(Number(process.argv.slice(3).find((a) => !a.startsWith("--"))) || 200);
     } else if (cmd === "stop") {
       await stopSession();
     } else if (cmd === "one-shot") {
-      await oneShot(process.argv[3] || DEFAULT_HOST, Number(process.argv[4]) || 60);
+      const pos = process.argv.slice(3).filter((a) => !a.startsWith("--"));
+      await oneShot(pos[0] || DEFAULT_HOST, Number(pos[1]) || 60);
     } else {
-      console.error(`Usage: trace-ll-client.ts {start|read|stop|one-shot} [args]`);
-      console.error(`  start [host]        # default host=COOKIE`);
-      console.error(`  read [max]          # default 200`);
-      console.error(`  stop                # cleanup`);
-      console.error(`  one-shot [host] [secs]  # start, wait secs, read+stop`);
+      console.error(`Usage: trace-ll-client.ts {start|read|stop|one-shot} [args] [--file]`);
+      console.error(`  start [host] [--file]       # begin capture (ring buffer default; --file for multi-hour persistent)`);
+      console.error(`  read [max]                  # default 200 most recent events`);
+      console.error(`  stop                        # cleanup`);
+      console.error(`  one-shot [host] [secs]      # start, wait, read+stop`);
+      console.error(``);
+      console.error(`Examples:`);
+      console.error(`  # short ad-hoc capture`);
+      console.error(`  npx tsx scripts/trace-ll-client.ts start COOKIE`);
+      console.error(`  # have Abe do stuff`);
+      console.error(`  npx tsx scripts/trace-ll-client.ts read`);
+      console.error(`  npx tsx scripts/trace-ll-client.ts stop`);
+      console.error(``);
+      console.error(`  # full-day capture to disk`);
+      console.error(`  npx tsx scripts/trace-ll-client.ts start COOKIE --file`);
+      console.error(`  # ... next morning:`);
+      console.error(`  npx tsx scripts/trace-ll-client.ts read 5000`);
+      console.error(`  npx tsx scripts/trace-ll-client.ts stop`);
       process.exit(1);
     }
   } catch (e: any) {
