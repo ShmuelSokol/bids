@@ -51,7 +51,7 @@ async function main() {
 
   console.log(`\n=== Sally Credentials rows (per-user, secrets redacted) ===`);
   // Try both likely memo column names (anunte_kah is the conventional "any note" field)
-  const memoColCandidates = ["anunte_kah", "genxml_kah", "note_kah", "xml_kah"];
+  const memoColCandidates = ["a_note_kah", "anunte_kah", "genxml_kah", "note_kah", "xml_kah"];
   const available = new Set(cols.recordset.map((c: any) => c.COLUMN_NAME.toLowerCase()));
   const memoCol = memoColCandidates.find((c) => available.has(c));
   if (!memoCol) {
@@ -96,6 +96,36 @@ async function main() {
             `${r.uptime_kah?.toISOString?.() ?? r.uptime_kah}  ` +
             `${String(r.memo_bytes).padStart(4)}   ${r.has_private_key}     ${r.has_public_key}    "${r.api_key_prefix}"`
         );
+      }
+
+      console.log(`\n=== Tag structure probe (values redacted) ===`);
+      const probe = await pool
+        .request()
+        .input("user", sql.VarChar, "ajoseph")
+        .query(`
+          SELECT
+            k14.u_name_k14 AS login,
+            CAST(SUBSTRING(CAST(kah.${memoCol} AS nvarchar(max)), 1, 200) AS varchar(200)) AS first_200_bytes,
+            DATALENGTH(kah.${memoCol}) AS total_bytes,
+            LEN(LTRIM(RTRIM(CAST(kah.${memoCol} AS nvarchar(max))))) AS trimmed_len
+          FROM kah_tab kah
+          JOIN k14_tab k14 ON k14.idnk14_k14 = kah.idnanu_kah
+          WHERE kah.anutbl_kah = 'k14'
+            AND kah.anutyp_kah = 'Sally Credentials'
+            AND k14.u_name_k14 = @user
+        `);
+      for (const r of probe.recordset) {
+        // Redact anything that looks like an API-key-ish (27-char alphanumeric) or long base64-ish string
+        const redacted = String(r.first_200_bytes ?? "")
+          .replace(/[A-Za-z0-9+/=_-]{20,}/g, "<REDACTED_KEY>")
+          .replace(/>[^<]{8,}</g, ">…<"); // shrink long tag contents
+        console.log(`  ${r.login}: ${r.total_bytes} bytes total, ${r.trimmed_len} after trim`);
+        console.log(`    structure: ${redacted || "(empty)"}`);
+        // Also show unique XML tag names present
+        const tags = [...String(r.first_200_bytes ?? "").matchAll(/<(\/?)([A-Za-z_][A-Za-z0-9_]*)\b/g)]
+          .map((m) => m[2])
+          .filter((v, i, a) => a.indexOf(v) === i);
+        console.log(`    tags found: ${tags.length === 0 ? "(none — not XML)" : tags.join(", ")}`);
       }
       console.log(`\n  Prefix legend (from llprun.exe #DEFINE sally_api_key_prefix_*):`);
       console.log(`    K9p = LamLinks Corp    t0H = Theo    Tg4 = temp/bootstrap    7Lx = LamLinks Client`);
