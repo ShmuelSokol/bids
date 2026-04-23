@@ -63,6 +63,24 @@ const TASKS: Task[] = [
   // fires a WhatsApp alert if either goes bad during work hours. Debounced
   // to 30 min to avoid spam.
   { script: "check-worker-health-alert", mode: "periodic", intervalMs: 5 * 60_000, skipInitialRun: true },
+
+  // LL EDI transmissions — kbr_tab → ll_edi_transmissions. Abe ships many
+  // times a day; the /shipping page's WAWF pills + stale-810 alerts only
+  // refresh as fast as this sync. 5 min keeps them near-real-time. 14-day
+  // window is enough to catch status changes on any recent transmission.
+  { script: "sync-ll-edi-transmissions", args: ["--days", "14"], mode: "periodic", intervalMs: 5 * 60_000, skipInitialRun: true },
+
+  // LL POD records — k89_tab → ll_pod_records. Currently empty for ERG
+  // (no non-DLA customer-PO flow) but kept in the rotation so we catch
+  // the day that changes. Cheap query, 30 min is fine.
+  { script: "sync-ll-pod-records", args: ["--days", "30"], mode: "periodic", intervalMs: 30 * 60_000, skipInitialRun: true },
+
+  // LL item PIDs — kah_tab → ll_item_pids. Per-NSN Procurement Item
+  // Description + Packaging Requirements. Expensive query (scans 170K
+  // kah rows). Runs every 4 hours with a 1-year window — captures new
+  // awards' PIDs without hammering LL SQL. Full 3-year backfill is a
+  // manual `npx tsx scripts/sync-ll-item-pids.ts --years 3` run.
+  { script: "sync-ll-item-pids", args: ["--years", "1"], mode: "periodic", intervalMs: 4 * 60 * 60_000, skipInitialRun: true },
 ];
 
 const LOG_DIR = "C:\\tmp\\dibs-logs";
