@@ -71,6 +71,7 @@ interface Solicitation {
   priority_code: string | null;
   posting_type: string | null;
   required_delivery_days: number | null;
+  lamlinks_estimated_value: number | null;
 }
 
 interface AwardHistory {
@@ -1605,14 +1606,23 @@ export function SolicitationsList({
                         </SourceTip>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-xs font-bold">
-                        <SourceTip source="DIBS computed: suggested × quantity">
+                        <SourceTip source="DIBS computed: suggested × quantity. Secondary line is LamLinks' own estval_k11 (their reference estimate).">
                         {potValue > 0 ? (
                           <>
                             ${potValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             {!s.is_sourceable && s.last_award_price && (
                               <div className="text-[9px] text-muted font-normal">est. from award</div>
                             )}
+                            {s.lamlinks_estimated_value != null && s.lamlinks_estimated_value > 0 && (
+                              <div className="text-[9px] text-muted font-normal" title="LamLinks k11_tab.estval_k11 — their internal reference estimate for this line">
+                                LL est: ${Number(s.lamlinks_estimated_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                            )}
                           </>
+                        ) : s.lamlinks_estimated_value != null && s.lamlinks_estimated_value > 0 ? (
+                          <div className="text-[10px] font-normal text-muted" title="LamLinks k11_tab.estval_k11">
+                            LL est: ${Number(s.lamlinks_estimated_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
                         ) : "—"}
                         </SourceTip>
                       </td>

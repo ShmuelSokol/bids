@@ -48,6 +48,7 @@ async function main() {
       k08.weight_k08   AS item_weight,
       k11.idnk11_k11   AS idnk11,             -- for k32 ship-to join in pass 2
       k11.solqty_k11   AS quantity,
+      k11.estval_k11   AS lamlinks_estimated_value,
       k11.closes_k11   AS line_close_date,
       k34.fobcod_k34   AS fob_code,
       k34.bidtyp_k34   AS bid_type,
@@ -169,6 +170,7 @@ async function main() {
       priority_code: r.priority_code?.trim() || null,
       posting_type: postingType,
       required_delivery_days: requiredDeliveryDays,
+      lamlinks_estimated_value: r.lamlinks_estimated_value != null ? Number(r.lamlinks_estimated_value) : null,
     });
   }
   console.log(`  Deduplicated: ${solicitations.length} unique solicitations`);
