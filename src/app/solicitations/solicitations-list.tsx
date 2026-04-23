@@ -1485,7 +1485,11 @@ export function SolicitationsList({
                                   {(s as any).nsn_match.confidence === "HIGH" ? "P/N" : "~P/N"}: {(s as any).nsn_match.matched_part_number || "?"} via {(s as any).nsn_match.matched_source || "?"}
                                 </span>
                               )}
-                              {(s as any).nsn_fuzzy_matches?.length > 0 && !(s as any).nsn_match && (
+                              {/* Fuzzy title match warning — only show when we have NO
+                                  authoritative source. If AX or Master DB already knows
+                                  this NSN (is_sourceable=true with source set), the
+                                  fuzzy match is noise from the title-similarity pass. */}
+                              {(s as any).nsn_fuzzy_matches?.length > 0 && !(s as any).nsn_match && !s.is_sourceable && (
                                 <span className="text-[9px] px-1 rounded font-medium bg-red-50 text-red-700 border border-red-200" title="Title similarity only — different NSN's item may share nomenclature. Do NOT use without verifying.">
                                   ⚠ TITLE-MATCH ONLY — VERIFY
                                 </span>
