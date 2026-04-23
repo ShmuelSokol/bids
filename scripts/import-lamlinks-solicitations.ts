@@ -35,19 +35,23 @@ async function main() {
       k10.isudte_k10   AS issue_date,
       k10.closes_k10   AS return_by_date,
       k10.saside_k10   AS set_aside,
+      k10.sol_ti_k10   AS posting_type,      -- T auto / Q manual
+      k10.b_name_k10   AS buyer_name,
+      k10.buyeml_k10   AS buyer_email,
+      k10.b_phon_k10   AS buyer_phone,
+      k10.cntpri_k10   AS priority_code,
       k08.fsc_k08      AS fsc,
       k08.niin_k08     AS niin,
       k08.p_desc_k08   AS nomenclature,
       k08.partno_k08   AS part_number,
       k08.p_cage_k08   AS mfr_cage,
       k08.weight_k08   AS item_weight,
+      k11.idnk11_k11   AS idnk11,             -- for k32 ship-to join in pass 2
       k11.solqty_k11   AS quantity,
       k11.closes_k11   AS line_close_date,
       k34.fobcod_k34   AS fob_code,
       k34.bidtyp_k34   AS bid_type,
-      -- File-reference batch metadata. k11 rows are grouped under a k09
-      -- "notice" envelope keyed by idnk09_k11. Abe works through these
-      -- batches one at a time ("today's 8916-156-1626 with 642 lines").
+      -- File-reference batch metadata.
       k09.ref_no_k09   AS file_reference,
       k09.refdte_k09   AS file_reference_date,
       k09.ourref_k09   AS internal_edi_reference
@@ -66,6 +70,33 @@ async function main() {
 
   const rawSols = solResult.recordset;
   console.log(`  Found ${rawSols.length} raw line items`);
+
+  // Pull k32 ship-to rows for every k11 we just loaded — one query batched
+  // by IN-list chunks of 500. Each k32 row is one destination+qty+delivery.
+  console.log("\nPulling ship-to locations (k32_tab)...");
+  const shipToByK11 = new Map<number, any[]>();
+  const idnk11List = [...new Set(rawSols.map((r: any) => r.idnk11).filter(Boolean))] as number[];
+  for (let i = 0; i < idnk11List.length; i += 500) {
+    const batch = idnk11List.slice(i, i + 500);
+    const placeholders = batch.map((_, j) => `@k${j}`).join(",");
+    const req = pool.request();
+    batch.forEach((id, j) => req.input(`k${j}`, sql.Int, id));
+    const q = await req.query(`
+      SELECT idnk11_k32, itemno_k32, shptol_k32, qty_k32, dlydte_k32
+      FROM k32_tab WHERE idnk11_k32 IN (${placeholders})
+    `);
+    for (const r of q.recordset) {
+      const k11 = r.idnk11_k32;
+      if (!shipToByK11.has(k11)) shipToByK11.set(k11, []);
+      shipToByK11.get(k11)!.push({
+        clin: String(r.itemno_k32 || "").trim() || null,
+        destination: String(r.shptol_k32 || "").trim() || null,
+        qty: Number(r.qty_k32) || 0,
+        delivery_date: r.dlydte_k32 ? new Date(r.dlydte_k32).toISOString().slice(0, 10) : null,
+      });
+    }
+  }
+  console.log(`  ${shipToByK11.size.toLocaleString()} k11 rows with ship-to, ${[...shipToByK11.values()].reduce((s, v) => s + v.length, 0).toLocaleString()} total destinations`);
 
   // 2. Deduplicate by solicitation_number + NSN
   const seen = new Set<string>();
@@ -92,6 +123,30 @@ async function main() {
       return dt.toISOString().slice(0, 10);
     };
 
+    // Ship-to locations for this k11 (empty array when there are none —
+    // we still store `[]` so the UI doesn't confuse "not imported yet" with
+    // "has no destinations").
+    const ship = shipToByK11.get(r.idnk11) || [];
+
+    // Required delivery days: minimum delivery date across destinations,
+    // measured from solicitation issue date. Per-destination dates differ
+    // (some military sites want rush; others have 90-day windows), so we
+    // use the earliest as "what's the tightest commitment we need to meet
+    // if we win." Abe can override per bid.
+    let requiredDeliveryDays: number | null = null;
+    if (ship.length > 0 && r.issue_date) {
+      const issueMs = new Date(r.issue_date).getTime();
+      const earliest = ship
+        .map((s: any) => s.delivery_date ? new Date(s.delivery_date).getTime() : null)
+        .filter((t: any) => t !== null) as number[];
+      if (earliest.length > 0) {
+        const minMs = Math.min(...earliest);
+        requiredDeliveryDays = Math.max(1, Math.round((minMs - issueMs) / 86400000));
+      }
+    }
+
+    const postingType = String(r.posting_type || "").trim().toUpperCase().charAt(0) || null;
+
     solicitations.push({
       solicitation_number: r.solicitation_number.trim(),
       nsn,
@@ -107,6 +162,13 @@ async function main() {
       file_reference: r.file_reference?.trim() || null,
       file_reference_date: isoDate(r.file_reference_date),
       internal_edi_reference: r.internal_edi_reference?.trim() || null,
+      ship_to_locations: ship,
+      buyer_name: r.buyer_name?.trim() || null,
+      buyer_email: r.buyer_email?.trim() || null,
+      buyer_phone: r.buyer_phone?.trim() || null,
+      priority_code: r.priority_code?.trim() || null,
+      posting_type: postingType,
+      required_delivery_days: requiredDeliveryDays,
     });
   }
   console.log(`  Deduplicated: ${solicitations.length} unique solicitations`);

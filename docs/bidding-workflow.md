@@ -48,6 +48,16 @@ The join is `k11_tab.idnk09_k11 → k09_tab.idnk09_k09` (per-line-item, NOT per-
 
 Clicking a row in the grid sets a scope filter: match-confidence cards (AX / Potential / Non-Sourced) and every filter below rescope to just that batch. A chip next to the grid title lets Abe drop the scope. He can collapse the grid once he's picked a batch to keep the page tidy while he works through it.
 
+### Ship-to, buyer, posting type, delivery days
+
+LamLinks `k32_tab` holds one row per ship-to destination under each `k11` line: `itemno_k32` (CLIN), `shptol_k32` (full address), `qty_k32`, `dlydte_k32` (delivery date per destination). A single (sol, NSN) can have multiple k32 rows — example: `SPE8E5-26-Q-0175 / 4240-01-292-2816` has 2 destinations. Import pulls them into `dibbs_solicitations.ship_to_locations` (JSONB array).
+
+`k10_tab` adds buyer metadata imported into the solicitation row: `buyer_name` (`b_name_k10`), `buyer_email` (`buyeml_k10`), `buyer_phone` (`b_phon_k10`), `priority_code` (`cntpri_k10`, e.g. `DO-C9`), and `posting_type` — the single-character `sol_ti_k10` field that is **`Q` for manual buyer postings** and **`T` for DIBBS auto-generated**.
+
+`required_delivery_days` is derived on import as the earliest `dlydte_k32` minus `isudte_k10` (in days). That value feeds the pricing engine: `src/lib/pricing.ts` now sets `leadTimeDays = required_delivery_days ?? 50` for every strategy branch, so the suggested bid matches what the buyer asked for. Abe's rule: **match it exactly — don't beat it, don't undercut it, don't default to 50**. Bidding 50 on a 15-day Q is an instant loss.
+
+UI surface on each row: pills in the main row cluster show `Q · manual` (rose) or `T · auto` (slate), `👤 Buyer Name`, `📅 deliver in Nd`, and `N ship-tos` when >1. The row-expand panel shows a two-column buyer/ship-to block above the AX vendor parts: buyer card on the left (name, email, phone, priority code, required delivery window) and a ship-to table on the right (CLIN / Destination / Qty / Deliver-by date).
+
 The sourceable pile is visually split into **three match-confidence buckets** at the top of the page (large cards):
 
 | Card | Filter predicate | Meaning |

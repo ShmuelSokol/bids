@@ -63,6 +63,13 @@ interface Solicitation {
   file_reference: string | null;
   file_reference_date: string | null;
   internal_edi_reference: string | null;
+  ship_to_locations: { clin: string | null; destination: string | null; qty: number; delivery_date: string | null }[] | null;
+  buyer_name: string | null;
+  buyer_email: string | null;
+  buyer_phone: string | null;
+  priority_code: string | null;
+  posting_type: string | null;
+  required_delivery_days: number | null;
 }
 
 interface AwardHistory {
@@ -1465,6 +1472,34 @@ export function SolicitationsList({
                             </div>
                             <div className="text-xs truncate max-w-[180px]"><SourceTip source="LamLinks k08_tab.p_desc_k08">{s.nomenclature || "—"}</SourceTip></div>
                             <div className="flex flex-wrap gap-0.5 mt-0.5">
+                              {/* Posting type (Q manual / T auto) — Q means a named buyer
+                                  drafted the sol, which changes Abe's approach (match their
+                                  requested delivery days exactly, look at buyer name). */}
+                              {s.posting_type === "Q" && (
+                                <SourceTip source="LamLinks k10_tab.sol_ti_k10 — 'Q' = manual buyer posting (look at buyer name + delivery days)">
+                                  <span className="text-[9px] px-1 rounded bg-rose-100 text-rose-800 font-semibold border border-rose-200">Q · manual</span>
+                                </SourceTip>
+                              )}
+                              {s.posting_type === "T" && (
+                                <SourceTip source="LamLinks k10_tab.sol_ti_k10 — 'T' = DIBBS auto-generated">
+                                  <span className="text-[9px] px-1 rounded bg-slate-100 text-slate-700">T · auto</span>
+                                </SourceTip>
+                              )}
+                              {s.buyer_name && (
+                                <SourceTip source="LamLinks k10_tab.b_name_k10 — DLA buyer who drafted this sol">
+                                  <span className="text-[9px] px-1 rounded bg-indigo-50 text-indigo-800">👤 {s.buyer_name.split(" ").slice(0, 2).join(" ")}</span>
+                                </SourceTip>
+                              )}
+                              {(s.required_delivery_days ?? 0) > 0 && (
+                                <SourceTip source="Derived: earliest k32_tab.dlydte_k32 minus k10_tab.isudte_k10. Suggested bid lead time matches this.">
+                                  <span className="text-[9px] px-1 rounded bg-emerald-50 text-emerald-800 font-medium">📅 deliver in {s.required_delivery_days}d</span>
+                                </SourceTip>
+                              )}
+                              {(s.ship_to_locations?.length ?? 0) > 1 && (
+                                <SourceTip source="LamLinks k32_tab — number of distinct ship-to destinations on this line">
+                                  <span className="text-[9px] px-1 rounded bg-blue-50 text-blue-700">{s.ship_to_locations!.length} ship-tos</span>
+                                </SourceTip>
+                              )}
                               {s.already_bid && (
                                 <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 font-medium">
                                   Already Bid{s.last_bid_price ? ` @$${s.last_bid_price.toFixed(2)}` : ""}{s.last_bid_date ? ` ${formatDateShort(s.last_bid_date)}` : ""}
@@ -1809,6 +1844,75 @@ export function SolicitationsList({
                                 </div>
                               </div>
                             </div>
+
+                            {/* Ship-to + buyer (from k32 + k10). Shown BEFORE AX vendor
+                                parts because Abe checks destinations first before deciding
+                                to quote — FOB and delivery window can kill a bid. */}
+                            {((s.ship_to_locations?.length ?? 0) > 0 || s.buyer_name || s.priority_code) && (
+                              <div className="mb-3 rounded-lg border border-card-border bg-gray-50/50 p-3">
+                                <div className="grid md:grid-cols-2 gap-3">
+                                  {/* Buyer block */}
+                                  {(s.buyer_name || s.priority_code) && (
+                                    <div className="text-xs">
+                                      <div className="text-[10px] font-bold text-muted mb-1">Buyer (LamLinks k10)</div>
+                                      {s.buyer_name && (
+                                        <div>
+                                          👤 <span className="font-medium">{s.buyer_name}</span>
+                                        </div>
+                                      )}
+                                      {s.buyer_email && (
+                                        <div className="text-[11px] text-muted">
+                                          <a href={`mailto:${s.buyer_email}`} className="hover:underline">{s.buyer_email}</a>
+                                          {s.buyer_phone && <span> · {s.buyer_phone}</span>}
+                                        </div>
+                                      )}
+                                      {s.priority_code && (
+                                        <div className="text-[11px] text-muted mt-1">
+                                          Priority: <span className="font-mono font-medium">{s.priority_code}</span>
+                                        </div>
+                                      )}
+                                      {s.required_delivery_days && (
+                                        <div className="text-[11px] mt-1 inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-900 px-1.5 py-0.5 font-medium">
+                                          📅 Buyer wants delivery in {s.required_delivery_days}d — suggested lead time will match
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {/* Ship-to block */}
+                                  {(s.ship_to_locations?.length ?? 0) > 0 && (
+                                    <div className="text-xs">
+                                      <div className="text-[10px] font-bold text-muted mb-1">
+                                        Ship-to ({s.ship_to_locations!.length}) — LamLinks k32
+                                      </div>
+                                      <div className="rounded border border-card-border bg-white overflow-hidden">
+                                        <table className="w-full text-[11px]">
+                                          <thead className="bg-gray-50 text-muted">
+                                            <tr>
+                                              <th className="px-2 py-1 text-left">CLIN</th>
+                                              <th className="px-2 py-1 text-left">Destination</th>
+                                              <th className="px-2 py-1 text-right">Qty</th>
+                                              <th className="px-2 py-1 text-left">Deliver by</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {s.ship_to_locations!.map((loc, i) => (
+                                              <tr key={i} className="border-t border-card-border/60">
+                                                <td className="px-2 py-1 font-mono">{loc.clin || "—"}</td>
+                                                <td className="px-2 py-1 truncate max-w-[260px]" title={loc.destination || ""}>
+                                                  {loc.destination || "—"}
+                                                </td>
+                                                <td className="px-2 py-1 text-right font-mono">{loc.qty?.toLocaleString() || "—"}</td>
+                                                <td className="px-2 py-1 text-muted">{loc.delivery_date || "—"}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
 
                             {/* Item Spec + AX Vendor Parts + Part Number Matches (from lazy-loaded data) */}
                             {(() => {

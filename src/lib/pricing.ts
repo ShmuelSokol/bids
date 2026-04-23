@@ -53,6 +53,11 @@ interface PricingInput {
   history: BidHistoryRecord[];
   ourCageCode?: string;
   shipToZip?: string | null;
+  // Buyer's required delivery window in days (from earliest k32 dlydte_k32
+  // minus issue date). When set, the suggested lead time matches it exactly
+  // — Abe's rule: for Q sols especially, match what the buyer asked for.
+  // Bidding 50 days on a 15-day Q is an instant loss.
+  requiredDeliveryDays?: number | null;
 }
 
 const OUR_CAGE_CODE = "0AG09";
@@ -71,8 +76,13 @@ export function calculatePricingSuggestion(input: PricingInput): PricingSuggesti
   const lastOurWin = ourWins[0];
   const lastOurLoss = ourLosses[0];
 
-  // Default lead time: 40-60 days (we deliver in 10-14, boosting rating)
-  let leadTimeDays = 50;
+  // Lead time default: match the buyer's requirement exactly when the
+  // solicitation specifies one (Abe's rule). If unknown, fall back to 50 —
+  // our historical sweet spot when no constraint is given (we actually
+  // deliver in 10-14, which boosts our rating over time).
+  let leadTimeDays = input.requiredDeliveryDays && input.requiredDeliveryDays > 0
+    ? input.requiredDeliveryDays
+    : 50;
 
   // If no cost data, we can't calculate much
   if (!ourCost || ourCost <= 0) {
@@ -105,7 +115,11 @@ export function calculatePricingSuggestion(input: PricingInput): PricingSuggesti
 
     return {
       suggestedPrice: price,
-      suggestedLeadTimeDays: 60, // more conservative for new items
+      // For new items we prefer a conservative 60-day lead time — UNLESS
+      // the solicitation mandates a tighter window, in which case honour it.
+      suggestedLeadTimeDays: input.requiredDeliveryDays && input.requiredDeliveryDays > 0
+        ? input.requiredDeliveryDays
+        : 60,
       strategy: "NEW_ITEM",
       rationale: `New item. ${vendorPricingType === "LIST" ? "LIST pricing (17%)" : "Standard 20% markup"}. ${quantity >= 20 ? "Quantity discount applied." : ""}`,
       marginPercent: Math.round((1 - totalCost / price) * 100),
