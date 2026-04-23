@@ -7,39 +7,10 @@ import { trackEvent, requestContext } from "@/lib/track";
  * Searches multiple ways, scrapes results, returns structured supplier data inline.
  */
 
-async function scrapeGoogle(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
-  try {
-    const resp = await fetch(
-      `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        signal: AbortSignal.timeout(10000),
-      }
-    );
-    if (!resp.ok) return [];
-    const html = await resp.text();
-    const results: { title: string; url: string; snippet: string }[] = [];
-    // Parse href="/url?q=..." links
-    const linkRegex = /href="\/url\?q=(https?[^&"]+)/g;
-    let m;
-    while ((m = linkRegex.exec(html)) !== null) {
-      const url = decodeURIComponent(m[1]);
-      if (url.includes("google.com") || url.includes("youtube.com") || url.includes("wikipedia.org")) continue;
-      // Find title near this link
-      const idx = m.index;
-      const nearby = html.substring(idx, idx + 500);
-      const titleMatch = nearby.match(/>([^<]{10,100})</);
-      const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
-      results.push({ title, url, snippet: "" });
-    }
-    return results.slice(0, 8);
-  } catch {
-    return [];
-  }
-}
+// Google scraping was dropped 2026-04-23 — Railway IPs are rate-limited,
+// this returned empty ~90% of the time and cost ~3s per click for nothing.
+// Operators now use the External Lookups chips at the bottom of the results
+// panel (DIBBS / NSNLookup / GSA / etc.) to reach the sites directly.
 
 async function nsnLookup(nsn: string): Promise<string[]> {
   try {
@@ -64,14 +35,8 @@ export async function GET(req: NextRequest) {
   const fscPart = nsn.split("-")[0];
   const niinPart = nsn.split("-").slice(1).join("-");
 
-  // Run ALL searches in parallel
-  const [search1, search2, search3, nsnSources, vendorPrices, pastAwards, masterDb] = await Promise.all([
-    // Search 1: wholesale/supplier search
-    scrapeGoogle(`"${cleanName}" wholesale supplier price`),
-    // Search 2: distributor/bulk search
-    scrapeGoogle(`"${cleanName}" distributor buy bulk`),
-    // Search 3: NSN-specific search
-    scrapeGoogle(`NSN ${nsn} supplier source`),
+  // Run ALL searches in parallel (Google scraping dropped 2026-04-23)
+  const [nsnSources, vendorPrices, pastAwards, masterDb] = await Promise.all([
     // NSN approved sources
     nsnLookup(nsn),
     // Our vendor prices
@@ -98,19 +63,9 @@ export async function GET(req: NextRequest) {
     })(),
   ]);
 
-  // Deduplicate web results by domain
-  const seen = new Set<string>();
+  // webResults kept as [] for schema compatibility with older UI code —
+  // Google scraping dropped; operators use the externalLookups chips instead.
   const webResults: { supplier: string; title: string; url: string; searchType: string }[] = [];
-  for (const [results, type] of [[search1, "wholesale"], [search2, "distributor"], [search3, "nsn"]] as const) {
-    for (const r of results) {
-      try {
-        const domain = new URL(r.url).hostname.replace("www.", "");
-        if (seen.has(domain)) continue;
-        seen.add(domain);
-        webResults.push({ supplier: domain, title: r.title.substring(0, 80), url: r.url, searchType: type as string });
-      } catch {}
-    }
-  }
 
   // Track supplier search
   const { ip, userAgent } = requestContext(req);
@@ -147,8 +102,8 @@ export async function GET(req: NextRequest) {
     pastWinners: pastAwards,
     masterDbMatches: masterDb,
     externalLookups,
-    searchCount: 3,
+    searchCount: 0,
     internalEmpty: (vendorPrices?.length ?? 0) === 0 && (pastAwards?.length ?? 0) === 0 && (masterDb?.length ?? 0) === 0,
-    webEmpty: webResults.length === 0,
+    webEmpty: true,
   });
 }

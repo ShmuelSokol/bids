@@ -1,0 +1,33 @@
+name: Daily reprice
+
+# Re-runs /api/dibbs/reprice every morning at 6am ET (10:00 UTC) so Abe's
+# sourceable list starts each day with the freshest suggested prices
+# (competitor undercuts, qty scale-downs, and recent-quote cluster medians
+# all applied). Endpoint is idempotent — safe to call on an empty queue.
+
+on:
+  schedule:
+    - cron: "0 10 * * *"  # 6 AM ET (UTC-4 during DST) / 5 AM EST (UTC-5)
+  workflow_dispatch:  # manual trigger for one-off runs
+
+jobs:
+  reprice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: POST /api/dibbs/reprice
+        run: |
+          set -e
+          echo "Triggering reprice..."
+          response=$(curl -sS -X POST \
+            "https://dibs-gov-production.up.railway.app/api/dibbs/reprice" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            --max-time 300)
+          echo "Response: $response"
+          # Fail the job if the response doesn't include "success":true
+          echo "$response" | grep -q '"success":true' || {
+            echo "Reprice did not return success=true"
+            exit 1
+          }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, MapPin, Upload, Database, Activity, Bug, Send, FileText, Users } from "lucide-react";
+import { Building2, MapPin, Upload, Database, Activity, Bug, Send, FileText, Users, AlertTriangle } from "lucide-react";
 import { isLamlinksWritebackLive, getSystemSetting } from "@/lib/system-settings";
 import { getCurrentUser } from "@/lib/supabase-server";
 
@@ -187,6 +187,21 @@ export default async function SettingsPage() {
               <span>Superadmin only</span>
               <span>Role promote/demote</span>
               <span>Live last-seen</span>
+            </div>
+          </Link>
+        )}
+
+        {/* LamLinks Ops (Superadmin Only) */}
+        {isSuperAdmin && (
+          <Link href="/ops/lamlinks" className="rounded-xl border-2 border-amber-200 bg-amber-50/30 shadow-sm p-6 hover:border-amber-400 transition-colors group">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold group-hover:text-amber-700">LamLinks Ops</h2>
+              <AlertTriangle className="h-5 w-5 text-amber-400 group-hover:text-amber-600" />
+            </div>
+            <p className="text-sm text-muted mb-3">Incident-response console: inspect / retire / mark-sent / move-lines on stuck quote envelopes.</p>
+            <div className="flex gap-4 text-xs text-muted">
+              <span>Superadmin only</span>
+              <span>Round-trips via Windows worker</span>
             </div>
           </Link>
         )}

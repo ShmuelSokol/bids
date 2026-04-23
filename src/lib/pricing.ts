@@ -58,6 +58,12 @@ interface PricingInput {
   // — Abe's rule: for Q sols especially, match what the buyer asked for.
   // Bidding 50 days on a 15-day Q is an instant loss.
   requiredDeliveryDays?: number | null;
+  // Multi-destination ship-to list. Each entry has a qty + destination/zip.
+  // When populated, estimateFreight sums per-destination freight across all
+  // CLINs instead of using a single shipToZip (which would only price the
+  // first destination). Critical for multi-location sols where the average
+  // ZIP hides expensive outliers (Hawaii, Alaska, Puerto Rico).
+  shipToLocations?: { qty: number; destination: string | null; delivery_date?: string | null }[] | null;
 }
 
 const OUR_CAGE_CODE = "0AG09";
@@ -97,11 +103,19 @@ export function calculatePricingSuggestion(input: PricingInput): PricingSuggesti
     };
   }
 
-  // Estimate freight for FOB Destination items
+  // Estimate freight for FOB Destination items. If the sol has multiple
+  // ship-to CLINs (common on DLA depot distributions), sum freight across
+  // each destination weighted by its qty. This catches Hawaii/Alaska/PR
+  // outliers that would otherwise quietly erode the margin.
   let freightEstimate = 0;
   if (fobTerms === "DESTINATION") {
-    freightEstimate = estimateFreight(quantity, input.shipToZip);
-    if (freightEstimate > 0) flags.push(`Freight est: $${freightEstimate.toFixed(2)}`);
+    if (input.shipToLocations && input.shipToLocations.length > 0) {
+      freightEstimate = estimateFreightMulti(input.shipToLocations);
+      if (freightEstimate > 0) flags.push(`Freight est: $${freightEstimate.toFixed(2)} across ${input.shipToLocations.length} dest`);
+    } else {
+      freightEstimate = estimateFreight(quantity, input.shipToZip);
+      if (freightEstimate > 0) flags.push(`Freight est: $${freightEstimate.toFixed(2)}`);
+    }
   }
 
   const totalCost = ourCost + (freightEstimate / Math.max(quantity, 1));
@@ -292,6 +306,30 @@ function estimateFreight(quantity: number, shipToZip?: string | null): number {
   const westCoastFactor = shipToZip && parseInt(shipToZip) >= 90000 && parseInt(shipToZip) < 96000 ? 1.3 : 1.0;
 
   return roundPrice((baseRate + perUnit * quantity) * hawaiiFactor * westCoastFactor);
+}
+
+/**
+ * Sum estimateFreight across every ship-to destination on a multi-CLIN
+ * solicitation. Each CLIN ships as its own parcel (separate base rate +
+ * per-unit), so a 4-CLIN sol pays 4 base rates. Extracts ZIPs from the
+ * free-text `destination` column (LL k32 stores the full address blob).
+ */
+function estimateFreightMulti(
+  locations: { qty: number; destination: string | null }[]
+): number {
+  let total = 0;
+  for (const loc of locations) {
+    const zip = extractZip(loc.destination);
+    total += estimateFreight(Math.max(1, loc.qty || 1), zip);
+  }
+  return roundPrice(total);
+}
+
+/** Pull a 5-digit ZIP out of a free-text destination string. */
+function extractZip(dest: string | null): string | null {
+  if (!dest) return null;
+  const m = dest.match(/\b(\d{5})(?:-\d{4})?\b/);
+  return m ? m[1] : null;
 }
 
 function roundPrice(price: number): number {

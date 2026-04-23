@@ -349,16 +349,173 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
   return { processed, failed, waiting };
 }
 
+// ─── Rescue action processor ─────────────────────────────────────────
+// Polled alongside the write queue. Executes actions enqueued by the
+// /ops/lamlinks UI against the LL DB (which only this worker can reach).
+
+type RescueAction = {
+  id: number;
+  action: string;
+  params: Record<string, any>;
+  requested_by: string;
+};
+
+async function processRescueActions(pool: sql.ConnectionPool, supabase: any): Promise<number> {
+  const { data: rows } = await supabase
+    .from("lamlinks_rescue_actions")
+    .select("id, action, params, requested_by")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(5);
+
+  let done = 0;
+  for (const row of rows || []) {
+    // Claim
+    const { data: claimed } = await supabase
+      .from("lamlinks_rescue_actions")
+      .update({ status: "claimed", picked_up_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .eq("status", "pending")
+      .select("id");
+    if (!claimed || claimed.length === 0) continue;
+
+    const dry = row.params?.dry_run === true;
+    try {
+      const result = await runRescueAction(pool, row as RescueAction, dry);
+      await supabase
+        .from("lamlinks_rescue_actions")
+        .update({ status: "done", result, processed_at: new Date().toISOString() })
+        .eq("id", row.id);
+      done++;
+      console.log(`  rescue #${row.id} ${row.action} done`);
+    } catch (e: any) {
+      await supabase
+        .from("lamlinks_rescue_actions")
+        .update({ status: "error", error: e.message || String(e), processed_at: new Date().toISOString() })
+        .eq("id", row.id);
+      console.error(`  rescue #${row.id} ${row.action} FAILED: ${e.message}`);
+    }
+  }
+  return done;
+}
+
+async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: boolean): Promise<any> {
+  switch (a.action) {
+    case "inspect": {
+      const idnk33 = Number(a.params.idnk33);
+      const env = await pool.request().input("id", sql.Int, idnk33).query("SELECT * FROM k33_tab WHERE idnk33_k33 = @id");
+      if (env.recordset.length === 0) throw new Error(`k33=${idnk33} not found`);
+      const k34 = await pool.request().input("id", sql.Int, idnk33).query("SELECT * FROM k34_tab WHERE idnk33_k34 = @id ORDER BY idnk34_k34");
+      const k34Ids = k34.recordset.map((r: any) => r.idnk34_k34);
+      let k35: any[] = [];
+      if (k34Ids.length > 0) {
+        const ph = k34Ids.map((_: any, i: number) => `@k${i}`).join(",");
+        const r = pool.request();
+        k34Ids.forEach((id: number, i: number) => r.input(`k${i}`, sql.Int, id));
+        const qr = await r.query(`SELECT * FROM k35_tab WHERE idnk34_k35 IN (${ph}) ORDER BY idnk35_k35`);
+        k35 = qr.recordset;
+      }
+      return { envelope: env.recordset[0], k34: k34.recordset, k35 };
+    }
+    case "list_staging": {
+      const user = a.params.user?.trim();
+      const r = pool.request();
+      let where = `WHERE RTRIM(o_stat_k33) = 'adding quotes'`;
+      if (user) { r.input("u", sql.VarChar, user); where += ` AND RTRIM(upname_k33) = @u`; }
+      const q = await r.query(`SELECT TOP 30 idnk33_k33, qotref_k33, o_stat_k33, itmcnt_k33, upname_k33, uptime_k33 FROM k33_tab ${where} ORDER BY uptime_k33 DESC`);
+      return { envelopes: q.recordset };
+    }
+    case "mark_sent": {
+      const idnk33 = Number(a.params.idnk33);
+      const env = await pool.request().input("id", sql.Int, idnk33).query("SELECT t_stat_k33, o_stat_k33, itmcnt_k33 FROM k33_tab WHERE idnk33_k33 = @id");
+      if (env.recordset.length === 0) throw new Error(`k33=${idnk33} not found`);
+      if (String(env.recordset[0].t_stat_k33 || "").trim() === "sent") return { noop: true, reason: "already sent" };
+      if (dry) return { would_update: { o_stat_k33: "quotes added", t_stat_k33: "sent", a_stat_k33: "acknowledged", s_stat_k33: "acknowledged" } };
+      await pool.request().input("id", sql.Int, idnk33).query(`
+        UPDATE k33_tab SET o_stat_k33='quotes added', t_stat_k33='sent', a_stat_k33='acknowledged', s_stat_k33='acknowledged', uptime_k33=GETDATE()
+        WHERE idnk33_k33 = @id
+      `);
+      return { updated: true };
+    }
+    case "retire": {
+      const idnk33 = Number(a.params.idnk33);
+      const env = await pool.request().input("id", sql.Int, idnk33).query("SELECT o_stat_k33, t_stat_k33 FROM k33_tab WHERE idnk33_k33 = @id");
+      if (env.recordset.length === 0) throw new Error(`k33=${idnk33} not found`);
+      if (String(env.recordset[0].t_stat_k33 || "").trim() === "sent") throw new Error("t_stat='sent' — refusing to touch real post");
+      if (String(env.recordset[0].o_stat_k33 || "").trim() === "quotes added") return { noop: true, reason: "already quotes added" };
+      if (dry) return { would_update: { o_stat_k33: "quotes added", s_stat_k33: "quotes added" } };
+      await pool.request().input("id", sql.Int, idnk33).query(`UPDATE k33_tab SET o_stat_k33='quotes added', s_stat_k33='quotes added', uptime_k33=GETDATE() WHERE idnk33_k33 = @id`);
+      return { updated: true };
+    }
+    case "remove_k34": {
+      const idnk34 = Number(a.params.idnk34);
+      const row = await pool.request().input("id", sql.Int, idnk34).query("SELECT k34.idnk33_k34, k33.o_stat_k33 FROM k34_tab k34 JOIN k33_tab k33 ON k33.idnk33_k33 = k34.idnk33_k34 WHERE k34.idnk34_k34 = @id");
+      if (row.recordset.length === 0) throw new Error(`k34=${idnk34} not found`);
+      if (String(row.recordset[0].o_stat_k33 || "").trim() !== "adding quotes") throw new Error("envelope not in 'adding quotes'");
+      const k35count = await pool.request().input("id", sql.Int, idnk34).query("SELECT COUNT(*) AS c FROM k35_tab WHERE idnk34_k35 = @id");
+      if (dry) return { would_delete_k35: k35count.recordset[0].c, would_delete_k34: 1, would_decrement_k33: row.recordset[0].idnk33_k34 };
+      const tx = new sql.Transaction(pool);
+      await tx.begin();
+      try {
+        await new sql.Request(tx).input("id", sql.Int, idnk34).query("DELETE FROM k35_tab WHERE idnk34_k35 = @id");
+        await new sql.Request(tx).input("id", sql.Int, idnk34).query("DELETE FROM k34_tab WHERE idnk34_k34 = @id");
+        await new sql.Request(tx).input("id", sql.Int, row.recordset[0].idnk33_k34).query("UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 - 1, uptime_k33 = GETDATE() WHERE idnk33_k33 = @id");
+        await tx.commit();
+      } catch (e) { try { await tx.rollback(); } catch {} throw e; }
+      return { deleted: true };
+    }
+    case "move_k34": {
+      const from = Number(a.params.from_idnk33);
+      const to = Number(a.params.to_idnk33);
+      const ids: number[] = (a.params.k34_ids || []).map((x: any) => Number(x));
+      if (!from || !to || ids.length === 0) throw new Error("from, to, k34_ids required");
+      if (dry) return { would_move: ids.length, from, to };
+      const ph = ids.map((_, i) => `@k${i}`).join(",");
+      const tx = new sql.Transaction(pool);
+      await tx.begin();
+      try {
+        const r1 = new sql.Request(tx); ids.forEach((id, i) => r1.input(`k${i}`, sql.Int, id)); r1.input("to", sql.Int, to);
+        await r1.query(`UPDATE k34_tab SET idnk33_k34 = @to, uptime_k34 = GETDATE() WHERE idnk34_k34 IN (${ph})`);
+        await new sql.Request(tx).input("from", sql.Int, from).input("n", sql.Int, ids.length).query(`UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 - @n, uptime_k33 = GETDATE() WHERE idnk33_k33 = @from`);
+        await new sql.Request(tx).input("to", sql.Int, to).input("n", sql.Int, ids.length).query(`UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 + @n, uptime_k33 = GETDATE() WHERE idnk33_k33 = @to`);
+        await tx.commit();
+      } catch (e) { try { await tx.rollback(); } catch {} throw e; }
+      return { moved: ids.length };
+    }
+    case "extract_to_temp":
+    case "nuke": {
+      // Keep UI shipping; these two are destructive enough that we route
+      // them to the existing CLI scripts until we're fully confident in
+      // button-driven execution. Operator runs the script directly.
+      throw new Error(`action '${a.action}' is still CLI-only for safety — run scripts/ll-${a.action === "extract_to_temp" ? "extract-to-temp" : "nuke-envelope"}.ts locally`);
+    }
+    default:
+      throw new Error(`unknown action '${a.action}'`);
+  }
+}
+
 async function main() {
   const loop = process.argv.includes("--loop");
   if (!loop) {
     const s = await processOnePass();
     console.log(`Result: processed=${s.processed}, failed=${s.failed}, waiting=${s.waiting}`);
+    // Also process rescue actions on the single pass.
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+    const pool = await sql.connect({ connectionString: "Driver={SQL Server};Server=NYEVRVSQL001;Database=llk_db1;Trusted_Connection=yes;" });
+    const rescueDone = await processRescueActions(pool, supabase);
+    if (rescueDone > 0) console.log(`Rescue actions processed: ${rescueDone}`);
+    await pool.close();
     return;
   }
   console.log(`Starting loop mode (poll every ${POLL_INTERVAL_MS / 1000}s). Ctrl-C to stop.`);
+  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
   while (true) {
     try { await processOnePass(); } catch (e: any) { console.error(`pass error: ${e.message}`); }
+    try {
+      const pool = await sql.connect({ connectionString: "Driver={SQL Server};Server=NYEVRVSQL001;Database=llk_db1;Trusted_Connection=yes;" });
+      await processRescueActions(pool, supabase);
+      await pool.close();
+    } catch (e: any) { console.error(`rescue pass error: ${e.message}`); }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
 }
