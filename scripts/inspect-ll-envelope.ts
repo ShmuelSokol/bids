@@ -72,19 +72,46 @@ async function main() {
     if (s && s !== "0") console.log(`  ${k.padEnd(18)} = ${s}`);
   }
 
-  console.log(`\n=== k34 lines + k35 prices under envelope ===`);
+  console.log(`\n=== k34 lines under envelope ===`);
   const lines = await pool.request().input("id", sql.Int, idnk33).query(`
-    SELECT
-      k34.idnk34_k34, k34.idnk11_k34, k34.scage_k34, k34.fobcod_k34, k34.lt_days_k34,
-      k35.idnk35_k35, k35.bidprc_k35, k35.bidqty_k35
-    FROM k34_tab k34
-    LEFT JOIN k35_tab k35 ON k35.idnk34_k35 = k34.idnk34_k34
-    WHERE k34.idnk33_k34 = @id
-    ORDER BY k34.idnk34_k34
+    SELECT * FROM k34_tab WHERE idnk33_k34 = @id ORDER BY idnk34_k34
   `);
   console.log(`  ${lines.recordset.length} line(s):`);
+  const k34Ids: number[] = [];
   for (const r of lines.recordset) {
-    console.log(`  k34=${r.idnk34_k34} k11=${r.idnk11_k34} price=$${r.bidprc_k35} qty=${r.bidqty_k35} lt=${r.lt_days_k34} fob=${r.fobcod_k34}`);
+    k34Ids.push(r.idnk34_k34);
+    // Print a compact one-liner — show whichever non-null/non-zero fields are there
+    const parts = Object.keys(r)
+      .filter((k) => {
+        const v = r[k];
+        if (v == null) return false;
+        if (typeof v === "string" && v.trim() === "") return false;
+        if (typeof v === "number" && v === 0) return false;
+        return true;
+      })
+      .map((k) => `${k}=${r[k] instanceof Date ? r[k].toISOString() : String(r[k]).trim()}`);
+    console.log(`  ${parts.join(" ")}`);
+  }
+
+  console.log(`\n=== k35 price rows under those lines ===`);
+  if (k34Ids.length > 0) {
+    const placeholders = k34Ids.map((_, j) => `@k${j}`).join(",");
+    const req = pool.request();
+    k34Ids.forEach((id, j) => req.input(`k${j}`, sql.Int, id));
+    const prices = await req.query(`SELECT * FROM k35_tab WHERE idnk34_k35 IN (${placeholders}) ORDER BY idnk35_k35`);
+    console.log(`  ${prices.recordset.length} k35 row(s):`);
+    for (const r of prices.recordset) {
+      const parts = Object.keys(r)
+        .filter((k) => {
+          const v = r[k];
+          if (v == null) return false;
+          if (typeof v === "string" && v.trim() === "") return false;
+          if (typeof v === "number" && v === 0) return false;
+          return true;
+        })
+        .map((k) => `${k}=${r[k] instanceof Date ? r[k].toISOString() : String(r[k]).trim()}`);
+      console.log(`  ${parts.join(" ")}`);
+    }
   }
 
   console.log(`\n=== Active cursors / locks on k33_tab ===`);
