@@ -24,6 +24,7 @@ import { NsnHistoryDetail } from "@/components/nsn-history-detail";
 import { SourceTip } from "@/components/source-tip";
 import { SourcingModal } from "./sourcing-modal";
 import { fscLabel } from "@/lib/fsc-names";
+import { FscFilter } from "@/components/fsc-filter";
 
 interface Solicitation {
   id: number;
@@ -1267,13 +1268,18 @@ export function SolicitationsList({
           ))}
         </div>
         {/* Column Filters */}
-        <select value={fscFilter} onChange={(e) => setFscFilter(e.target.value)}
-          className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
-          <option value="all">All FSCs</option>
-          {[...new Set(solicitations.map(s => s.fsc).filter(Boolean))].sort().map(fsc => (
-            <option key={fsc} value={fsc}>{fsc}</option>
-          ))}
-        </select>
+        <FscFilter
+          value={fscFilter}
+          onChange={setFscFilter}
+          options={(() => {
+            const counts = new Map<string, number>();
+            for (const s of solicitations) {
+              if (!s.fsc) continue;
+              counts.set(s.fsc, (counts.get(s.fsc) || 0) + 1);
+            }
+            return [...counts.entries()].map(([code, count]) => ({ code, count }));
+          })()}
+        />
         <select value={scoreFilter} onChange={(e) => setScoreFilter(e.target.value)}
           className="rounded border border-card-border px-2 py-1 text-[10px] bg-white">
           <option value="all">All Scores</option>
