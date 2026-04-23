@@ -25,16 +25,23 @@ import sql from "mssql/msnodesqlv8";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 
+// Default database is llk_db1 (LL's storage). Override with --db <name> to
+// dump any other database on NYEVRVSQL001 (e.g. SZY_WinSol for ERG's
+// internal ETL/mirror of LL data).
+const DB_ARG_IDX = process.argv.indexOf("--db");
+const DB_NAME = DB_ARG_IDX >= 0 ? process.argv[DB_ARG_IDX + 1] : "llk_db1";
+const OUT_SUBDIR = DB_NAME === "llk_db1" ? "lamlinks-schema" : `lamlinks-schema-${DB_NAME}`;
+
 const config = {
   connectionString:
-    "Driver={SQL Server};Server=NYEVRVSQL001;Database=llk_db1;Trusted_Connection=yes;",
+    `Driver={SQL Server};Server=NYEVRVSQL001;Database=${DB_NAME};Trusted_Connection=yes;`,
 };
 const msdbConfig = {
   connectionString:
     "Driver={SQL Server};Server=NYEVRVSQL001;Database=msdb;Trusted_Connection=yes;",
 };
 
-const OUT_DIR = join(process.cwd(), "docs", "lamlinks-schema");
+const OUT_DIR = join(process.cwd(), "docs", OUT_SUBDIR);
 
 function safeWrite(path: string, body: string) {
   mkdirSync(join(OUT_DIR, path.split("/").slice(0, -1).join("/")), { recursive: true });
