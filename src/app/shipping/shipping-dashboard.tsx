@@ -74,10 +74,14 @@ export function ShippingDashboard({
   shipments,
   lastSync,
   lastEdiSync,
+  dpmsPending = 0,
+  staleWawf = 0,
 }: {
   shipments: Shipment[];
   lastSync: string | null;
   lastEdiSync?: string | null;
+  dpmsPending?: number;
+  staleWawf?: number;
 }) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,6 +155,30 @@ export function ShippingDashboard({
           </p>
         </div>
       </div>
+
+      {/* EDI health callout */}
+      {(dpmsPending > 0 || staleWawf > 0) && (
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          {staleWawf > 0 && (
+            <Link
+              href="/ops/lamlinks/transmissions"
+              className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 px-3 py-1.5 text-xs font-medium hover:bg-red-100"
+            >
+              ⚠ {staleWawf} WAWF 810 sent &gt;30 days, no ack
+              <span className="text-[10px] opacity-70">→ Transmissions</span>
+            </Link>
+          )}
+          {dpmsPending > 0 && (
+            <Link
+              href="/ops/lamlinks/transmissions"
+              className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 px-3 py-1.5 text-xs font-medium hover:bg-amber-100"
+            >
+              ⏱ {dpmsPending.toLocaleString()} DPMS pending closeout
+              <span className="text-[10px] opacity-70">→ Transmissions</span>
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
