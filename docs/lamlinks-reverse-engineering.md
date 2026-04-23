@@ -10,9 +10,13 @@ Everything in this doc is derived from string-extraction of the LL binaries them
 
 LL is a Visual FoxPro 9 desktop app. `lamlinkspro.exe` on the client is a 126 KB launcher; the real binary is `llprun.exe` (40.7 MB) on a network share. **All of LL's business logic lives inside that binary as compiled VFP code. There are zero stored procedures, triggers, functions, or CLR assemblies on the SQL Server — `llk_db1` is pure storage.** When the vendor says "everything runs from SQL including stored procedures," he means FoxPro `PROCEDURE` blocks compiled into the EXE, not T-SQL procs.
 
-LL has an internal RPC mechanism — the `kdd_tab` request table — that lets the web interface invoke VFP functions on the desktop. A `Client Management` dispatcher routes requests to a dozen "VSE"-prefixed handlers for solicitation/quote/customer data. External integrators (us) can write to `kdd_tab` and have a running desktop bot process the request. That's the clean integration surface we'll build against.
+LL has **three integration paths**, not one:
 
-Most of the "bugs" we've seen — the `Update conflict in cursor '_9999XXX'` error chief among them — are inherent to how VFP talks to SQL Server through ODBC cursors with optimistic concurrency. They can't be fixed server-side.
+1. **HTTP REST API at `api.lamlinks.com/api/llsm/create`** (HTTP Digest auth, single dispatch table supporting ~40 functions including `put_client_quote` and `get_awards_by_contract_url`). This is the real external integration surface — the "Sally" API, operational since 2017. Credentials are stored in `kah_tab` per LL user; if ERG has them already, we can skip 90% of the work.
+2. **Local job queue `j87_tab`** — processed by either `llprun.exe` (VFP legacy) or a separate **C# Lamlinks Service Manager** (LLSM) service. Same function catalog as the REST API.
+3. **Local RPC table `kdd_tab` → `Client Management`** — dispatches to ~10 VSE-named read APIs for incremental sync (per-customer, originally built for client 31902). Inferior surface.
+
+Most of the "bugs" we've been fighting — the `Update conflict in cursor '_9999XXX'` error chief among them — are inherent to VFP-over-ODBC optimistic-concurrency cursors. They can't be fixed server-side. Moving to the REST API path eliminates the cursor entirely.
 
 ## Physical layout
 
@@ -145,6 +149,112 @@ So `Client Management` is effectively the entire external API surface.
 
 There is a separate function `vse_solxml_to_db_update` (llprun line 451526) whose name implies VSE-XML → DB writes. Whether that's reachable through kdd_tab with a different `reqfun_kdd` value, or is only callable from inside the desktop, is **open**. See "Open questions" below.
 
+## The REST API ("Sally" / LLSM) — the integration surface we should actually use
+
+Discovered *after* the kdd_tab writeup above. Supersedes the Client Management path for anything DIBS wants to do.
+
+### Architecture
+
+LL is not a pure desktop app. It ships with:
+- A public HTTP REST API at `api.lamlinks.com` (beta: `apibeta.lamlinks.com` / `www3.lamlinks.com`; test: `alpha.lamlinks.com` on LAMSV7, `beta.lamlinks.com` on LAMDBDEV) — live since 2017-07-07.
+- A **C# Lamlinks Service Manager** service (LLSM) — processes DIBBS scraping, PDF extraction, and DIBBS-quote uploads. Separate binary we haven't reverse-engineered; references in llprun.exe strings: "DQUS" (DIBBS Quote Upload Service), "Jason's C#" (`actuse_l72_dibbs_dqus_quote` define).
+- A local job queue `j87_tab` — either the VFP runtime (`reqsys_j87='LIS legacy'`) or LLSM (`reqsys_j87='LLSM'`) polls it.
+
+Internally these share one dispatcher — `sally_query_api_function('sally_api2_function')` — so the function catalog is the same whether you go HTTP or DB-queue.
+
+### HTTP request shape
+
+Fully documented in llprun.exe strings (line 568791–569728):
+
+```bash
+curl --digest \
+     -u "SALLY_LOGIN#API_KEY:API_SECRET" \
+     --data "&wait=60&function=put_client_quote&data=<XML_PAYLOAD>" \
+     "http://api.lamlinks.com/api/llsm/create"
+```
+
+- **HTTP**, not HTTPS. HTTP Digest auth (pre-shared key + challenge/response, OK secure in transit even over HTTP but old-school).
+- Username format: `<sally_login>#<api_key>` with literal `#` separator (line 568791: `"#sally_login###api_key#:#api_secret#"` — the `###` is template-delimiter-plus-literal-`#`).
+- Body is form-encoded: `wait=<timeout>&function=<name>&data=<URL-encoded XML>`.
+- Response is XML parsed via `xml_tag_and_string_to_value('Response', ...)`.
+
+### API key format
+
+27-char strings with a 3-char prefix indicating type (llprun.exe line 180145–180148):
+
+| Prefix | Key type |
+|---|---|
+| `K9p` | LamLinks Corp (vendor-internal) |
+| `t0H` | Theo (vendor-internal) |
+| `Tg4` | Temp / bootstrap (for client software retrieving real key) |
+| `7Lx` | LamLinks Client (**what ERG's key should start with**) |
+
+The only hard-coded key in llprun.exe is a temp bootstrap: `Tg4w02Gfduk1508aYYLmJFI9Gt7` (27 chars, starts with `Tg4`). Real client keys are stored per-user in the database.
+
+### Function catalog (REST / j87 / LIS)
+
+`sally_api_interface` callable names (line 727815+):
+
+- `put_client_quote` — **write a quote** (our main target for the write path)
+- `get_tdp_meta_data` — technical data package metadata
+- `get_awards_by_contract_url` — lookup awards by a contract URL
+- `sol_no_to_tdps` — solicitation → TDP records
+- `sol_no_to_quote_info` — solicitation → quote info
+- `e_code_to_entity_info` — entity lookup by e_code
+- `new_ecommerce_partner` — add supplier
+- `payment_terms_to_br8_tab` — sync payment-terms master
+
+Plus via j87 dispatch (llprun.exe line 180720+):
+
+- `LIS_CLIENT_FUNCTION` (meta-function: get LL release version, webapp framework version, etc.)
+- `UPLOAD_DIBBS_QUOTES` — bulk DIBBS upload (DQUS — Jason's C# service)
+- `update_dibbs_password` / `DIBBS_HTTP_DOWNLOAD` / `DIBBS_LOW_PRIORITY_DOWNLOAD`
+- `FPDS_ATOM_FEED` — FPDS award feed
+- `add_ecommerce_partner`, `add_sally_login`, `add_client_capability`, `partner_function`
+- `are_you_listening` — **heartbeat** (takes `e_code` param)
+- `is_license_valid`, `is_zip_file_valid`, `FLATTEN_PDF`, `docx_to_text`, `xls_to_pdf`, `word_to_pdf`
+- `send_message`, `send_to_distribution_list`
+- `get_ip_location`, `tdp_status_update`, `review_response`
+
+### Credentials storage — how to find ours
+
+Credentials live in the database itself, in the generic "any notes" table `kah_tab` joined to `k14_tab` (LL user accounts). The exact join is in llprun.exe at line 542366:
+
+```sql
+SELECT ...
+FROM k14_tab
+JOIN kah_tab ON k14_tab.idnk14_k14 = kah_tab.idnanu_kah
+             AND kah_tab.anutyp_kah = 'Sally Credentials'
+             AND kah_tab.anutbl_kah = 'k14'
+```
+
+The memo field on the kah_tab row contains XML with `<private_key>` (the api_key) and `<public_key>` (the api_secret) tags. **Plaintext — not encrypted at rest.**
+
+Use `scripts/ll-find-sally-credentials.ts` to probe whether ERG already has Sally credentials set up. The script reports counts, per-user status, and the 3-char api_key prefix, but never prints the secrets themselves.
+
+If credentials exist → we can call `api.lamlinks.com/api/llsm/create` from a DIBS API route with the `put_client_quote` function and mostly retire `scripts/redo-bid-with-itmcnt.ts`.
+
+If credentials don't exist → Yosef needs to contact the LL vendor (the son) for API access. The fact that other clients have integrations (`apibeta alan`, `apibeta aerometals`, `apibeta WFL` show up as known hosts in llprun.exe strings) makes this a standard product offering, not a custom ask.
+
+### Security finding worth flagging
+
+`api_secret` is stored in plaintext XML in `kah_tab.<memo_col>`. Anyone with `SELECT` on `kah_tab` can read every LL user's key pair. Worth mentioning to Yosef — not a DIBS problem to fix, but ERG should know.
+
+## Newly discovered supporting tables
+
+In the course of the REST API discovery we mapped several more tables worth catalogging:
+
+| Table | Purpose |
+|---|---|
+| `j87_tab` | Local job queue (VFP-legacy or LLSM-C# processor) |
+| `keb_tab` | **Pagination for kdd_tab responses** — when `rspxml_kdd` (capped at 7000 chars) isn't enough, chunks live here ordered by `seq_no_keb`, FK to kdd_tab |
+| `kec_tab` | FAR clause reference data (fartyp, farcls, farttl) |
+| `kah_tab` | Generic "any notes" — stores Sally Credentials XML, packaging notes, PO header text, FAR clauses per-contract, etc. Keyed by `(anutbl_kah, anutyp_kah, idnanu_kah)` where anutbl is the parent table code ("k14", "k89", "kc4" etc.) |
+| `k12_tab` | Entities (`e_code_k12`, e_name, email, fax) — 7-char entity codes |
+| `k13_tab` | CAGE codes per entity (entities can have multiple CAGEs) |
+| `k14_tab` | **LL user accounts** (`u_name_k14` login, `u_pass_k14` — char(20) suggests plaintext/weak hash) |
+| `kde_tab` / `kdf_tab` / `kdg_tab` | Credential authorization log / types / control (added Dec 2017) |
+
 ## The state-machine alphabet
 
 Every LL status field follows the pattern `<name>sta_<tbl>` or `<prefix>_stat_<tbl>` with values declared as `#DEFINE` constants. Searchable via `^#DEFINE\s+\w+_?sta[t]?_\w+`. Major state machines:
@@ -229,25 +339,46 @@ This is not a LamLinks bug. It's inherent to how every VFP-to-SQL-Server app bui
 
 Avoidance for DIBS: write-back via `kdd_tab` RPC (once verified) instead of direct cursor writes. The bot's VFP code can open the cursor, serialize k33/k34 updates through LL's own code path, and absorb retries internally — we never see the conflict.
 
-## DIBS integration path (proposed)
+## DIBS integration path (corrected)
 
-Given the findings, the cleanest path forward:
+The REST API discovery completely changes the recommended path. The integration plan is now much simpler:
 
-1. **Confirm a realtime bot is running.** `scripts/who-talks-to-llk.ts` already shows a persistent connection from `NYEVRVTC001` (spid 53, 12-hour uptime) — this is probably the `lamlinkspro_realtime_bot`. Confirm by checking its `program_name` when we run the script next.
+### Step 1 (immediate, zero risk) — check if ERG already has Sally credentials
 
-2. **Read-side integration (fast win, low risk).** Use the VSE Solicitation Status handler via kdd_tab to pull incremental award + status changes since our last sync. Replaces our current "scrape DIBBS every 6 hours" pattern for confirmed awards with a more direct LL pull. Write test script `scripts/ll-rpc-pull-status.ts` and prove the request/response round-trip works.
+Run `scripts/ll-find-sally-credentials.ts`. The script:
+- Probes `kah_tab` for rows with `anutyp_kah='Sally Credentials'` joined to `k14_tab`
+- Reports per-user status (login, memo size, presence of `<private_key>`/`<public_key>` tags, 3-char api_key prefix)
+- Never prints the actual secrets
 
-3. **Decode a VSE XML payload shape.** From the strings dump we know the elements and the view columns. Write a canonical request XML for "give me solicitation line items with idnk11 > N" and confirm we get results. Grep for the exact element names produced by `xml_tag_and_value_to_string` calls inside each handler (we found the helpers; we need the element names they emit for each handler — a 30-minute targeted grep).
+Two outcomes:
+- **Rows exist** → we skip ahead to step 3. Yosef probably knows about these already.
+- **No rows** → step 2.
 
-4. **Resolve the write-path question.** Whether `vse_solxml_to_db_update` is reachable via kdd_tab is the gating question for replacing our k33/k34 cursor writes. Two ways to resolve:
-   - Keep grepping llprun.exe strings for invocations of `vse_solxml_to_db_update` — find its callsites. If called from `kea_function`, we're in business.
-   - Capture live traffic: if there's a WebApp we can observe (llpdev2.lamlinks.com?), tail its kdd_tab inserts to learn which reqfun value it uses for writes.
+### Step 2 (if no credentials) — request API access
 
-5. **If RPC-writes confirmed**: deprecate `scripts/redo-bid-with-itmcnt.ts` and friends in favor of `scripts/ll-rpc-post-quote.ts`. Cursor-conflict errors disappear from our codebase.
+Ask Yosef to contact the LL vendor (the son) for Sally API credentials. Known external clients include `apibeta alan`, `apibeta aerometals`, `apibeta WFL` — so this is a standard product offering, not a custom ask. Expected prefix for new customer keys: `7Lx`.
 
-6. **If RPC-writes not available**: keep the piggyback pattern but add a `scripts/ll-rpc-verify-post.ts` that uses the *read* RPC to confirm our cursor writes landed (belt + suspenders).
+### Step 3 — heartbeat test
 
-7. **For invoice/shipment workflows** (Abe's daily time leak): monitor `kbr_tab` for EDI ack states and `k89_tab` for PODs. These are the two places we can see external state change without any write. Build a DIBS "invoice & shipment tracker" page that surfaces these tables.
+Write `scripts/ll-rest-ping.ts` that calls the `are_you_listening` function via HTTP Digest to `api.lamlinks.com/api/llsm/create`. Confirms credentials work, API is reachable from our network, digest auth is happy.
+
+### Step 4 — read-side proof of concept
+
+Call `get_awards_by_contract_url` or `sol_no_to_quote_info` to pull a known record. Validates the request/response XML shape against real data. This replaces the need to decode VSE handler XML by grep.
+
+### Step 5 — quote write replacement
+
+Build `scripts/ll-rest-put-client-quote.ts` wrapping `put_client_quote`. Replace `scripts/redo-bid-with-itmcnt.ts` for all new quote writes. Cursor-update conflicts disappear from our codebase forever.
+
+### Step 6 — invoice + shipment tracker
+
+Separately, build a DIBS page surfacing `kbr_tab` (WAWF/EDI scenarios), `k89_tab` (POD), `kaj_tab` (shipments). No API needed — these are read-only observations of external state change. This addresses Abe's daily time leak chasing PO + invoice status.
+
+### Fallback — if REST doesn't pan out
+
+If `api.lamlinks.com` isn't reachable from our network or credentials aren't available:
+- **Path B**: insert into `j87_tab` directly. Requires the local LLSM (C#) or LIS (VFP) bot to be running. Same function catalog as REST.
+- **Path C**: kdd_tab Client Management. Read-only for the handlers we've decoded; write path via `vse_solxml_to_db_update` unverified. Use only as a last resort.
 
 ## Methodology — how to extend this
 
@@ -268,17 +399,23 @@ strings64.exe -accepteula -n 6 llprun.exe > llprun-strings.txt
 
 What string extraction does NOT give us: control flow, conditional branches, which function calls which, argument passing. For that we'd need ReFox (commercial VFP decompiler) — currently blocked by SentinelOne at work and consumer AV at home. Possible future workarounds: Azure VM without EDR, a clean personal laptop, or an IT exclusion. Not attempted yet.
 
-## Open questions
+## Open questions (pared down after the REST API discovery)
 
-1. **Is `vse_solxml_to_db_update` reachable via kdd_tab?** Core question gating the "clean write path" story. Answer determines whether we can deprecate cursor-based write scripts.
+Most of the original open questions were made moot by finding the REST API. What's left:
 
-2. **Is a realtime bot actually running?** The persistent spid 53 connection is suspicious but not confirmed. If no bot is running, any kdd_tab inserts we make will sit forever. Check `program_name` and consider whether we can start one ourselves — `llprun.exe` has a `Realtime Bot` mode per the `#DEFINE` constants.
+1. **Does ERG already have Sally credentials?** Unblocks the whole plan. Answerable in 30 seconds via `scripts/ll-find-sally-credentials.ts`.
 
-3. **What is "VSE"?** Likely Vendor Service Entry or Vendor-Side Engine — an external-integration surface LL built for a specific client (possibly 31902, per `llxp_client_31902_function`). If there's a second integrator already using this, we may be able to learn from their patterns.
+2. **Is `api.lamlinks.com` reachable from ERG's network?** Need to confirm outbound HTTP to port 80 works from whatever host runs DIBS scripts. Check with `scripts/ll-rest-ping.ts` once credentials are in hand.
 
-4. **What is the XML request envelope shape?** We have element names but not the full container structure. Grep for patterns around `outer_envelope_xml` / `function_response_xml` to resolve.
+3. **Exact XML payload for `put_client_quote`.** Have the function name and the caller interface (QUOTES_XML_INP + API auth). Don't have the expected inner XML schema. Three ways to resolve:
+   - Grep llprun.exe more carefully for `put_client_quote started.` + surrounding XML tag literals
+   - Call `are_you_listening` and inspect error messages for any schema hints
+   - Ask Yosef / LL vendor for API docs
+   - Observe a real invocation via XEvents if we find LL's own client calls this internally
 
-5. **Response pagination**: the 7000-char `rspxml_kdd` cap means multi-row responses paginate. The `response_count_limit` constant in handler code suggests the caller controls page size. Mechanics of cursoring through pages need to be mapped before the read-integration script is reliable.
+4. **What does LLSM (the C# service) process vs what llprun.exe processes?** Function splits between `reqsys_j87='LIS legacy'` (VFP) and `reqsys_j87='LLSM'` (C#) are spread through the strings. We know LLSM handles DIBBS scraping, PDF extraction, and DIBBS-quote upload. Whether `put_client_quote` is LLSM or VFP determines which service has to be running. Not a blocker — both are operational in ERG's environment.
+
+5. **Is `vse_solxml_to_db_update` still interesting?** Probably not, now that we have the REST path. Leave it on the back burner unless the REST path falls through.
 
 ## Previously written memory + scripts index
 
@@ -293,4 +430,5 @@ What string extraction does NOT give us: control flow, conditional branches, whi
 
 ## Changelog
 
-- 2026-04-23 — initial writeup covering the reverse-engineering session. Findings based on Sysinternals `strings64.exe` extraction of `llprun.exe` version shipped at the time of analysis.
+- 2026-04-23 (early) — initial writeup covering kdd_tab, VSE handlers, state machines, DB tables, cursor-conflict explanation.
+- 2026-04-23 (later, same day) — deeper grep pass uncovered the HTTP REST API (`api.lamlinks.com`), LLSM (the C# service), `j87_tab` (local job queue), and credential storage in `kah_tab`. Integration path rewritten: REST call to `put_client_quote` now the recommended write surface, with `kdd_tab` Client Management demoted to Path C. Added `scripts/ll-find-sally-credentials.ts` to probe for existing credentials. Several "open questions" resolved or obsoleted by the new path.
