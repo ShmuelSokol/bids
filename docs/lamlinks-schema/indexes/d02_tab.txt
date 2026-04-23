@@ -1,0 +1,2 @@
+idnd02_d02 [PK]: (idnd02_d02) CLUSTERED
+syswrk_d02 [UNIQUE]: (sysnam_d02, wrknam_d02) NONCLUSTERED

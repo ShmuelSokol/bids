@@ -1,0 +1,3 @@
+idnkcj_kcj [PK]: (idnkcj_kcj) CLUSTERED
+cuname_kcj [UNIQUE]: (cuname_kcj) NONCLUSTERED
+c_clas_kcj [UNIQUE]: (c_clas_kcj) NONCLUSTERED

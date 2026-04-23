@@ -1,0 +1,2 @@
+idnkc2_kc2 [PK]: (idnkc2_kc2) CLUSTERED
+key_kc2 [UNIQUE]: (idnkc1_kc2, seq_no_kc2) NONCLUSTERED

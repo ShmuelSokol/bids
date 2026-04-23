@@ -1,0 +1,2 @@
+idnkcw_kcw [PK]: (idnkcw_kcw) CLUSTERED
+key1_kcw [UNIQUE]: (cactyp_kcw, cack12_kcw, cark12_kcw, viakap_kcw, typkap_kcw) NONCLUSTERED

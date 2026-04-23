@@ -1,0 +1,3 @@
+idnkdx_kdx [PK]: (idnkdx_kdx) CLUSTERED
+key_kdx [UNIQUE]: (tbliec_kdx, idniec_kdx) NONCLUSTERED
+k14_e_stat_kdx: (idnk14_kdx, e_stat_kdx) NONCLUSTERED

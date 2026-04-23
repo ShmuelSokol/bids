@@ -1,0 +1,2 @@
+idnk61_k61 [PK]: (idnk61_k61) CLUSTERED
+fyiref_k61 [UNIQUE]: (fyiref_k61) NONCLUSTERED

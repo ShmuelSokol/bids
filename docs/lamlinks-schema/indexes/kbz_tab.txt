@@ -1,0 +1,2 @@
+idnkbz_kbz [PK]: (idnkbz_kbz) CLUSTERED
+je1num_kbz [UNIQUE]: (je1num_kbz) NONCLUSTERED

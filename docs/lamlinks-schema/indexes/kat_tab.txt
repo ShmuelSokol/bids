@@ -1,0 +1,2 @@
+idnkat_kat [PK]: (idnkat_kat) CLUSTERED
+katkey_kat [UNIQUE]: (idnkas_kat, rcolno_kat) NONCLUSTERED

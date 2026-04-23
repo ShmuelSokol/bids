@@ -1,0 +1,4 @@
+idnkbh_kbh [PK]: (idnkbh_kbh) CLUSTERED
+k98seq_kbh [UNIQUE]: (idnk98_kbh, pklseq_kbh) NONCLUSTERED
+crtsta_kbh: (crtsta_kbh) NONCLUSTERED
+rcv_kbh: (rcvtab_kbh, idnrcv_kbh) NONCLUSTERED

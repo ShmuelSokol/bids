@@ -1,0 +1,3 @@
+k54_tab_idnk54_k54 [PK]: (idnk54_k54) CLUSTERED
+k54_tab_keycod_k54 [UNIQUE]: (keycod_k54) NONCLUSTERED
+k54_tab_keynam_k54 [UNIQUE]: (keynam_k54) NONCLUSTERED

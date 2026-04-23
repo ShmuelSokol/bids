@@ -1,0 +1,3 @@
+idnkdz_kdz [PK]: (idnkdz_kdz) CLUSTERED
+key_kdz [UNIQUE]: (outk93_kdz, bakk93_kdz) NONCLUSTERED
+adtime_kdz: (adtime_kdz) NONCLUSTERED

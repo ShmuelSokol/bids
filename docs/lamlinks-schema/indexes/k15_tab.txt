@@ -1,0 +1,4 @@
+k15_tab_idnk15_k15 [PK]: (idnk15_k15) CLUSTERED
+idnk08_k15: (idnk08_k15) NONCLUSTERED
+idnk13_k15: (idnk13_k15) NONCLUSTERED
+prtnum_k15: (prtnum_k15) NONCLUSTERED

@@ -1,0 +1,3 @@
+k09_tab_idnk09_k09 [PK]: (idnk09_k09) CLUSTERED
+k09_tab_ref_no_k09 [UNIQUE]: (ref_no_k09) NONCLUSTERED
+ourref_k09: (ourref_k09) NONCLUSTERED

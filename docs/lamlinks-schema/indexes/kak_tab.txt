@@ -1,0 +1,2 @@
+idnkak_kak [PK]: (idnkak_kak) CLUSTERED
+kakkey_kak [UNIQUE]: (idnk85_kak, rsttbl_kak, idnrst_kak) NONCLUSTERED

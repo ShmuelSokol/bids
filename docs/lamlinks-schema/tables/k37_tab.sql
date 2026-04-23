@@ -1,0 +1,26 @@
+-- dbo.k37_tab  (159 rows)
+CREATE TABLE dbo.k37_tab (
+  idnk37_k37           int NOT NULL,
+  uptime_k37           datetime NOT NULL,
+  upname_k37           char(10) NOT NULL,
+  idnk08_k37           int NOT NULL,
+  idnk36_k37           int NOT NULL,
+  vrqtyp_k37           char(3) NOT NULL,
+  idnvrq_k37           int NOT NULL,
+  nodelk_k37           char(16) NOT NULL,
+  cg_sta_k37           char(32) NOT NULL,
+  cg_tme_k37           datetime NOT NULL,
+  rq_sta_k37           char(32) NOT NULL,
+  rq_tme_k37           datetime NOT NULL,
+  vs_sta_k37           char(32) NOT NULL,
+  vs_tme_k37           datetime NOT NULL,
+  rd_sta_k37           char(32) NOT NULL,
+  rd_tme_k37           datetime NOT NULL,
+  vq_sta_k37           char(32) NOT NULL,
+  vq_tme_k37           datetime NOT NULL,
+  vrqdes_k37           char(60) NOT NULL,
+  vrqval_k37           int NOT NULL,
+  r_note_k37           text(2147483647) NOT NULL,
+  p_note_k37           text(2147483647) NOT NULL,
+  PRIMARY KEY (idnk37_k37)
+);

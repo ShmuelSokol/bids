@@ -1,0 +1,3 @@
+k53_tab_idnk53_k53 [PK]: (idnk53_k53) CLUSTERED
+idnk52_k53: (idnk52_k53) NONCLUSTERED
+idnk54_k53: (idnk54_k53) NONCLUSTERED

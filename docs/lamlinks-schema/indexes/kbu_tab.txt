@@ -1,0 +1,2 @@
+idnkbu_kbu [PK]: (idnkbu_kbu) CLUSTERED
+kbukey_kbu [UNIQUE]: (idnkbt_kbu, ptlseq_kbu) NONCLUSTERED

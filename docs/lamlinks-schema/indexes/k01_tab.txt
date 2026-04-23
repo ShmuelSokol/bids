@@ -1,0 +1,1 @@
+k01_tab_idnk01_k01 [PK]: (idnk01_k01) CLUSTERED

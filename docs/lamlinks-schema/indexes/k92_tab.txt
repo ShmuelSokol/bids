@@ -1,0 +1,2 @@
+idnk92_k92 [PK]: (idnk92_k92) CLUSTERED
+kbhk91_k92 [UNIQUE]: (idnkbh_k92, idnk91_k92) NONCLUSTERED

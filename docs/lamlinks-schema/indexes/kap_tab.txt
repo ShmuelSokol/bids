@@ -1,0 +1,3 @@
+idnkap_kap [PK]: (idnkap_kap) CLUSTERED
+catkey_kap [UNIQUE]: (idnkbd_kap, catitl_kap) NONCLUSTERED
+cat_kap: (catype_kap, catitl_kap) NONCLUSTERED

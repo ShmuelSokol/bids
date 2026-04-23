@@ -1,0 +1,26 @@
+-- dbo.kaj_tab  (258893 rows)
+CREATE TABLE dbo.kaj_tab (
+  idnkaj_kaj           int NOT NULL,
+  uptime_kaj           datetime NOT NULL,
+  idnk80_kaj           int NOT NULL,
+  idnkbg_kaj           int NOT NULL,
+  ffwder_kaj           int NOT NULL,
+  shptme_kaj           datetime NOT NULL,
+  shpnum_kaj           char(8) NOT NULL,
+  packed_kaj           char(1) NOT NULL,
+  pkg_wt_kaj           numeric(12,2) NOT NULL,
+  podcod_kaj           char(16) NOT NULL,
+  poecod_kaj           char(16) NOT NULL,
+  bolnum_kaj           char(30) NOT NULL,
+  insdte_kaj           datetime NOT NULL,
+  edi_id_kaj           char(15) NOT NULL,
+  t_mode_kaj           char(32) NOT NULL,
+  wawuid_kaj           char(30) NOT NULL,
+  shp_id_kaj           int NOT NULL,
+  shpsta_kaj           char(24) NOT NULL,
+  shpdes_kaj           char(32) NOT NULL,
+  trakno_kaj           char(30) NOT NULL,
+  boxcnt_kaj           int NOT NULL,
+  bxxcnt_kaj           int NOT NULL,
+  PRIMARY KEY (idnkaj_kaj)
+);

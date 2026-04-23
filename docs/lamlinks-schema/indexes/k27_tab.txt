@@ -1,0 +1,4 @@
+k27_tab_idnk27_k27 [PK]: (idnk27_k27) CLUSTERED
+k27_tab_ssak27_k27 [UNIQUE]: (ssanam_k27, idnk23_k27) NONCLUSTERED
+idnk23_k27: (idnk23_k27) NONCLUSTERED
+ssanam_k27: (ssanam_k27) NONCLUSTERED

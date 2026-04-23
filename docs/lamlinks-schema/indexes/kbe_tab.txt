@@ -1,0 +1,3 @@
+idnkbe_kbe [PK]: (idnkbe_kbe) CLUSTERED
+afvkey_kbe [UNIQUE]: (afvtbl_kbe, idnafv_kbe, afvtyp_kbe, afvseq_kbe) NONCLUSTERED
+afv_kbe: (afvtbl_kbe, idnafv_kbe, afvtyp_kbe) NONCLUSTERED

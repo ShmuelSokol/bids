@@ -1,0 +1,2 @@
+idnkc5_kc5 [PK]: (idnkc5_kc5) CLUSTERED
+typref_kc5 [UNIQUE]: (dnltyp_kc5, ref_no_kc5) NONCLUSTERED

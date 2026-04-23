@@ -1,0 +1,26 @@
+-- dbo.ka7_tab  (322483 rows)
+CREATE TABLE dbo.ka7_tab (
+  idnka7_ka7           int NOT NULL,
+  uptime_ka7           datetime NOT NULL,
+  idnk12_ka7           int NOT NULL,
+  gduset_ka7           char(40) NOT NULL,
+  frozen_ka7           char(1) NOT NULL,
+  d_code_ka7           char(16) NOT NULL,
+  d_name_ka7           varchar(80) NOT NULL,
+  d_nam2_ka7           varchar(80) NOT NULL,
+  d_nam3_ka7           varchar(80) NOT NULL,
+  d_adr1_ka7           varchar(80) NOT NULL,
+  d_adr2_ka7           varchar(80) NOT NULL,
+  d_adr3_ka7           varchar(80) NOT NULL,
+  d_adr4_ka7           varchar(80) NOT NULL,
+  d_city_ka7           varchar(80) NOT NULL,
+  d_stte_ka7           char(2) NOT NULL,
+  d_zipc_ka7           char(10) NOT NULL,
+  d_cntr_ka7           varchar(80) NOT NULL,
+  d_attn_ka7           varchar(80) NOT NULL,
+  d_phon_ka7           char(20) NOT NULL,
+  d_faxn_ka7           char(20) NOT NULL,
+  d_emal_ka7           varchar(80) NOT NULL,
+  d_cell_ka7           varchar(16) NOT NULL DEFAULT (''),
+  PRIMARY KEY (idnka7_ka7)
+);

@@ -1,0 +1,3 @@
+idnkd8_kd8 [PK]: (idnkd8_kd8) CLUSTERED
+key_kd8 [UNIQUE]: (took12_kd8, srctyp_kd8, idnsrc_kd8, q_time_kd8) NONCLUSTERED
+q_time_kd8: (q_time_kd8) NONCLUSTERED

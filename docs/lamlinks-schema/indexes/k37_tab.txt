@@ -1,0 +1,9 @@
+k37_tab_idnk37_k37 [PK]: (idnk37_k37) CLUSTERED
+idnk08_k37: (idnk08_k37) NONCLUSTERED
+idnk36_k37: (idnk36_k37) NONCLUSTERED
+nodelk_k37: (nodelk_k37) NONCLUSTERED
+vrq_k37: (vrqtyp_k37, idnvrq_k37) NONCLUSTERED
+vs_sta_k37: (vs_sta_k37) NONCLUSTERED
+rd_sta_k37: (rd_sta_k37) NONCLUSTERED
+vq_sta_k37: (vq_sta_k37) NONCLUSTERED
+cg_stm_k37: (cg_sta_k37, cg_tme_k37) NONCLUSTERED

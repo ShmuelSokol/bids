@@ -1,0 +1,3 @@
+idnkcu_kcu [PK]: (idnkcu_kcu) CLUSTERED
+sprnum_kcu [UNIQUE]: (sprnum_kcu) NONCLUSTERED
+spr_no_kcu [UNIQUE]: (spr_no_kcu) NONCLUSTERED

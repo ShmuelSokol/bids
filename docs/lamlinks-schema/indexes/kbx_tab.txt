@@ -1,0 +1,4 @@
+idnkbx_kbx [PK]: (idnkbx_kbx) CLUSTERED
+m2r_no_kbx [UNIQUE]: (m2r_no_kbx) NONCLUSTERED
+m2anum_kbx: (m2anum_kbx) NONCLUSTERED
+uorval_kbx: (uorval_kbx) NONCLUSTERED

@@ -1,0 +1,9 @@
+k42_tab_idnk42_k42 [PK]: (idnk42_k42) CLUSTERED
+k42_tab_rfq_no_k42 [UNIQUE]: (rfq_no_k42) NONCLUSTERED
+idnk39_k42: (idnk39_k42) NONCLUSTERED
+idnk41_k42: (idnk41_k42) NONCLUSTERED
+rrqk39_k42: (idnk39_k42, rrqsta_k42) NONCLUSTERED
+rrqsta_k42: (rrqsta_k42) NONCLUSTERED
+rrqtme_k42: (rrqtme_k42) NONCLUSTERED
+nodelk_k42: (nodelk_k42) NONCLUSTERED
+rfquno_k42: (rfquno_k42) NONCLUSTERED

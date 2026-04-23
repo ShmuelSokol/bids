@@ -1,0 +1,2 @@
+idnkaj_kaj [PK]: (idnkaj_kaj) CLUSTERED
+shpkey_kaj [UNIQUE]: (idnk80_kaj, shp_id_kaj) NONCLUSTERED

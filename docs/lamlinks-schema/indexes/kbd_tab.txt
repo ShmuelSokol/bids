@@ -1,0 +1,2 @@
+idnkbd_kbd [PK]: (idnkbd_kbd) CLUSTERED
+catkey_kbd [UNIQUE]: (catset_kbd, catype_kbd) NONCLUSTERED

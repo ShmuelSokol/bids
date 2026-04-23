@@ -1,0 +1,3 @@
+idnkbb_kbb [PK]: (idnkbb_kbb) CLUSTERED
+ict_no_kbb [UNIQUE]: (ict_no_kbb) NONCLUSTERED
+ictref_kbb [UNIQUE]: (ictref_kbb) NONCLUSTERED

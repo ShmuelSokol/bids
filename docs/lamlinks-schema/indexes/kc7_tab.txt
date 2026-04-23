@@ -1,0 +1,3 @@
+idnkc7_kc7 [PK]: (idnkc7_kc7) CLUSTERED
+key_kc7 [UNIQUE]: (idnkc1_kc7, seq_no_kc7) NONCLUSTERED
+idnkc2_kc7: (idnkc2_kc7) NONCLUSTERED

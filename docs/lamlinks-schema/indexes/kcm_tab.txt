@@ -1,0 +1,2 @@
+idnkcm_kcm [PK]: (idnkcm_kcm) CLUSTERED
+kcjkck_kcm [UNIQUE]: (idnkcj_kcm, idnkck_kcm) NONCLUSTERED

@@ -1,0 +1,4 @@
+idnkc4_kc4 [PK]: (idnkc4_kc4) CLUSTERED
+k08k10_kc4 [UNIQUE]: (idnk08_kc4, idnk10_kc4) NONCLUSTERED
+c_time_kc4: (c_time_kc4) NONCLUSTERED
+reldte_kc4: (reldte_kc4) NONCLUSTERED

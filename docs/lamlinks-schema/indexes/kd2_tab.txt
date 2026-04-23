@@ -1,0 +1,2 @@
+idnkd2_kd2 [PK]: (idnkd2_kd2) CLUSTERED
+key_kd2 [UNIQUE]: (idnk71_kd2, bverno_kd2) NONCLUSTERED

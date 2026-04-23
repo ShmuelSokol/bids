@@ -1,0 +1,2 @@
+idnk87_k87 [PK]: (idnk87_k87) CLUSTERED
+mrtnam_k87 [UNIQUE]: (mrtnam_k87) NONCLUSTERED

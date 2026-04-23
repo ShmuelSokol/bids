@@ -1,0 +1,2 @@
+idnkch_kch [PK]: (idnkch_kch) CLUSTERED
+tmetbl_kch: (adtime_kch, rcltbl_kch) NONCLUSTERED

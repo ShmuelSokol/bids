@@ -1,0 +1,2 @@
+idnk79_k79 [PK]: (idnk79_k79) CLUSTERED
+cntrct_k79 [UNIQUE]: (cntrct_k79) NONCLUSTERED

@@ -1,0 +1,4 @@
+idnkbt_kbt [PK]: (idnkbt_kbt) CLUSTERED
+pkt_no_kbt [UNIQUE]: (pkt_no_kbt) NONCLUSTERED
+pktsta_kbt: (pktsta_kbt) NONCLUSTERED
+ptutme_kbt: (ptutme_kbt) NONCLUSTERED

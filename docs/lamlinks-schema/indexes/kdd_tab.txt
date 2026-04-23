@@ -1,0 +1,5 @@
+idnkdd_kdd [PK]: (idnkdd_kdd) CLUSTERED
+reqkey_kdd [UNIQUE]: (reqkey_kdd) NONCLUSTERED
+stssta_kdd: (reqsys_kdd, reqsta_kdd) NONCLUSTERED
+reqsta_kdd: (reqsta_kdd) NONCLUSTERED
+addtme_kdd: (addtme_kdd) NONCLUSTERED

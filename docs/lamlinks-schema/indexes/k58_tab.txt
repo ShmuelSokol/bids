@@ -1,0 +1,2 @@
+k58_tab_idnk58_k58 [PK]: (idnk58_k58) CLUSTERED
+idnk57_k58: (idnk57_k58) NONCLUSTERED

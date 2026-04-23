@@ -1,0 +1,3 @@
+idnka5_ka5 [PK]: (idnka5_ka5) CLUSTERED
+xfx_key_ka5 [UNIQUE]: (xfxtbl_ka5, idnxfx_ka5, idnkav_ka5) NONCLUSTERED
+xfx_ka5: (xfxtbl_ka5, idnxfx_ka5) NONCLUSTERED

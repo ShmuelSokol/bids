@@ -1,0 +1,2 @@
+idnkeb_keb [PK]: (idnkeb_keb) CLUSTERED
+key_keb [UNIQUE]: (idnkdd_keb, seq_no_keb) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnk68_k68 [PK]: (idnk68_k68) CLUSTERED
+sn_num_k68 [UNIQUE]: (sn_num_k68) NONCLUSTERED

@@ -1,0 +1,3 @@
+idnkck_kck [PK]: (idnkck_kck) CLUSTERED
+m_titl_kck [UNIQUE]: (m_titl_kck) NONCLUSTERED
+m_name_kck [UNIQUE]: (m_name_kck) NONCLUSTERED

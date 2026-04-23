@@ -1,0 +1,3 @@
+idnk51_k51 [PK]: (idnk51_k51) CLUSTERED
+k51_tab_flrnam_k51 [UNIQUE]: (flrnam_k51) NONCLUSTERED
+idnk21_k51: (idnk21_k51) NONCLUSTERED

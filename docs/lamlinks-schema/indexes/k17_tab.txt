@@ -1,0 +1,2 @@
+k17_tab_idnk17_k17 [PK]: (idnk17_k17) CLUSTERED
+k17_tab_filnam_k17 [UNIQUE]: (filnam_k17) NONCLUSTERED

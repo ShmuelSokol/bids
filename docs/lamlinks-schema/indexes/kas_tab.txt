@@ -1,0 +1,2 @@
+idnkas_kas [PK]: (idnkas_kas) CLUSTERED
+kaskey_kas [UNIQUE]: (idnkar_kas, arowno_kas) NONCLUSTERED

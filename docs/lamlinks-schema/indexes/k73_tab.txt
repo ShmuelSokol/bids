@@ -1,0 +1,2 @@
+idnk73_k73 [PK]: (idnk73_k73) NONCLUSTERED
+prjnam_k73 [UNIQUE]: (prjnam_k73) NONCLUSTERED

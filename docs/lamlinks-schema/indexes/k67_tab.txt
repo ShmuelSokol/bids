@@ -1,0 +1,3 @@
+idnk67_k67 [PK]: (idnk67_k67) CLUSTERED
+idnk62_k67 [UNIQUE]: (idnk62_k67) NONCLUSTERED
+lam_id_k67: (lam_id_k67) NONCLUSTERED

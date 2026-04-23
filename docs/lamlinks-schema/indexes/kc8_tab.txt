@@ -1,0 +1,2 @@
+idnkc8_kc8 [PK]: (idnkc8_kc8) CLUSTERED
+mdl_no_kc8 [UNIQUE]: (idnkc6_kc8, mdl_no_kc8) NONCLUSTERED

@@ -1,0 +1,3 @@
+idnkd5_kd5 [PK]: (idnkd5_kd5) CLUSTERED
+key_kd5 [UNIQUE]: (idnkd7_kd5, clinno_kd5, mcclas_kd5) NONCLUSTERED
+idnk81_kd5: (idnk81_kd5) NONCLUSTERED

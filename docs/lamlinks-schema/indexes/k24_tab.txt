@@ -1,0 +1,2 @@
+k24_tab_idnk24_k24 [PK]: (idnk24_k24) CLUSTERED
+k24_tab_sprnam_k24 [UNIQUE]: (sprnam_k24) NONCLUSTERED

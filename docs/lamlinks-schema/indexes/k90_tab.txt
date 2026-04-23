@@ -1,0 +1,3 @@
+idnk90_k90 [PK]: (idnk90_k90) CLUSTERED
+k71soq_k90: (idnk71_k90, soq_11_k90) NONCLUSTERED
+soq_11_k90: (soq_11_k90) NONCLUSTERED

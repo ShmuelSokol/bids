@@ -1,0 +1,3 @@
+idnd01_d01 [PK]: (idnd01_d01) CLUSTERED
+nodesc_d01 [UNIQUE]: (nodesc_d01) NONCLUSTERED
+nodeid_d01 [UNIQUE]: (nodeid_d01) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnk97_k97 [PK]: (idnk97_k97) CLUSTERED
+gl_grp_k97 [UNIQUE]: (gl_grp_k97) NONCLUSTERED

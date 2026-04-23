@@ -1,0 +1,4 @@
+idnkau_kau [PK]: (idnkau_kau) CLUSTERED
+kaukey_kau [UNIQUE]: (idnkap_kau, gx1tbl_kau, idngx1_kau, gx2tbl_kau, idngx2_kau) NONCLUSTERED
+gx1_kau: (gx1tbl_kau, idngx1_kau) NONCLUSTERED
+gx2_kau: (gx2tbl_kau, idngx2_kau) NONCLUSTERED

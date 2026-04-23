@@ -1,0 +1,4 @@
+idnk65_k65 [PK]: (idnk65_k65) CLUSTERED
+idnk08k64_k65 [UNIQUE]: (idnk08_k65, idnk64_k65) NONCLUSTERED
+idnk64_k65: (idnk64_k65) NONCLUSTERED
+idnk08_k65: (idnk08_k65) NONCLUSTERED

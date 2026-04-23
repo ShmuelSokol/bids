@@ -1,0 +1,3 @@
+idnk63_k63 [PK]: (idnk63_k63) CLUSTERED
+idnk62_k63 [UNIQUE]: (idnk62_k63) NONCLUSTERED
+idnk34_k63: (idnk34_k63) NONCLUSTERED

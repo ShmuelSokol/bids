@@ -1,0 +1,3 @@
+idnkcr_kcr [PK]: (idnkcr_kcr) CLUSTERED
+dmcnum_kcr [UNIQUE]: (dmcnum_kcr) NONCLUSTERED
+dmc_no_kcr [UNIQUE]: (dmc_no_kcr) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnk57_k57 [PK]: (idnk57_k57) CLUSTERED
+idnk56_k57: (idnk56_k57) NONCLUSTERED

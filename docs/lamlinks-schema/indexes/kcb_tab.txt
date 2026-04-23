@@ -1,0 +1,2 @@
+idnkcb_kcb [PK]: (idnkcb_kcb) CLUSTERED
+narnam_kcb [UNIQUE]: (narnam_kcb) NONCLUSTERED

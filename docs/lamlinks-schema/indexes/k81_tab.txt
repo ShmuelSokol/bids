@@ -1,0 +1,3 @@
+idnk81_k81 [PK]: (idnk81_k81) CLUSTERED
+k80cln_k81 [UNIQUE]: (idnk80_k81, clinno_k81, clinsq_k81) NONCLUSTERED
+inrshp_k81: (inrvws_k81, shpsta_k81) NONCLUSTERED

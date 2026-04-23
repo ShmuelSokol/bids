@@ -1,0 +1,3 @@
+idnkbq_kbq [PK]: (idnkbq_kbq) CLUSTERED
+key_kbq [UNIQUE]: (idnk12_kbq, pyrref_kbq) NONCLUSTERED
+pyrino_kbq [UNIQUE]: (pyrino_kbq) NONCLUSTERED

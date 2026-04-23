@@ -1,0 +1,3 @@
+k26_tab_idnk26_k26 [PK]: (idnk26_k26) CLUSTERED
+idnk11_k26: (idnk11_k26) NONCLUSTERED
+idnk22_k26: (idnk22_k26) NONCLUSTERED

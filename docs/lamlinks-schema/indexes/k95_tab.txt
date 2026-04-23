@@ -1,0 +1,2 @@
+idnk95_k95 [PK]: (idnk95_k95) CLUSTERED
+nni_no_k95 [UNIQUE]: (nni_no_k95) NONCLUSTERED

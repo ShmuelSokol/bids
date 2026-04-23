@@ -1,0 +1,4 @@
+k14_tab_idnk14_k14 [PK]: (idnk14_k14) CLUSTERED
+k14_tab_u_name_k14 [UNIQUE]: (u_name_k14) NONCLUSTERED
+idnk12_k14: (idnk12_k14) NONCLUSTERED
+u_pass_k14: (u_pass_k14) NONCLUSTERED

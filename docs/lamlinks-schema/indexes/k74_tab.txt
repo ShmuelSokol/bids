@@ -1,0 +1,3 @@
+idnk74_k74 [PK]: (idnk74_k74) NONCLUSTERED
+k73k71_k74 [UNIQUE]: (idnk73_k74, idnk71_k74) NONCLUSTERED
+idnk57_k74: (idnk57_k74) NONCLUSTERED

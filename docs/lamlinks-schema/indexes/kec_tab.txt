@@ -1,0 +1,2 @@
+idnkec_kec [PK]: (idnkec_kec) NONCLUSTERED
+regcls_kec [UNIQUE]: (fartyp_kec, farcls_kec) NONCLUSTERED

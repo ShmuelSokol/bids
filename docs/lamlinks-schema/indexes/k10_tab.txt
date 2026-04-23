@@ -1,0 +1,3 @@
+k10_tab_idnk10_k10 [PK]: (idnk10_k10) CLUSTERED
+k10_tab_sol_no_k10 [UNIQUE]: (sol_no_k10) NONCLUSTERED
+idnk31_k10: (idnk31_k10) NONCLUSTERED

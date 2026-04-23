@@ -1,0 +1,2 @@
+idnkdg_kdg [PK]: (idnkdg_kdg) CLUSTERED
+key_kdg [UNIQUE]: (idnkdf_kdg, tbltoa_kdg, idntoa_kdg) NONCLUSTERED

@@ -1,0 +1,4 @@
+idnka0_ka0 [PK]: (idnka0_ka0) CLUSTERED
+dodaac_ka0 [UNIQUE]: (dodaac_ka0) NONCLUSTERED
+idnk12_ka0 [UNIQUE]: (idnk12_ka0) NONCLUSTERED
+d_name_ka0: (d_name_ka0) NONCLUSTERED

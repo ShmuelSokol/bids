@@ -1,0 +1,2 @@
+idnkda_kda [PK]: (idnkda_kda) CLUSTERED
+key_kda [UNIQUE]: (idnkd8_kda, qteqty_kda) NONCLUSTERED

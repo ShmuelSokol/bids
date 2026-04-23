@@ -1,0 +1,2 @@
+idnkam_kam [PK]: (idnkam_kam) CLUSTERED
+popson_kam [UNIQUE]: (idnpop_kam, idnson_kam) NONCLUSTERED

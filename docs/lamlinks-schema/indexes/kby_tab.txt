@@ -1,0 +1,2 @@
+idnkby_kby [PK]: (idnkby_kby) CLUSTERED
+key_kby [UNIQUE]: (idnkbx_kby, m2rseq_kby) NONCLUSTERED

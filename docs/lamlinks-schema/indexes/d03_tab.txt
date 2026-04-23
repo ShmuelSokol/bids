@@ -1,0 +1,2 @@
+idnd03_d03 [PK]: (idnd03_d03) CLUSTERED
+d01rel_d03 [UNIQUE]: (idnd01_d03, workno_d03) NONCLUSTERED

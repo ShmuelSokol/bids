@@ -1,0 +1,10 @@
+k11_tab_idnk11_k11 [PK]: (idnk11_k11) CLUSTERED
+k11_tab_k09itm_k11 [UNIQUE]: (idnk09_k11, itemno_k11) NONCLUSTERED
+lam_id_k11: (lam_id_k11) NONCLUSTERED
+closes_k11: (closes_k11) NONCLUSTERED
+idnk09_k11: (idnk09_k11) NONCLUSTERED
+idnk10_k11: (idnk10_k11) NONCLUSTERED
+idnk08_k11: (idnk08_k11) NONCLUSTERED
+idnk21_k11: (idnk21_k11) NONCLUSTERED
+pr_num_k11: (pr_num_k11) NONCLUSTERED
+checkd_k11: (checkd_k11) NONCLUSTERED

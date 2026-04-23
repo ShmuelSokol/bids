@@ -1,0 +1,4 @@
+idnk75_k75 [PK]: (idnk75_k75) CLUSTERED
+k75key_k75 [UNIQUE]: (dstnam_k75, dsrtbl_k75, idndsr_k75, dsrust_k75) NONCLUSTERED
+dsr_k75: (dsrtbl_k75, idndsr_k75) NONCLUSTERED
+dstnam_k75: (dstnam_k75) NONCLUSTERED

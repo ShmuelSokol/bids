@@ -1,0 +1,3 @@
+k28_tab_idnk28_k28 [PK]: (idnk28_k28) CLUSTERED
+idnk27_k28: (idnk27_k28) NONCLUSTERED
+srq_k28: (idnsrq_k28, srqtyp_k28) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnk85_k85 [PK]: (idnk85_k85) CLUSTERED
+k84k81_k85 [UNIQUE]: (idnk84_k85, idnk81_k85) NONCLUSTERED

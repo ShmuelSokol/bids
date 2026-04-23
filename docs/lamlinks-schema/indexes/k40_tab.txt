@@ -1,0 +1,4 @@
+k40_tab_idnk40_k40 [PK]: (idnk40_k40) CLUSTERED
+idnk08_k40: (idnk08_k40) NONCLUSTERED
+idnk39_k40: (idnk39_k40) NONCLUSTERED
+spnnum_k40: (spnnum_k40) NONCLUSTERED

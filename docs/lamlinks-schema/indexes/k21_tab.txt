@@ -1,0 +1,4 @@
+k21_tab_idnk21_k21 [PK]: (idnk21_k21) CLUSTERED
+k21_tab_slcnam_k21 [UNIQUE]: (slcnam_k21) NONCLUSTERED
+idnk24_k21: (idnk24_k21) NONCLUSTERED
+idnk25_k21: (idnk25_k21) NONCLUSTERED

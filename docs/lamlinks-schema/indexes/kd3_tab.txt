@@ -1,0 +1,2 @@
+idnkd3_kd3 [PK]: (idnkd3_kd3) CLUSTERED
+mbstat_kd3: (mbstat_kd3) NONCLUSTERED

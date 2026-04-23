@@ -1,0 +1,27 @@
+-- dbo.k90_tab  (0 rows)
+CREATE TABLE dbo.k90_tab (
+  idnk90_k90           int NOT NULL,
+  adddte_k90           datetime NOT NULL,
+  netdte_k90           datetime NOT NULL,
+  idnk89_k90           int NOT NULL,
+  idnk71_k90           int NOT NULL,
+  invk96_k90           int NOT NULL,
+  idnk57_k90           int NOT NULL,
+  rqmtab_k90           char(3) NOT NULL,
+  idnrqm_k90           int NOT NULL,
+  qotdte_k90           datetime NOT NULL,
+  qrefno_k90           char(20) NOT NULL,
+  p_cage_k90           char(5) NOT NULL,
+  partno_k90           char(32) NOT NULL,
+  pop_um_k90           char(2) NOT NULL,
+  qfactr_k90           numeric(13,6) NOT NULL,
+  popseq_k90           int NOT NULL,
+  snq_11_k90           numeric(16,5) NOT NULL,
+  soq_11_k90           numeric(16,5) NOT NULL,
+  rsvqty_k90           numeric(16,5) NOT NULL,
+  rsoqty_k90           numeric(16,5) NOT NULL,
+  polval_k90           numeric(13,2) NOT NULL,
+  poxval_k90           numeric(13,2) NOT NULL,
+  popval_k90           numeric(13,2) NOT NULL,
+  PRIMARY KEY (idnk90_k90)
+);

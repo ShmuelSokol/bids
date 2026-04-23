@@ -1,0 +1,3 @@
+idnkcp_kcp [PK]: (idnkcp_kcp) CLUSTERED
+qainum_kcp [UNIQUE]: (qainum_kcp) NONCLUSTERED
+qai_no_kcp [UNIQUE]: (qai_no_kcp) NONCLUSTERED

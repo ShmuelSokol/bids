@@ -1,0 +1,4 @@
+idnkc3_kc3 [PK]: (idnkc3_kc3) CLUSTERED
+key_kc3 [UNIQUE]: (dod_um_kc3, x12_um_kc3) NONCLUSTERED
+dod_um_kc3: (dod_um_kc3) NONCLUSTERED
+x12_um_kc3: (x12_um_kc3) NONCLUSTERED

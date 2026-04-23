@@ -1,0 +1,3 @@
+idnkaz_kaz [PK]: (idnkaz_kaz) CLUSTERED
+x_rsno_kaz: (x_rsno_kaz) NONCLUSTERED
+xcskey_kaz: (xcstbl_kaz, idnxcs_kaz, xcsseq_kaz) NONCLUSTERED

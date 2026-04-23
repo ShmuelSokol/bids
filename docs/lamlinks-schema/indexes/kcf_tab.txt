@@ -1,0 +1,2 @@
+idnkcf_kcf [PK]: (idnkcf_kcf) CLUSTERED
+kcbseq_kcf [UNIQUE]: (idnkcb_kcf, seq_no_kcf) NONCLUSTERED

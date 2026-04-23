@@ -1,0 +1,2 @@
+idnkdf_kdf [PK]: (idnkdf_kdf) CLUSTERED
+key_kdf [UNIQUE]: (athsys_kdf, athtyp_kdf) NONCLUSTERED

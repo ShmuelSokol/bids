@@ -1,0 +1,2 @@
+idnk70_k70 [PK]: (idnk70_k70) NONCLUSTERED
+idnk11_k70: (idnk11_k70) NONCLUSTERED

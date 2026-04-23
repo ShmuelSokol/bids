@@ -1,0 +1,766 @@
+[
+  {
+    "job_id": "1A225382-937D-407B-86FC-E1DDFCF59A7A",
+    "job_name": "Backup_Full-Log.Backup-Full",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "1A225382-937D-407B-86FC-E1DDFCF59A7A",
+        "step_id": 1,
+        "step_name": "Backup-Full",
+        "subsystem": "SSIS",
+        "command": "/Server \"$(ESCAPE_NONE(SRVR))\" /SQL \"Maintenance Plans\\Backup_Full-Log\" /set \"\\Package\\Backup-Full.Disable;false\"",
+        "database_name": null
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "1A225382-937D-407B-86FC-E1DDFCF59A7A",
+        "schedule_name": "Backup_Full-Log.Backup-Full",
+        "freq_type": 8,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 0,
+        "active_start_time": 0
+      }
+    ]
+  },
+  {
+    "job_id": "1637F529-3A26-4618-B647-5A024395E7EB",
+    "job_name": "Backup_Full-Log.BackupTransactionLog",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "1637F529-3A26-4618-B647-5A024395E7EB",
+        "step_id": 1,
+        "step_name": "BackupTransactionLog",
+        "subsystem": "SSIS",
+        "command": "/Server \"$(ESCAPE_NONE(SRVR))\" /SQL \"Maintenance Plans\\Backup_Full-Log\" /set \"\\Package\\BackupTransactionLog.Disable;false\"",
+        "database_name": null
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "1637F529-3A26-4618-B647-5A024395E7EB",
+        "schedule_name": "Backup_Full-Log.BackupTransactionLog",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 4,
+        "freq_subday_interval": 30,
+        "active_start_time": 3000
+      }
+    ]
+  },
+  {
+    "job_id": "A8E473A7-450F-4EDE-885D-451DED26138E",
+    "job_name": "CommandLog Cleanup",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "A8E473A7-450F-4EDE-885D-451DED26138E",
+        "step_id": 1,
+        "step_name": "CommandLog Cleanup",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d master -Q \"DELETE FROM [dbo].[CommandLog] WHERE StartTime < DATEADD(dd,-30,GETDATE())\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "75A7BA1C-04B6-4B7F-9FCC-9BE823741C90",
+    "job_name": "CWACompanyIndex3AM_Daily",
+    "enabled": 0,
+    "description": "Script added Job by SellerCloud-Sofia team.",
+    "steps": [
+      {
+        "job_id": "75A7BA1C-04B6-4B7F-9FCC-9BE823741C90",
+        "step_id": 1,
+        "step_name": "Full-Text Indexing",
+        "subsystem": "TSQL",
+        "command": "USE[SC] ALTER FULLTEXT CATALOG [CWACompany] REORGANIZE",
+        "database_name": "master"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "75A7BA1C-04B6-4B7F-9FCC-9BE823741C90",
+        "schedule_name": "daily",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 1,
+        "active_start_time": 30000
+      }
+    ]
+  },
+  {
+    "job_id": "0BB271E3-5C41-421A-B009-83A4E7FCBA92",
+    "job_name": "CWAFBAIndex3AM_Daily",
+    "enabled": 0,
+    "description": "Script added Job by SellerCloud-Sofia team.",
+    "steps": [
+      {
+        "job_id": "0BB271E3-5C41-421A-B009-83A4E7FCBA92",
+        "step_id": 1,
+        "step_name": "Full-Text Indexing",
+        "subsystem": "TSQL",
+        "command": "USE[SC] ALTER FULLTEXT CATALOG [CWAFBA] REORGANIZE",
+        "database_name": "master"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "0BB271E3-5C41-421A-B009-83A4E7FCBA92",
+        "schedule_name": "daily",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 1,
+        "active_start_time": 30000
+      }
+    ]
+  },
+  {
+    "job_id": "81790FC8-B972-48E7-A14A-2775C8981B7C",
+    "job_name": "CWAOrderIndex3AM_Daily",
+    "enabled": 0,
+    "description": "Script added Job by SellerCloud-Sofia team.",
+    "steps": [
+      {
+        "job_id": "81790FC8-B972-48E7-A14A-2775C8981B7C",
+        "step_id": 1,
+        "step_name": "Full-Text Indexing",
+        "subsystem": "TSQL",
+        "command": "USE[SC] ALTER FULLTEXT CATALOG [CWAOrder] REORGANIZE",
+        "database_name": "master"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "81790FC8-B972-48E7-A14A-2775C8981B7C",
+        "schedule_name": "daily",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 1,
+        "active_start_time": 30000
+      }
+    ]
+  },
+  {
+    "job_id": "BF9297C4-58EC-4067-90D3-D3E6EB0752FD",
+    "job_name": "CWAPurchaseOrderIndex3AM_Daily",
+    "enabled": 0,
+    "description": "Script added Job by SellerCloud-Sofia team.",
+    "steps": [
+      {
+        "job_id": "BF9297C4-58EC-4067-90D3-D3E6EB0752FD",
+        "step_id": 1,
+        "step_name": "Full-Text Indexing",
+        "subsystem": "TSQL",
+        "command": "USE[SC] ALTER FULLTEXT CATALOG [CWAPurchaseOrder] REORGANIZE",
+        "database_name": "master"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "BF9297C4-58EC-4067-90D3-D3E6EB0752FD",
+        "schedule_name": "daily",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 1,
+        "active_start_time": 30000
+      }
+    ]
+  },
+  {
+    "job_id": "F036D74C-D5A3-4CFB-98BF-A0C56B38C9D9",
+    "job_name": "CWAVendorIndex3AM_Daily",
+    "enabled": 0,
+    "description": "Script added Job by SellerCloud-Sofia team.",
+    "steps": [
+      {
+        "job_id": "F036D74C-D5A3-4CFB-98BF-A0C56B38C9D9",
+        "step_id": 1,
+        "step_name": "Full-Text Indexing",
+        "subsystem": "TSQL",
+        "command": "USE[SC] ALTER FULLTEXT CATALOG [CWAVendor] REORGANIZE",
+        "database_name": "master"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "F036D74C-D5A3-4CFB-98BF-A0C56B38C9D9",
+        "schedule_name": "daily",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 1,
+        "active_start_time": 30000
+      }
+    ]
+  },
+  {
+    "job_id": "A1F78B26-AE3C-44FF-B663-80E53365E7FA",
+    "job_name": "DatabaseBackup - SYSTEM_DATABASES - FULL",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "A1F78B26-AE3C-44FF-B663-80E53365E7FA",
+        "step_id": 1,
+        "step_name": "DatabaseBackup - SYSTEM_DATABASES - FULL",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d master -Q \"EXECUTE [dbo].[DatabaseBackup] @Databases = 'SYSTEM_DATABASES', @Directory = N'C:\\Backup', @BackupType = 'FULL', @Verify = 'Y', @CleanupTime = NULL, @CheckSum = 'Y', @LogToTable = 'Y'\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "F0AA5EB0-7FB0-461B-9142-0F1F4F47168F",
+    "job_name": "DatabaseBackup - USER_DATABASES - DIFF",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "F0AA5EB0-7FB0-461B-9142-0F1F4F47168F",
+        "step_id": 1,
+        "step_name": "DatabaseBackup - USER_DATABASES - DIFF",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d master -Q \"EXECUTE [dbo].[DatabaseBackup] @Databases = 'USER_DATABASES', @Directory = N'C:\\Backup', @BackupType = 'DIFF', @Verify = 'Y', @CleanupTime = NULL, @CheckSum = 'Y', @LogToTable = 'Y'\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "ABB4749C-2AAE-4DCA-9FCB-F4173EA4B2D7",
+    "job_name": "DatabaseBackup - USER_DATABASES - FULL",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "ABB4749C-2AAE-4DCA-9FCB-F4173EA4B2D7",
+        "step_id": 1,
+        "step_name": "DatabaseBackup - USER_DATABASES - FULL",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d master -Q \"EXECUTE [dbo].[DatabaseBackup] @Databases = 'USER_DATABASES', @Directory = N'C:\\Backup', @BackupType = 'FULL', @Verify = 'Y', @CleanupTime = NULL, @CheckSum = 'Y', @LogToTable = 'Y'\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "3CD16916-FCAB-4572-8F36-8D7754C3F015",
+    "job_name": "DatabaseBackup - USER_DATABASES - LOG",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "3CD16916-FCAB-4572-8F36-8D7754C3F015",
+        "step_id": 1,
+        "step_name": "DatabaseBackup - USER_DATABASES - LOG",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d master -Q \"EXECUTE [dbo].[DatabaseBackup] @Databases = 'USER_DATABASES', @Directory = N'C:\\Backup', @BackupType = 'LOG', @Verify = 'Y', @CleanupTime = NULL, @CheckSum = 'Y', @LogToTable = 'Y'\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "46C5F763-6EAF-4DA5-BE2C-5160689D7FB0",
+    "job_name": "DatabaseIntegrityCheck - SYSTEM_DATABASES",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "46C5F763-6EAF-4DA5-BE2C-5160689D7FB0",
+        "step_id": 1,
+        "step_name": "DatabaseIntegrityCheck - SYSTEM_DATABASES",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d master -Q \"EXECUTE [dbo].[DatabaseIntegrityCheck] @Databases = 'SYSTEM_DATABASES', @LogToTable = 'Y'\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "C71E5F97-F3F6-4DC2-9636-45235EF0FD9D",
+    "job_name": "DatabaseIntegrityCheck - USER_DATABASES",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "C71E5F97-F3F6-4DC2-9636-45235EF0FD9D",
+        "step_id": 1,
+        "step_name": "DatabaseIntegrityCheck - USER_DATABASES",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d master -Q \"EXECUTE [dbo].[DatabaseIntegrityCheck] @Databases = 'USER_DATABASES', @LogToTable = 'Y'\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "93726E16-87E4-4573-BFF4-FDA0D88CE9D3",
+    "job_name": "IndexOptimize - USER_DATABASES",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "93726E16-87E4-4573-BFF4-FDA0D88CE9D3",
+        "step_id": 1,
+        "step_name": "IndexOptimize - USER_DATABASES",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d master -Q \"EXECUTE [dbo].[IndexOptimize] @Databases = 'USER_DATABASES', @LogToTable = 'Y'\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "852E3B83-22DD-4AE3-8FFB-3E2DC96D07E1",
+    "job_name": "LcsCDR_Purge",
+    "enabled": 1,
+    "description": "Task to purge call detail and error report records",
+    "steps": [
+      {
+        "job_id": "852E3B83-22DD-4AE3-8FFB-3E2DC96D07E1",
+        "step_id": 1,
+        "step_name": "Check mirroring step",
+        "subsystem": "TSQL",
+        "command": "\r\ndeclare @_MirroringRole int\r\nset @_MirroringRole = (\r\n    select mirroring_role\r\n      from sys.database_mirroring\r\n     where database_id = DB_ID('LcsCDR')\r\n     )\r\nif (@_MirroringRole is not NULL and @_MirroringRole = 2) begin\r\n    raiserror('Database is mirrored', 16, 1)\r\nend\r\nelse begin\r\n    print ('Database is not mirrored')\r\nend\r\n",
+        "database_name": "msdb"
+      },
+      {
+        "job_id": "852E3B83-22DD-4AE3-8FFB-3E2DC96D07E1",
+        "step_id": 2,
+        "step_name": "Purge step",
+        "subsystem": "TSQL",
+        "command": "\r\ndeclare @_EnablePurge bit\r\ndeclare @_KeepCallDetailForDays int\r\ndeclare @_SecondsToKeepRecords int\r\ndeclare @_KeepErrorReportForDays int\r\ndeclare @_SecondsToKeepDiagnostic int\r\ndeclare @_PurgeHour int\r\ndeclare @_CurrentHour int\r\nselect @_EnablePurge = EnablePurge,\r\n       @_KeepCallDetailForDays = KeepCallDetailForDays,\r\n       @_KeepErrorReportForDays = KeepErrorReportForDays,\r\n       @_PurgeHour = PurgeHour\r\n  from dbo.PurgeSettings\r\n where Id = 1\r\nset @_SecondsToKeepRecords = @_KeepCallDetailForDays * 24 * 60 * 60\r\nset @_SecondsToKeepDiagnostic = @_KeepErrorReportForDays * 24 * 60 * 60\r\nset @_CurrentHour = datepart(hour, getdate())\r\nif (@_EnablePurge = 1)\r\nbegin\r\n    if (@_CurrentHour = @_PurgeHour) begin\r\n        exec dbo.RtcCleanupDB\r\n            @_SecondsToKeepRecords = @_SecondsToKeepRecords,\r\n            @_SecondsToKeepDiagnostic = @_SecondsToKeepDiagnostic,\r\n            @_MaxSecondsToExecute = 7200\r\n        print ('CDR purge successfully completed.')\r\n    end\r\n    else\r\n    begin\r\n        print ('CDR purge skipped, only run during the purge hour. Current hour: ' + \r\n               convert(varchar(10),@_CurrentHour) + \r\n               ' Purge hour: ' + \r\n               convert(varchar(10),@_PurgeHour))\r\n    end\r\nend\r\nelse\r\nbegin\r\n    print ('CDR purge skipped, EnablePurge = false')\r\nend\r\n",
+        "database_name": "LcsCDR"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "852E3B83-22DD-4AE3-8FFB-3E2DC96D07E1",
+        "schedule_name": "LcsCDR_Purge_Schedule",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 8,
+        "freq_subday_interval": 1,
+        "active_start_time": 0
+      }
+    ]
+  },
+  {
+    "job_id": "0EBED472-1AEE-430A-84D5-1B61A0F294D6",
+    "job_name": "LcsCDR_UsageSummary",
+    "enabled": 1,
+    "description": "Maintenance task to aggregate call detail usage data for reporting",
+    "steps": [
+      {
+        "job_id": "0EBED472-1AEE-430A-84D5-1B61A0F294D6",
+        "step_id": 1,
+        "step_name": "Check mirroring step",
+        "subsystem": "TSQL",
+        "command": "\r\ndeclare @_MirroringRole int\r\nset @_MirroringRole = (\r\n    select mirroring_role\r\n      from sys.database_mirroring\r\n     where database_id = DB_ID('LcsCDR')\r\n     )\r\nif (@_MirroringRole is not NULL and @_MirroringRole = 2) begin\r\n    raiserror('Database is mirrored', 16, 1)\r\nend\r\nelse begin\r\n    print ('Database is not mirrored')\r\nend\r\n",
+        "database_name": "msdb"
+      },
+      {
+        "job_id": "0EBED472-1AEE-430A-84D5-1B61A0F294D6",
+        "step_id": 2,
+        "step_name": "Aggregation step",
+        "subsystem": "TSQL",
+        "command": "\r\ndeclare @_UpdatingSkipped int\r\nexec dbo.RtcRegularMaintainDatabase\r\n    @_UpdatingSkipped = @_UpdatingSkipped output\r\n",
+        "database_name": "LcsCDR"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "0EBED472-1AEE-430A-84D5-1B61A0F294D6",
+        "schedule_name": "LcsCDR_UsageSummary_Schedule",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 0,
+        "active_start_time": 40000
+      }
+    ]
+  },
+  {
+    "job_id": "11E9F7E1-6290-4D0E-A090-6CAE75240863",
+    "job_name": "MaintenancePlan1.Subplan_1",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "11E9F7E1-6290-4D0E-A090-6CAE75240863",
+        "step_id": 1,
+        "step_name": "Subplan_1",
+        "subsystem": "SSIS",
+        "command": "/Server \"$(ESCAPE_NONE(SRVR))\" /SQL \"Maintenance Plans\\MaintenancePlan1\" /set \"\\Package\\Subplan_1.Disable;false\"",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "6DFC2F68-F8C0-4FD6-B15C-7CC2F365AD9C",
+    "job_name": "Output File Cleanup",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "6DFC2F68-F8C0-4FD6-B15C-7CC2F365AD9C",
+        "step_id": 1,
+        "step_name": "Output File Cleanup",
+        "subsystem": "CMDEXEC",
+        "command": "cmd /q /c \"For /F \"tokens=1 delims=\" %v In ('ForFiles /P \"D:\\MSSQL11.MSSQLSERVER\\MSSQL\\LOG\" /m *_*_*_*.txt /d -30 2^>^&1') do if EXIST \"D:\\MSSQL11.MSSQLSERVER\\MSSQL\\LOG\"\\%v echo del \"D:\\MSSQL11.MSSQLSERVER\\MSSQL\\LOG\"\\%v& del \"D:\\MSSQL11.MSSQLSERVER\\MSSQL\\LOG\"\\%v\"",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "BE66E366-3FE3-4A79-ADFF-A064050A0DF5",
+    "job_name": "QoEMetrics_Purge",
+    "enabled": 1,
+    "description": "Task to purge QoE data",
+    "steps": [
+      {
+        "job_id": "BE66E366-3FE3-4A79-ADFF-A064050A0DF5",
+        "step_id": 1,
+        "step_name": "Check mirroring step",
+        "subsystem": "TSQL",
+        "command": "\r\ndeclare @_MirroringRole int\r\nset @_MirroringRole = (\r\n    select mirroring_role\r\n      from sys.database_mirroring\r\n     where database_id = DB_ID('QoEMetrics')\r\n     )\r\nif (@_MirroringRole is not NULL and @_MirroringRole = 2) begin\r\n    raiserror('Database is mirrored', 16, 1)\r\nend\r\nelse begin\r\n    print ('Database is not mirrored')\r\nend\r\n",
+        "database_name": "msdb"
+      },
+      {
+        "job_id": "BE66E366-3FE3-4A79-ADFF-A064050A0DF5",
+        "step_id": 2,
+        "step_name": "Purge step",
+        "subsystem": "TSQL",
+        "command": "\r\ndeclare @_EnablePurge bit\r\ndeclare @_KeepQoEDataForDays int\r\ndeclare @_SecondsToKeepData int\r\ndeclare @_PurgeHour int\r\ndeclare @_CurrentHour int\r\nselect @_EnablePurge = EnablePurge,\r\n       @_KeepQoEDataForDays = KeepQoEDataForDays,\r\n       @_PurgeHour = PurgeHour\r\n  from dbo.PurgeSettings\r\n where Id = 1\r\nset @_SecondsToKeepData = @_KeepQoEDataForDays * 24 * 60 * 60\r\nset @_CurrentHour = datepart(hour, getdate())\r\nif (@_EnablePurge = 1)\r\nbegin\r\n    if (@_CurrentHour = @_PurgeHour) begin\r\n        exec dbo.QoePurgeOutdatedReports\r\n        @_CallRecordRetentionSeconds = @_SecondsToKeepData,\r\n        @_MaxSecondsToExecute = 3600\r\n        print ('QoE purge successfully completed.')\r\n    end\r\n    else\r\n    begin\r\n        print ('QoE purge skipped, only run during the purge hour. Current hour: ' + \r\n               convert(varchar(10),@_CurrentHour) + \r\n               ' Purge hour: ' + \r\n               convert(varchar(10),@_PurgeHour))\r\n    end\r\nend\r\nelse\r\nbegin\r\n    print ('QoE purge skipped, EnablePurge = false')\r\nend\r\n",
+        "database_name": "QoEMetrics"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "BE66E366-3FE3-4A79-ADFF-A064050A0DF5",
+        "schedule_name": "QoEMetrics_Purge_Schedule",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 8,
+        "freq_subday_interval": 1,
+        "active_start_time": 0
+      }
+    ]
+  },
+  {
+    "job_id": "5D236AF6-B316-4909-A14B-540AD88FC1C3",
+    "job_name": "QoEMetrics_UsageSummary",
+    "enabled": 1,
+    "description": "Maintenance task to aggregate QoE data for reporting",
+    "steps": [
+      {
+        "job_id": "5D236AF6-B316-4909-A14B-540AD88FC1C3",
+        "step_id": 1,
+        "step_name": "Check mirroring step",
+        "subsystem": "TSQL",
+        "command": "\r\ndeclare @_MirroringRole int\r\nset @_MirroringRole = (\r\n    select mirroring_role\r\n      from sys.database_mirroring\r\n     where database_id = DB_ID('QoEMetrics')\r\n     )\r\nif (@_MirroringRole is not NULL and @_MirroringRole = 2) begin\r\n    raiserror('Database is mirrored', 16, 1)\r\nend\r\nelse begin\r\n    print ('Database is not mirrored')\r\nend\r\n",
+        "database_name": "msdb"
+      },
+      {
+        "job_id": "5D236AF6-B316-4909-A14B-540AD88FC1C3",
+        "step_id": 2,
+        "step_name": "Aggregation step",
+        "subsystem": "TSQL",
+        "command": "\r\ndeclare @_UpdatingSkipped int\r\nexec dbo.RtcRegularMaintainDatabase\r\n    @_UpdatingSkipped = @_UpdatingSkipped output\r\n",
+        "database_name": "QoEMetrics"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "5D236AF6-B316-4909-A14B-540AD88FC1C3",
+        "schedule_name": "QoEMetrics_UsageSummary_Schedule",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 0,
+        "active_start_time": 30000
+      }
+    ]
+  },
+  {
+    "job_id": "88F028B3-E842-4D4F-9EC2-7D8EA0616E94",
+    "job_name": "Reload PF Products for Shipping",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "88F028B3-E842-4D4F-9EC2-7D8EA0616E94",
+        "step_id": 1,
+        "step_name": "CreatePFProdct2",
+        "subsystem": "TSQL",
+        "command": "exec CreatePFProdct2",
+        "database_name": "VC_ShipBill"
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "82C87C76-E32A-4D10-82EA-C72888180F7C",
+    "job_name": "RemoveOldBackups-BAK.RemoveOldBackups-BAK",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "82C87C76-E32A-4D10-82EA-C72888180F7C",
+        "step_id": 1,
+        "step_name": "RemoveOldBackups-BAK",
+        "subsystem": "SSIS",
+        "command": "/Server \"$(ESCAPE_NONE(SRVR))\" /SQL \"Maintenance Plans\\RemoveOldBackups-BAK\" /set \"\\Package\\RemoveOldBackups-BAK.Disable;false\"",
+        "database_name": null
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "82C87C76-E32A-4D10-82EA-C72888180F7C",
+        "schedule_name": "RemoveOldBackups-BAK.RemoveOldBackups-BAK",
+        "freq_type": 8,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 0,
+        "active_start_time": 2000
+      }
+    ]
+  },
+  {
+    "job_id": "464C2414-FC16-43A9-BDE3-6A77B13AD10F",
+    "job_name": "RemoveOldBackups-TRN.RemoveOldBackups-TRN",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "464C2414-FC16-43A9-BDE3-6A77B13AD10F",
+        "step_id": 1,
+        "step_name": "RemoveOldBackups-TRN",
+        "subsystem": "SSIS",
+        "command": "/Server \"$(ESCAPE_NONE(SRVR))\" /SQL \"Maintenance Plans\\RemoveOldBackups-TRN\" /set \"\\Package\\RemoveOldBackups-TRN.Disable;false\"",
+        "database_name": null
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "464C2414-FC16-43A9-BDE3-6A77B13AD10F",
+        "schedule_name": "RemoveOldBackups-TRN.RemoveOldBackups-TRN",
+        "freq_type": 8,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 0,
+        "active_start_time": 122500
+      }
+    ]
+  },
+  {
+    "job_id": "11C18157-6712-41FD-92CC-5412F23AF495",
+    "job_name": "run Automatic_Import_SZY_WinSol_Table_Groups",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "11C18157-6712-41FD-92CC-5412F23AF495",
+        "step_id": 1,
+        "step_name": "step 1",
+        "subsystem": "TSQL",
+        "command": "exec Automatic_Import_SZY_WinSol_Table_Groups",
+        "database_name": "SZY_WinSol"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "11C18157-6712-41FD-92CC-5412F23AF495",
+        "schedule_name": "schedule 1",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 4,
+        "freq_subday_interval": 90,
+        "active_start_time": 0
+      },
+      {
+        "job_id": "11C18157-6712-41FD-92CC-5412F23AF495",
+        "schedule_name": "temp",
+        "freq_type": 1,
+        "freq_interval": 0,
+        "freq_subday_type": 0,
+        "freq_subday_interval": 0,
+        "active_start_time": 110000
+      }
+    ]
+  },
+  {
+    "job_id": "AD39593E-C428-4A21-A680-B843F563ED20",
+    "job_name": "run SellerCloud Import Orders procedures",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "AD39593E-C428-4A21-A680-B843F563ED20",
+        "step_id": 1,
+        "step_name": "run procedure",
+        "subsystem": "TSQL",
+        "command": "declare @skip_if_already_run_after time;\r\ndeclare @ran_successfully bit;\r\ndeclare @return_message varchar(500);\r\n\r\nset @skip_if_already_run_after = '5:00PM';\r\n\r\nexec scoi.run_all_procedure \r\n\t@skip_if_already_run_after = @skip_if_already_run_after, @ran_successfully = @ran_successfully out, @return_message = @return_message out;\r\n\r\nprint cast(@ran_successfully as varchar);\r\nprint @return_message;\r\n",
+        "database_name": "SZY"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "AD39593E-C428-4A21-A680-B843F563ED20",
+        "schedule_name": "weekdays",
+        "freq_type": 8,
+        "freq_interval": 62,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 0,
+        "active_start_time": 173000
+      }
+    ]
+  },
+  {
+    "job_id": "B739EF3F-1CAD-479B-8CA9-96B8B2A3EF29",
+    "job_name": "run update shipping info SP",
+    "enabled": 0,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "B739EF3F-1CAD-479B-8CA9-96B8B2A3EF29",
+        "step_id": 1,
+        "step_name": "step 1",
+        "subsystem": "TSQL",
+        "command": "exec update_Shipping_Info",
+        "database_name": "Shipping_Info"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "B739EF3F-1CAD-479B-8CA9-96B8B2A3EF29",
+        "schedule_name": "schedule 1",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 4,
+        "freq_subday_interval": 15,
+        "active_start_time": 74500
+      }
+    ]
+  },
+  {
+    "job_id": "6915F207-F8D4-43EA-A928-BEEF226CD57B",
+    "job_name": "SC_IndexOptimize",
+    "enabled": 1,
+    "description": "SC_IndexOptimize",
+    "steps": [
+      {
+        "job_id": "6915F207-F8D4-43EA-A928-BEEF226CD57B",
+        "step_id": 1,
+        "step_name": "SC_IndexOptimize - User Databases",
+        "subsystem": "TSQL",
+        "command": "EXECUTE dbo.IndexOptimize\r\n@Databases = 'USER_DATABASES',\r\n@FragmentationLow = NULL,\r\n@FragmentationMedium = 'INDEX_REORGANIZE,INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE',\r\n@FragmentationHigh = 'INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE',\r\n@FragmentationLevel1 = 10,\r\n@FragmentationLevel2 = 30,\r\n@UpdateStatistics = 'ALL',\r\n@OnlyModifiedStatistics = 'Y'",
+        "database_name": "master"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "6915F207-F8D4-43EA-A928-BEEF226CD57B",
+        "schedule_name": "SC_OptimizeIndex_Schedule",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 0,
+        "active_start_time": 190000
+      }
+    ]
+  },
+  {
+    "job_id": "9F87F374-C26C-49D2-9B14-2C257061515E",
+    "job_name": "sp_delete_backuphistory",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "9F87F374-C26C-49D2-9B14-2C257061515E",
+        "step_id": 1,
+        "step_name": "sp_delete_backuphistory",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d msdb -Q \"DECLARE @CleanupDate datetime SET @CleanupDate = DATEADD(dd,-30,GETDATE()) EXECUTE dbo.sp_delete_backuphistory @oldest_date = @CleanupDate\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "77A6DAE7-8B65-434F-BA36-FF963899C89C",
+    "job_name": "sp_purge_jobhistory",
+    "enabled": 1,
+    "description": "Source: https://ola.hallengren.com",
+    "steps": [
+      {
+        "job_id": "77A6DAE7-8B65-434F-BA36-FF963899C89C",
+        "step_id": 1,
+        "step_name": "sp_purge_jobhistory",
+        "subsystem": "CMDEXEC",
+        "command": "sqlcmd -E -S $(ESCAPE_SQUOTE(SRVR)) -d msdb -Q \"DECLARE @CleanupDate datetime SET @CleanupDate = DATEADD(dd,-30,GETDATE()) EXECUTE dbo.sp_purge_jobhistory @oldest_date = @CleanupDate\" -b",
+        "database_name": null
+      }
+    ],
+    "schedules": []
+  },
+  {
+    "job_id": "E020E44E-DF7E-4EF3-A5CB-58045648EF1B",
+    "job_name": "syspolicy_purge_history",
+    "enabled": 1,
+    "description": "No description available.",
+    "steps": [
+      {
+        "job_id": "E020E44E-DF7E-4EF3-A5CB-58045648EF1B",
+        "step_id": 1,
+        "step_name": "Verify that automation is enabled.",
+        "subsystem": "TSQL",
+        "command": "IF (msdb.dbo.fn_syspolicy_is_automation_enabled() != 1)\r\n        BEGIN\r\n            RAISERROR(34022, 16, 1)\r\n        END",
+        "database_name": "master"
+      },
+      {
+        "job_id": "E020E44E-DF7E-4EF3-A5CB-58045648EF1B",
+        "step_id": 2,
+        "step_name": "Purge history.",
+        "subsystem": "TSQL",
+        "command": "EXEC msdb.dbo.sp_syspolicy_purge_history",
+        "database_name": "master"
+      },
+      {
+        "job_id": "E020E44E-DF7E-4EF3-A5CB-58045648EF1B",
+        "step_id": 3,
+        "step_name": "Erase Phantom System Health Records.",
+        "subsystem": "PowerShell",
+        "command": "if ('$(ESCAPE_SQUOTE(INST))' -eq 'MSSQLSERVER') {$a = '\\DEFAULT'} ELSE {$a = ''};\r\n(Get-Item SQLSERVER:\\SQLPolicy\\$(ESCAPE_NONE(SRVR))$a).EraseSystemHealthPhantomRecords()",
+        "database_name": "master"
+      }
+    ],
+    "schedules": [
+      {
+        "job_id": "E020E44E-DF7E-4EF3-A5CB-58045648EF1B",
+        "schedule_name": "syspolicy_purge_history_schedule",
+        "freq_type": 4,
+        "freq_interval": 1,
+        "freq_subday_type": 1,
+        "freq_subday_interval": 0,
+        "active_start_time": 20000
+      }
+    ]
+  }
+]

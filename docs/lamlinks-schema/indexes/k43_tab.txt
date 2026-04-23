@@ -1,0 +1,3 @@
+k43_tab_idnk43_k43 [PK]: (idnk43_k43) CLUSTERED
+idnk40_k43: (idnk40_k43) NONCLUSTERED
+idnk42_k43: (idnk42_k43) NONCLUSTERED

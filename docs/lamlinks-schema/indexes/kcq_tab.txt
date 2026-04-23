@@ -1,0 +1,4 @@
+idnkcq_kcq [PK]: (idnkcq_kcq) CLUSTERED
+key2_kcq [UNIQUE]: (idnk71_kcq, dc1tab_kcq, idndc1_kcq, dc2tab_kcq, idndc2_kcq) NONCLUSTERED
+key1_kcq [UNIQUE]: (idnkcp_kcq, qal_no_kcq) NONCLUSTERED
+qastat_kcq: (qastat_kcq) NONCLUSTERED

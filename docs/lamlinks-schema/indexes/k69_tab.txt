@@ -1,0 +1,4 @@
+idnk69_k69 [PK]: (idnk69_k69) CLUSTERED
+k52seq_k69 [UNIQUE]: (idnk52_k69, postyp_k69, seq_no_k69) NONCLUSTERED
+idnk52_k69: (idnk52_k69) NONCLUSTERED
+idnk68_k69: (idnk68_k69) NONCLUSTERED

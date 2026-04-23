@@ -1,0 +1,2 @@
+k32_tab_idnk32_k32 [PK]: (idnk32_k32) CLUSTERED
+idnk11_k32: (idnk11_k32) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnk78_k78 [PK]: (idnk78_k78) CLUSTERED
+u_key_k78 [UNIQUE]: (m_name_k78, filext_k78) NONCLUSTERED

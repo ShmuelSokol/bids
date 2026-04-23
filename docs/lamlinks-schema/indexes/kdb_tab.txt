@@ -1,0 +1,3 @@
+idnkdb_kdb [PK]: (idnkdb_kdb) CLUSTERED
+key_kdb [UNIQUE]: (idnkd8_kdb, t_time_kdb) NONCLUSTERED
+t_clas_kdb: (t_clas_kdb) NONCLUSTERED

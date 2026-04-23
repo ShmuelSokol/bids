@@ -1,0 +1,3 @@
+idnkdk_kdk [PK]: (idnkdk_kdk) CLUSTERED
+key_kdk [UNIQUE]: (idnk42_kdk) NONCLUSTERED
+rstime_kdk: (rstime_kdk) NONCLUSTERED

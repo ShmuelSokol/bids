@@ -1,0 +1,3 @@
+idnkbw_kbw [PK]: (idnkbw_kbw) CLUSTERED
+m1b_no_kbw [UNIQUE]: (m1b_no_kbw) NONCLUSTERED
+m1bnum_kbw [UNIQUE]: (m1bnum_kbw) NONCLUSTERED

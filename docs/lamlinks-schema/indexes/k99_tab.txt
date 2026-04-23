@@ -1,0 +1,3 @@
+idnk99_k99 [PK]: (idnk99_k99) CLUSTERED
+k95seq_k99 [UNIQUE]: (idnk95_k99, nnlseq_k99) NONCLUSTERED
+cnt_no_k99: (cnt_no_k99) NONCLUSTERED

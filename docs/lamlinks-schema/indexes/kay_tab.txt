@@ -1,0 +1,2 @@
+idnkay_kay [PK]: (idnkay_kay) CLUSTERED
+innkaw_kay_u [UNIQUE]: (innkaw_kay) NONCLUSTERED

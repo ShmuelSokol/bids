@@ -1,0 +1,3 @@
+idnkbm_kbm [PK]: (idnkbm_kbm) CLUSTERED
+cwb_no_kbm [UNIQUE]: (cwb_no_kbm) NONCLUSTERED
+cwbnum_kbm [UNIQUE]: (cwbnum_kbm) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnk64_k64 [PK]: (idnk64_k64) CLUSTERED
+ptcnam_k64 [UNIQUE]: (ptcnam_k64) NONCLUSTERED

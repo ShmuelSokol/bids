@@ -1,0 +1,2 @@
+k35_tab_idnk35_k35 [PK]: (idnk35_k35) CLUSTERED
+idnk34_k35: (idnk34_k35) NONCLUSTERED

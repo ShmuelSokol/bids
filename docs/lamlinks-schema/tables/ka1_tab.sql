@@ -1,0 +1,25 @@
+-- dbo.ka1_tab  (0 rows)
+CREATE TABLE dbo.ka1_tab (
+  idnka1_ka1           int NOT NULL,
+  addtme_ka1           datetime NOT NULL,
+  addnme_ka1           char(10) NOT NULL,
+  idnk39_ka1           int NOT NULL,
+  idnk06_ka1           int NOT NULL,
+  insnme_ka1           char(10) NOT NULL,
+  inbnme_ka1           char(10) NOT NULL,
+  sinino_ka1           char(16) NOT NULL,
+  sinnum_ka1           char(60) NOT NULL,
+  sindte_ka1           datetime NOT NULL,
+  sinsta_ka1           char(15) NOT NULL,
+  sisdte_ka1           datetime NOT NULL,
+  insval_ka1           numeric(13,2) NOT NULL,
+  inbval_ka1           numeric(13,2) NOT NULL,
+  mpuval_ka1           numeric(13,2) NOT NULL,
+  nmpval_ka1           numeric(13,2) NOT NULL,
+  ppdval_ka1           numeric(13,2) NOT NULL,
+  cshval_ka1           numeric(13,2) NOT NULL,
+  dbmval_ka1           numeric(13,2) NOT NULL,
+  otdval_ka1           numeric(13,2) NOT NULL,
+  ap_val_ka1           numeric(13,2) NOT NULL,
+  PRIMARY KEY (idnka1_ka1)
+);

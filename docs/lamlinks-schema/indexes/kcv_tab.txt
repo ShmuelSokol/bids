@@ -1,0 +1,5 @@
+idnkcv_kcv [PK]: (idnkcv_kcv) CLUSTERED
+key2_kcv [UNIQUE]: (idnkcu_kcv, srstab_kcv, idnsrs_kcv, afttab_kcv, idnaft_kcv) NONCLUSTERED
+key1_kcv [UNIQUE]: (idnkcu_kcv, srl_no_kcv) NONCLUSTERED
+srs_kcv: (srstab_kcv, idnsrs_kcv) NONCLUSTERED
+aft_kcv: (afttab_kcv, idnaft_kcv) NONCLUSTERED

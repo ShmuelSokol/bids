@@ -1,0 +1,4 @@
+idnkce_kce [PK]: (idnkce_kce) CLUSTERED
+kcekey_kce [UNIQUE]: (idnkcd_kce, idnk14_kce) NONCLUSTERED
+acttme_kce: (acttme_kce) NONCLUSTERED
+actsta_kce: (actsta_kce) NONCLUSTERED

@@ -1,0 +1,2 @@
+k07_tab_idnk07_k07 [PK]: (idnk07_k07) CLUSTERED
+ss_kit_k07: (ss_tid_k07, ss_idk_k07, ss_key_k07) NONCLUSTERED

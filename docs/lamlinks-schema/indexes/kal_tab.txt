@@ -1,0 +1,2 @@
+idnkal_kal [PK]: (idnkal_kal) CLUSTERED
+kalkey_kal [UNIQUE]: (fpltbl_kal, idnfpl_kal, idnkap_kal, ftitle_kal, f_vrno_kal) NONCLUSTERED

@@ -1,0 +1,4 @@
+idnk89_k89 [PK]: (idnk89_k89) CLUSTERED
+por_no_k89 [UNIQUE]: (por_no_k89) NONCLUSTERED
+poruno_k89 [UNIQUE]: (poruno_k89) NONCLUSTERED
+poak39_k89: (idnk39_k89, poadds_k89) NONCLUSTERED

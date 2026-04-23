@@ -1,0 +1,2 @@
+idnkca_kca [PK]: (idnkca_kca) CLUSTERED
+aclass_kca [UNIQUE]: (aclass_kca) NONCLUSTERED

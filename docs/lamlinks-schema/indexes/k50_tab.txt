@@ -1,0 +1,3 @@
+k50_tab_idnk50_k50 [PK]: (idnk50_k50) CLUSTERED
+idnk49_k50: (idnk49_k50) NONCLUSTERED
+app_k50: (apttyp_k50, idnapt_k50) NONCLUSTERED

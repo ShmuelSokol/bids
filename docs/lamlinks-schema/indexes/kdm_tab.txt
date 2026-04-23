@@ -1,0 +1,3 @@
+idnkdm_kdm [PK]: (idnkdm_kdm) CLUSTERED
+key_kdm [UNIQUE]: (idnkdk_kdm, took12_kdm, t_clas_kdm) NONCLUSTERED
+rstime_kdm: (rstime_kdm) NONCLUSTERED

@@ -1,0 +1,3 @@
+idnk39_k39 [PK]: (idnk39_k39) CLUSTERED
+idnk12_k39 [UNIQUE]: (idnk12_k39) NONCLUSTERED
+s_code_k39 [UNIQUE]: (s_code_k39) NONCLUSTERED

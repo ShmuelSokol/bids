@@ -1,0 +1,1 @@
+adtime_kdc: (adtime_kdc) NONCLUSTERED

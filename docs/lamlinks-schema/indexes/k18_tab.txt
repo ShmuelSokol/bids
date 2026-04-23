@@ -1,0 +1,3 @@
+k18_tab_idnk18_k18 [PK]: (idnk18_k18) CLUSTERED
+idnk16_k18: (idnk16_k18) NONCLUSTERED
+dgu_k18: (dgutyp_k18, idndgu_k18) NONCLUSTERED

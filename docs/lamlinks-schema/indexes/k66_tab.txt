@@ -1,0 +1,2 @@
+idnk66_k66 [PK]: (idnk66_k66) CLUSTERED
+spt_k66: (spttyp_k66, idnspt_k66) NONCLUSTERED

@@ -1,0 +1,5 @@
+k41_tab_idnk41_k41 [PK]: (idnk41_k41) CLUSTERED
+idnk36_k41: (idnk36_k41) NONCLUSTERED
+nodelk_k41: (nodelk_k41) NONCLUSTERED
+bt_sta_k41: (bt_sta_k41) NONCLUSTERED
+bt_tme_k41: (bt_tme_k41) NONCLUSTERED

@@ -1,0 +1,3 @@
+idnkbg_kbg [PK]: (idnkbg_kbg) CLUSTERED
+stg_no_kbg [UNIQUE]: (stg_no_kbg) NONCLUSTERED
+stgnum_kbg [UNIQUE]: (stgnum_kbg) NONCLUSTERED

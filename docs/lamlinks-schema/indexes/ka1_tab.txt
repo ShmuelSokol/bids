@@ -1,0 +1,3 @@
+idnka1_ka1 [PK]: (idnka1_ka1) CLUSTERED
+k39sin_ka1 [UNIQUE]: (idnk39_ka1, sinnum_ka1) NONCLUSTERED
+ap_val_ka1: (ap_val_ka1) NONCLUSTERED

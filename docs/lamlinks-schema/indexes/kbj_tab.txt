@@ -1,0 +1,3 @@
+idnkbj_kbj [PK]: (idnkbj_kbj) CLUSTERED
+mrb_no_kbj [UNIQUE]: (mrb_no_kbj) NONCLUSTERED
+mrbnum_kbj [UNIQUE]: (mrbnum_kbj) NONCLUSTERED

@@ -1,0 +1,2 @@
+k22_tab_idnk22_k22 [PK]: (idnk22_k22) CLUSTERED
+k22_tab_usfnam_k22 [UNIQUE]: (usfnam_k22) NONCLUSTERED

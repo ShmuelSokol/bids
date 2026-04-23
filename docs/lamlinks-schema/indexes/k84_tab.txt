@@ -1,0 +1,5 @@
+idnk84_k84 [PK]: (idnk84_k84) CLUSTERED
+k71roq_k84: (idnk71_k84, roq_01_k84) NONCLUSTERED
+k71soq_k84: (idnk71_k84, soq_01_k84) NONCLUSTERED
+k79roq_k84: (idnk79_k84, roq_01_k84) NONCLUSTERED
+k79soq_k84: (idnk79_k84, soq_01_k84) NONCLUSTERED

@@ -1,0 +1,3 @@
+k48_tab_idnk48_k48 [PK]: (idnk48_k48) CLUSTERED
+idnk47_k48: (idnk47_k48) NONCLUSTERED
+app_k48: (apttyp_k48, idnapt_k48) NONCLUSTERED

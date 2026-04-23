@@ -1,0 +1,3 @@
+k25_tab_idnk25_k25 [PK]: (idnk25_k25) CLUSTERED
+k25_tab_clrnam_k25 [UNIQUE]: (clrnam_k25) NONCLUSTERED
+rbgfun_k25: (rbgfun_k25) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnka8_ka8 [PK]: (idnka8_ka8) CLUSTERED
+job_no_ka8 [UNIQUE]: (job_no_ka8) NONCLUSTERED

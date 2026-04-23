@@ -1,0 +1,2 @@
+idnkbc_kbc [PK]: (idnkbc_kbc) CLUSTERED
+lockey_kbc [UNIQUE]: (idnk93_kbc, idnwhs_kbc, locatn_kbc) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnkc0_kc0 [PK]: (idnkc0_kc0) CLUSTERED
+payref_kc0 [UNIQUE]: (payref_kc0) NONCLUSTERED

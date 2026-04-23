@@ -1,0 +1,3 @@
+idnk96_k96 [PK]: (idnk96_k96) CLUSTERED
+gl_nam_k96 [UNIQUE]: (gl_nam_k96) NONCLUSTERED
+gl_num_k96 [UNIQUE]: (gl_num_k96) NONCLUSTERED

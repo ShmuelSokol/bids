@@ -1,0 +1,5 @@
+idnkd4_kd4 [PK]: (idnkd4_kd4) CLUSTERED
+keypiidno_kd4 [UNIQUE]: (cntrct_kd4, piidno_kd4, rel_no_kd4, modnum_kd4) NONCLUSTERED
+adtime_kd4: (adtime_kd4) NONCLUSTERED
+idnk80_kd4: (idnk80_kd4) NONCLUSTERED
+piidno_kd4: (piidno_kd4) NONCLUSTERED

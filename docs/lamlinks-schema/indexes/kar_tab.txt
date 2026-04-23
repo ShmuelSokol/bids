@@ -1,0 +1,2 @@
+idnkar_kar [PK]: (idnkar_kar) CLUSTERED
+karkey_kar [UNIQUE]: (idnkaq_kar, areseq_kar) NONCLUSTERED

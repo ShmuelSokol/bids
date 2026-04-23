@@ -1,0 +1,3 @@
+idnkc6_kc6 [PK]: (idnkc6_kc6) CLUSTERED
+mdrnum_kc6 [UNIQUE]: (mdrnum_kc6) NONCLUSTERED
+mdr_no_kc6 [UNIQUE]: (mdr_no_kc6) NONCLUSTERED

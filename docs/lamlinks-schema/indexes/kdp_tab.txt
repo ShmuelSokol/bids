@@ -1,0 +1,2 @@
+idnkdp_kdp [PK]: (idnkdp_kdp) CLUSTERED
+qrname_kdp [UNIQUE]: (qrname_kdp) NONCLUSTERED

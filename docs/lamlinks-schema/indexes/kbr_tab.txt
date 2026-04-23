@@ -1,0 +1,2 @@
+idnkbr_kbr [PK]: (idnkbr_kbr) CLUSTERED
+key_kbr [UNIQUE]: (itttbl_kbr, idnitt_kbr, idnkap_kbr) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnkbk_kbk [PK]: (idnkbk_kbk) CLUSTERED
+ka2kbh_kbk [UNIQUE]: (idnka2_kbk, idnkbh_kbk) NONCLUSTERED

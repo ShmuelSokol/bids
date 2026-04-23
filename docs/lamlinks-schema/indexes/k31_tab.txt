@@ -1,0 +1,5 @@
+k31_tab_idnk31_k31 [PK]: (idnk31_k31) CLUSTERED
+k31_tab_a_code_k31 [UNIQUE]: (a_code_k31) NONCLUSTERED
+k31_tab_c_code_k31 [UNIQUE]: (c_code_k31) NONCLUSTERED
+idnk12_k31: (idnk12_k31) NONCLUSTERED
+c_name_k31: (c_name_k31) NONCLUSTERED

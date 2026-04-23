@@ -1,0 +1,4 @@
+idnk12_k12 [PK]: (idnk12_k12) CLUSTERED
+e_code_k12 [UNIQUE]: (e_code_k12) NONCLUSTERED
+e_name_k12: (e_name_k12) NONCLUSTERED
+e_fnam_k12: (e_fnam_k12) NONCLUSTERED

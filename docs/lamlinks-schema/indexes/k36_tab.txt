@@ -1,0 +1,3 @@
+k36_tab_idnk36_k36 [PK]: (idnk36_k36) CLUSTERED
+k36_tab_vqpnam_k36 [UNIQUE]: (vqpnam_k36) NONCLUSTERED
+coxnam_k36: (coxnam_k36) NONCLUSTERED

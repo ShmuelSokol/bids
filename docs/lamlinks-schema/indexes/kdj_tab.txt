@@ -1,0 +1,2 @@
+idnkdj_kdj [PK]: (idnkdj_kdj) CLUSTERED
+key_kdj [UNIQUE]: (ceclas_kdj, idnk12_kdj) NONCLUSTERED

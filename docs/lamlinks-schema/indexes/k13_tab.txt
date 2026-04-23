@@ -1,0 +1,4 @@
+idnk13_k13 [PK]: (idnk13_k13) CLUSTERED
+idnk12_k13 [UNIQUE]: (idnk12_k13) NONCLUSTERED
+k13_tab_cage_k13 [UNIQUE]: (cage_k13) NONCLUSTERED
+c_name_k13: (c_name_k13) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnka2_ka2 [PK]: (idnka2_ka2) CLUSTERED
+sil_no_ka2 [UNIQUE]: (idnka1_ka2, sil_no_ka2) NONCLUSTERED

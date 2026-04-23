@@ -1,0 +1,4 @@
+idnkd0_kd0 [PK]: (idnkd0_kd0) CLUSTERED
+key_kd0 [UNIQUE]: (adtime_kd0, idns07_kd0) NONCLUSTERED
+idns07_kd0: (idns07_kd0) NONCLUSTERED
+adtime_kd0: (adtime_kd0) NONCLUSTERED

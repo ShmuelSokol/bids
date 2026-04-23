@@ -1,0 +1,4 @@
+k34_tab_idnk34_k34 [PK]: (idnk34_k34) CLUSTERED
+idnk11_k34: (idnk11_k34) NONCLUSTERED
+idnk33_k34: (idnk33_k34) NONCLUSTERED
+qrefno_k34: (qrefno_k34) NONCLUSTERED

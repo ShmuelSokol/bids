@@ -1,0 +1,2 @@
+k38_tab_idnk38_k38 [PK]: (idnk38_k38) CLUSTERED
+idnk37_k38: (idnk37_k38) NONCLUSTERED

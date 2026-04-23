@@ -1,0 +1,2 @@
+idnkct_kct [PK]: (idnkct_kct) CLUSTERED
+sranum_kct [UNIQUE]: (idnk39_kct, sraino_kct) NONCLUSTERED

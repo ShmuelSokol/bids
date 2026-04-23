@@ -1,0 +1,2 @@
+idnk82_k82 [PK]: (idnk82_k82) CLUSTERED
+mrenam_k82 [UNIQUE]: (mrenam_k82) NONCLUSTERED

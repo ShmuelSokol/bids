@@ -1,0 +1,4 @@
+k52_tab_idnk52_k52 [PK]: (idnk52_k52) CLUSTERED
+k52_tab_rlek51_k52 [UNIQUE]: (idnk51_k52, rlenam_k52) NONCLUSTERED
+idnk51_k52: (idnk51_k52) NONCLUSTERED
+idnk21_k52: (idnk21_k52) NONCLUSTERED

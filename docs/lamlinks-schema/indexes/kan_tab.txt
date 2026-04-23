@@ -1,0 +1,2 @@
+idnkan_kan [PK]: (idnkan_kan) CLUSTERED
+idnkal_kan: (idnkal_kan) NONCLUSTERED

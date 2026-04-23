@@ -1,0 +1,2 @@
+k46_tab_idnk46_k46 [PK]: (idnk46_k46) CLUSTERED
+uptime_k46: (uptime_k46) NONCLUSTERED

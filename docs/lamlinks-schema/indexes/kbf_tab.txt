@@ -1,0 +1,2 @@
+idnkbf_kbf [PK]: (idnkbf_kbf) CLUSTERED
+lblnam_kbf [UNIQUE]: (lblnam_kbf) NONCLUSTERED

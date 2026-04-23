@@ -1,0 +1,3 @@
+idnkde_kde [PK]: (idnkde_kde) CLUSTERED
+key_kde [UNIQUE]: (adtime_kde, tbltoa_kde, idntoa_kde, idnkdg_kde) NONCLUSTERED
+adtime_kde: (adtime_kde) NONCLUSTERED

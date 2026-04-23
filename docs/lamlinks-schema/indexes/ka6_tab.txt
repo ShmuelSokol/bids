@@ -1,0 +1,3 @@
+idnka6_ka6 [PK]: (idnka6_ka6) CLUSTERED
+ka7gdu_ka6 [UNIQUE]: (idnka7_ka6, gdutbl_ka6, idngdu_ka6) NONCLUSTERED
+gdu_ka6: (gdutbl_ka6, idngdu_ka6) NONCLUSTERED

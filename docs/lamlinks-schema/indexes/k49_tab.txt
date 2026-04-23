@@ -1,0 +1,4 @@
+k49_tab_idnk49_k49 [PK]: (idnk49_k49) CLUSTERED
+k49_tab_msgkey_k49 [UNIQUE]: (msg_id_k49, msgtme_k49) NONCLUSTERED
+idnk46_k49: (idnk46_k49) NONCLUSTERED
+app_k49: (apttyp_k49, idnapt_k49) NONCLUSTERED

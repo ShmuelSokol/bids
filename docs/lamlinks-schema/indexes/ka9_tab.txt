@@ -1,0 +1,2 @@
+idnka9_ka9 [PK]: (idnka9_ka9) CLUSTERED
+ka8jln_ka9 [UNIQUE]: (idnka8_ka9, jln_no_ka9) NONCLUSTERED

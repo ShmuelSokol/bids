@@ -1,0 +1,4 @@
+idnk71_k71 [PK]: (idnk71_k71) CLUSTERED
+partid_k71 [UNIQUE]: (idnk08_k71, idnk13_k71, prtnum_k71, pn_rev_k71, p_um_k71) NONCLUSTERED
+prtnum_k71: (prtnum_k71) NONCLUSTERED
+suq_21_k71: (suq_21_k71, idnk71_k71) NONCLUSTERED

@@ -1,0 +1,2 @@
+idnk76_k76 [PK]: (idnk76_k76) CLUSTERED
+k76key_k76 [UNIQUE]: (idnk75_k76, dcltbl_k76, idndcl_k76, filnam_k76) NONCLUSTERED

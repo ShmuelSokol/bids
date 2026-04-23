@@ -1,0 +1,4 @@
+idnk93_k93 [PK]: (idnk93_k93) CLUSTERED
+ict_k93 [UNIQUE]: (idnkbb_k93, ictseq_k93) NONCLUSTERED
+k71soq_k93: (idnk71_k93, soq_21_k93) NONCLUSTERED
+instat_k93: (instat_k93) NONCLUSTERED

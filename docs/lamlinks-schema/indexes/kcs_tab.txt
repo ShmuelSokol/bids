@@ -1,0 +1,5 @@
+idnkcs_kcs [PK]: (idnkcs_kcs) CLUSTERED
+key2_kcs [UNIQUE]: (idnkcr_kcs, dml_no_kcs) NONCLUSTERED
+key1_kcs [UNIQUE]: (idnkcr_kcs, dbstbl_kcs, idndbs_kcs) NONCLUSTERED
+idnkct_kcs: (idnkct_kcs) NONCLUSTERED
+srmano_kcs: (srmano_kcs) NONCLUSTERED

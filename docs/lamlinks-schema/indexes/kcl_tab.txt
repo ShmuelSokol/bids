@@ -1,0 +1,3 @@
+idnkcl_kcl [PK]: (idnkcl_kcl) CLUSTERED
+key_kcl [UNIQUE]: (x_clas_kcl, x_name_kcl, tblsnx_kcl, idnsnx_kcl) NONCLUSTERED
+x_stat_kcl: (x_stat_kcl) NONCLUSTERED

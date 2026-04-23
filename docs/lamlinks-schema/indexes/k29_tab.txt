@@ -1,0 +1,3 @@
+k29_tab_idnk29_k29 [PK]: (idnk29_k29) CLUSTERED
+idnk21_k29: (idnk21_k29) NONCLUSTERED
+idnk27_k29: (idnk27_k29) NONCLUSTERED

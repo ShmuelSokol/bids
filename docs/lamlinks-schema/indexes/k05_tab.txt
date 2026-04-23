@@ -1,0 +1,3 @@
+k05_tab_idnk05_k05 [PK]: (idnk05_k05) CLUSTERED
+idnk02_k05: (idnk02_k05) NONCLUSTERED
+idnk04_k05: (idnk04_k05) NONCLUSTERED

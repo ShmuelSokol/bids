@@ -1,0 +1,5 @@
+k30_tab_idnk30_k30 [PK]: (idnk30_k30) CLUSTERED
+idnk08_k30: (idnk08_k30) NONCLUSTERED
+idnk13_k30: (idnk13_k30) NONCLUSTERED
+idnk31_k30: (idnk31_k30) NONCLUSTERED
+cntrct_k30: (cntrct_k30) NONCLUSTERED

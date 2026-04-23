@@ -1,0 +1,63 @@
+-- dbo.make_job_2_view
+
+
+
+/* view make_job_2_view: add view */
+
+
+/* view make_job_2_view: add view */
+
+
+/* view make_job_2_view: add view */
+
+/* view make_job_2_view: add view */
+
+
+/* view make_job_2_view: add view */
+
+
+/* view make_job_2_view: add view */
+
+
+/* view make_job_2_view: add view */
+
+
+/* view make_job_2_view: add view */
+
+
+/* view make_job_2_view: add view */
+
+
+/* view make_job_2_view: add view */
+/* view make_job_2_view: add view 
+ view make_job_2_view: add view 
+ view make_job_2_view: add view 
+ view make_job_2_view: add view 
+ view make_job_2_view: add view 
+ view make_job_2_view: add view 
+ view make_job_2_view: add view 
+ view make_job_2_view: add view */
+CREATE VIEW [dbo].[make_job_2_view]
+AS
+SELECT DISTINCT 
+                         dbo.make_job_1_view.job_no_ka8, dbo.make_job_1_view.jln_no_ka9, dbo.make_job_1_view.jlndte_ka9, dbo.make_job_1_view.jrqpur_ka9, dbo.make_job_1_view.jlnqty_ka9, dbo.make_job_1_view.jlnsta_ka9, 
+                         dbo.make_job_1_view.cntrct_k79, dbo.make_job_1_view.rel_no_k80, dbo.make_job_1_view.clinno_k81, dbo.make_job_1_view.e_code_mfg, dbo.make_job_1_view.prtnum_k71, 
+                         dbo.make_job_1_view.pn_rev_k71, dbo.make_job_1_view.p_desc_k71, dbo.make_job_1_view.fsc_k08, dbo.make_job_1_view.niin_k08, dbo.make_job_1_view.prjnam_k73, dbo.make_job_1_view.bv_num_kd2, 
+                         dbo.make_job_1_view.bvstat_kd2, dbo.make_job_1_view.idnk08_k08, dbo.make_job_1_view.idnk71_k71, dbo.make_job_1_view.idnk73_k73, dbo.make_job_1_view.idnk81_k81, 
+                         dbo.make_job_1_view.idnka9_ka9, dbo.make_job_1_view.idnka8_ka8, dbo.make_clin_job_part_1_view.rnq_11_kab, dbo.make_clin_job_part_1_view.rlq_11_kab, dbo.make_clin_job_part_1_view.snq_15_kab, 
+                         dbo.make_clin_job_part_1_view.slq_15_kab, dbo.make_clin_job_part_1_view.mkq_11_kab, dbo.make_clin_job_part_1_view.m_code_mrq, dbo.make_clin_job_part_1_view.prtnum_mrq, 
+                         dbo.make_clin_job_part_1_view.p_desc_mrq, dbo.make_clin_job_part_1_view.idnk08_mrq, dbo.make_clin_job_part_1_view.idnk71_mrq, dbo.make_clin_job_part_1_view.fsc_mrq, 
+                         dbo.make_clin_job_part_1_view.niin_mrq, dbo.make_clin_job_part_1_view.idnkab_kab, dbo.make_clin_job_part_1_view.idnk71_mke, dbo.make_job_1_view.piidno_k80
+FROM            dbo.make_job_1_view INNER JOIN
+                         dbo.make_clin_job_part_1_view ON dbo.make_job_1_view.idnk81_k81 = dbo.make_clin_job_part_1_view.idnk81_k81 AND dbo.make_job_1_view.idnk71_k71 = dbo.make_clin_job_part_1_view.idnk71_mke AND 
+                         dbo.make_clin_job_part_1_view.idnk71_mrq = dbo.make_clin_job_part_1_view.idnk71_mke AND dbo.make_job_1_view.idnka9_ka9 = dbo.make_clin_job_part_1_view.idnka9_ka9
+
+
+
+
+
+
+
+
+
+

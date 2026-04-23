@@ -1,0 +1,27 @@
+-- dbo.k10_tab  (1776906 rows)
+CREATE TABLE dbo.k10_tab (
+  idnk10_k10           int NOT NULL,
+  uptime_k10           datetime NOT NULL,
+  upname_k10           char(10) NOT NULL,
+  idnk31_k10           int NOT NULL,
+  sol_no_k10           char(60) NOT NULL,
+  b_code_k10           char(10) NOT NULL,
+  b_name_k10           char(30) NOT NULL,
+  b_phon_k10           char(14) NOT NULL,
+  b_fax_k10            char(14) NOT NULL,
+  itmcnt_k10           int NOT NULL,
+  sxtnam_k10           char(15) NOT NULL,
+  homurl_k10           text(2147483647) NOT NULL,
+  saside_k10           varchar(50) NOT NULL,
+  cntpri_k10           char(8) NOT NULL DEFAULT (''),
+  sol_ti_k10           char(1) NOT NULL DEFAULT (''),
+  isudte_k10           datetime NOT NULL DEFAULT ('01/01/1900'),
+  closes_k10           datetime NOT NULL DEFAULT ('01/01/1900'),
+  buyeml_k10           varchar(80) NOT NULL DEFAULT (''),
+  bq_sta_k10           char(12) NOT NULL DEFAULT ('TBD'),
+  mqlife_k10           char(7) NOT NULL DEFAULT (''),
+  mqp_do_k10           char(8) NOT NULL DEFAULT (''),
+  mx_sat_k10           char(10) NOT NULL DEFAULT (''),
+  doecnt_k10           char(4) NOT NULL DEFAULT (''),
+  PRIMARY KEY (idnk10_k10)
+);

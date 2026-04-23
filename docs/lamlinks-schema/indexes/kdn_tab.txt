@@ -1,0 +1,3 @@
+idnkdn_kdn [PK]: (idnkdn_kdn) CLUSTERED
+key_kdn [UNIQUE]: (idnkdm_kdn, s_time_kdn) NONCLUSTERED
+e_time_kdn: (e_time_kdn) NONCLUSTERED

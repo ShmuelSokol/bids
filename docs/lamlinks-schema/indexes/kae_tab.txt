@@ -1,0 +1,2 @@
+idnkae_kae [PK]: (idnkae_kae) CLUSTERED
+cil_no_kae [UNIQUE]: (idnkad_kae, cil_no_kae) NONCLUSTERED

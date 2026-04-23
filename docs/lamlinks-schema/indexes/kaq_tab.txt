@@ -1,0 +1,2 @@
+idnkaq_kaq [PK]: (idnkaq_kaq) CLUSTERED
+vppnam_kaq [UNIQUE]: (vppnam_kaq) NONCLUSTERED

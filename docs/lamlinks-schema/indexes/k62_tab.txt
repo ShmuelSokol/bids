@@ -1,0 +1,3 @@
+idnk62_k62 [PK]: (idnk62_k62) CLUSTERED
+k61seq_k62 [UNIQUE]: (idnk61_k62, seq_no_k62) NONCLUSTERED
+idnk61_k62: (idnk61_k62) NONCLUSTERED

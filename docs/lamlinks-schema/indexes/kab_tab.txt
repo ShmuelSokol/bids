@@ -1,0 +1,7 @@
+idnkab_kab [PK]: (idnkab_kab) CLUSTERED
+kaaroq_kab: (idnkaa_kab, roq_11_kab) NONCLUSTERED
+kaasoq_kab: (idnkaa_kab, soq_15_kab) NONCLUSTERED
+k85roq_kab: (idnk85_kab, roq_11_kab) NONCLUSTERED
+k85soq_kab: (idnk85_kab, soq_15_kab) NONCLUSTERED
+ka9roq_kab: (idnka9_kab, roq_11_kab) NONCLUSTERED
+ka9soq_kab: (idnka9_kab, soq_15_kab) NONCLUSTERED

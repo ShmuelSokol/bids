@@ -1,0 +1,4 @@
+idnkad_kad [PK]: (idnkad_kad) CLUSTERED
+cin_no_kad [UNIQUE]: (cin_no_kad) NONCLUSTERED
+cinnum_kad [UNIQUE]: (cinnum_kad) NONCLUSTERED
+ar_val_kad: (ar_val_kad) NONCLUSTERED

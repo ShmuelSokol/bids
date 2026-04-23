@@ -1,0 +1,2 @@
+idnkdh_kdh [PK]: (idnkdh_kdh) CLUSTERED
+key_kdh [UNIQUE]: (idnk12_kdh) NONCLUSTERED

@@ -1,0 +1,3 @@
+idnd04_d04 [PK]: (idnd04_d04) CLUSTERED
+d01tsk_d04 [UNIQUE]: (idnd01_d04, taskid_d04) NONCLUSTERED
+d03act_d04 [UNIQUE]: (idnd03_d04, actseq_d04) NONCLUSTERED

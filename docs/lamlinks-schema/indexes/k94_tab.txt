@@ -1,0 +1,3 @@
+idnk94_k94 [PK]: (idnk94_k94) CLUSTERED
+adddte_k94: (adddte_k94) NONCLUSTERED
+posdte_k94: (posdte_k94) NONCLUSTERED

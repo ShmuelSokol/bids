@@ -1,0 +1,3 @@
+idnka4_ka4 [PK]: (idnka4_ka4) CLUSTERED
+k93iru_ka4 [UNIQUE]: (idnk93_ka4, irutbl_ka4, idniru_ka4) NONCLUSTERED
+iru_ka4: (irutbl_ka4, idniru_ka4) NONCLUSTERED

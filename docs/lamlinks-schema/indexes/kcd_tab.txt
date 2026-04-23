@@ -1,0 +1,3 @@
+idnkcd_kcd [PK]: (idnkcd_kcd) CLUSTERED
+kcdkey_kcd [UNIQUE]: (idnkcb_kcd, idnkcc_kcd) NONCLUSTERED
+n_stat_kcd: (n_stat_kcd) NONCLUSTERED

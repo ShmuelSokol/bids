@@ -1,0 +1,26 @@
+-- dbo.kd5_tab  (454 rows)
+CREATE TABLE dbo.kd5_tab (
+  idnkd5_kd5           int NOT NULL,
+  adtime_kd5           datetime NOT NULL,
+  uptime_kd5           datetime NOT NULL,
+  idnkd7_kd5           int NOT NULL,
+  idnk81_kd5           int NOT NULL,
+  mrtype_kd5           char(4) NOT NULL,
+  clinno_kd5           char(6) NOT NULL,
+  mcclas_kd5           varchar(80) NOT NULL,
+  pr_num_kd5           char(20) NOT NULL,
+  qtyold_kd5           int NOT NULL,
+  qtynew_kd5           int NOT NULL,
+  up_old_kd5           numeric(14,5) NOT NULL,
+  up_new_kd5           numeric(14,5) NOT NULL,
+  cln_ui_kd5           char(2) NOT NULL,
+  dlyold_kd5           datetime NOT NULL,
+  dlynew_kd5           datetime NOT NULL,
+  clntxt_kd5           text(2147483647) NOT NULL,
+  clnote_kd5           text(2147483647) NOT NULL,
+  mc_sta_kd5           varchar(32) NOT NULL,
+  mc_tme_kd5           datetime NOT NULL,
+  mcuk12_kd5           int NOT NULL,
+  mcck12_kd5           int NOT NULL,
+  PRIMARY KEY (idnkd5_kd5)
+);

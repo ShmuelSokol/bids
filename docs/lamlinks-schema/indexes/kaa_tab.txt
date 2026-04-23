@@ -1,0 +1,5 @@
+idnkaa_kaa [PK]: (idnkaa_kaa) CLUSTERED
+k71roq_kaa: (idnk71_kaa, roq_11_kaa) NONCLUSTERED
+k71soq_kaa: (idnk71_kaa, soq_15_kaa) NONCLUSTERED
+ka8roq_kaa: (idnka8_kaa, roq_11_kaa) NONCLUSTERED
+ka8soq_kaa: (idnka8_kaa, soq_15_kaa) NONCLUSTERED

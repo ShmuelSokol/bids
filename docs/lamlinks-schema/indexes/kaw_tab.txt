@@ -1,0 +1,2 @@
+idnkaw_kaw [PK]: (idnkaw_kaw) CLUSTERED
+soc_kaw [UNIQUE]: (soctbl_kaw, idnsoc_kaw, socseq_kaw) NONCLUSTERED

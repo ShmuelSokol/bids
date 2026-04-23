@@ -1,0 +1,2 @@
+idnkea_kea [PK]: (idnkea_kea) CLUSTERED
+key_kea [UNIQUE]: (a_name_kea) NONCLUSTERED

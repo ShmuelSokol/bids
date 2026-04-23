@@ -1,0 +1,3 @@
+idnk80_k80 [PK]: (idnk80_k80) CLUSTERED
+k79relpiidno_k80 [UNIQUE]: (idnk79_k80, rel_no_k80, piidno_k80) NONCLUSTERED
+piidno_k80: (piidno_k80) NONCLUSTERED

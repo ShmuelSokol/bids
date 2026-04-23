@@ -1,0 +1,2 @@
+idnkd6_kd6 [PK]: (idnkd6_kd6) CLUSTERED
+key_kd6 [UNIQUE]: (mgclas_kd6, msclas_kd6) NONCLUSTERED

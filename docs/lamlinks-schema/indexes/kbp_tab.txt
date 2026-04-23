@@ -1,0 +1,2 @@
+idnkbp_kbp [PK]: (idnkbp_kbp) CLUSTERED
+key_kbp [UNIQUE]: (idnkbn_kbp, wcrseq_kbp) NONCLUSTERED

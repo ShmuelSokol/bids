@@ -1,0 +1,3 @@
+idnk59_k59 [PK]: (idnk59_k59) CLUSTERED
+lftk12_k59: (lftk12_k59) NONCLUSTERED
+rhtk12_k59: (rhtk12_k59) NONCLUSTERED

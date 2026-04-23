@@ -1,0 +1,2 @@
+idnka7_ka7 [PK]: (idnka7_ka7) CLUSTERED
+k12gdu_ka7: (idnk12_ka7, gduset_ka7, frozen_ka7) NONCLUSTERED

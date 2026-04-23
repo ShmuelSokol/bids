@@ -1,0 +1,2 @@
+idnk77_k77 [PK]: (idnk77_k77) CLUSTERED
+areac_k77 [UNIQUE]: (fareac_k77, tareac_k77, tprefx_k77) NONCLUSTERED

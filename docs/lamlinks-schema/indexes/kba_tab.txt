@@ -1,0 +1,2 @@
+idnkba_kba [PK]: (idnkba_kba) CLUSTERED
+boxype_kba [UNIQUE]: (idnkap_kba, idnk71_kba, boxdes_kba) NONCLUSTERED

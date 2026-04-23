@@ -1,0 +1,4 @@
+k08_tab_idnk08_k08 [PK]: (idnk08_k08) CLUSTERED
+niin_k08: (niin_k08) NONCLUSTERED
+partno_k08: (partno_k08) NONCLUSTERED
+p_desc_k08: (p_desc_k08) NONCLUSTERED

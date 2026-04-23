@@ -1,0 +1,3 @@
+idnkd9_kd9 [PK]: (idnkd9_kd9) CLUSTERED
+key_kd9 [UNIQUE]: (k12ptr_kd9, k12qto_kd9) NONCLUSTERED
+q_stat_kd9: (q_stat_kd9) NONCLUSTERED

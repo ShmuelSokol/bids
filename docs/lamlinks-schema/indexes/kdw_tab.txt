@@ -1,0 +1,2 @@
+idnkdw_kdw [PK]: (idnkdw_kdw) CLUSTERED
+key_kdw [UNIQUE]: (idnk31_kdw) NONCLUSTERED

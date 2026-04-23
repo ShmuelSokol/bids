@@ -1,0 +1,3 @@
+idnkbn_kbn [PK]: (idnkbn_kbn) CLUSTERED
+wcr_no_kbn [UNIQUE]: (wcr_no_kbn) NONCLUSTERED
+ckonum_kbn: (ckonum_kbn) NONCLUSTERED

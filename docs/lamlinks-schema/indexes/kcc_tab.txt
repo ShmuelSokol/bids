@@ -1,0 +1,3 @@
+idnkcc_kcc [PK]: (idnkcc_kcc) CLUSTERED
+src_kcc: (srctbl_kcc, idnsrc_kcc) NONCLUSTERED
+tetime_kcc: (tetime_kcc) NONCLUSTERED

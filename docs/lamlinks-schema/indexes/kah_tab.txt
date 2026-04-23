@@ -1,0 +1,3 @@
+idnkah_kah [PK]: (idnkah_kah) CLUSTERED
+anukey_kah [UNIQUE]: (anutbl_kah, idnanu_kah, anutyp_kah) NONCLUSTERED
+anu_kah: (anutbl_kah, idnanu_kah) NONCLUSTERED

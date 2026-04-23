@@ -1,0 +1,3 @@
+idnkdy_kdy [PK]: (idnkdy_kdy) CLUSTERED
+key_kdy [UNIQUE]: (idnnam_kdy) NONCLUSTERED
+tabnam_kdy: (tabnam_kdy) NONCLUSTERED

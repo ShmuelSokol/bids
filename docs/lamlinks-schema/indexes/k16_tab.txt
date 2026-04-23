@@ -1,0 +1,3 @@
+k16_tab_idnk16_k16 [PK]: (idnk16_k16) CLUSTERED
+k16_tab_dwg_id_k16 [UNIQUE]: (dwg_no_k16, ssdtyp_k16, d_cage_k16, dwgrev_k16, doctyp_k16) NONCLUSTERED
+dwg_no_k16: (dwg_no_k16) NONCLUSTERED
