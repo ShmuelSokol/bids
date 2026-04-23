@@ -44,10 +44,17 @@ async function main() {
       k11.solqty_k11   AS quantity,
       k11.closes_k11   AS line_close_date,
       k34.fobcod_k34   AS fob_code,
-      k34.bidtyp_k34   AS bid_type
+      k34.bidtyp_k34   AS bid_type,
+      -- File-reference batch metadata. k11 rows are grouped under a k09
+      -- "notice" envelope keyed by idnk09_k11. Abe works through these
+      -- batches one at a time ("today's 8916-156-1626 with 642 lines").
+      k09.ref_no_k09   AS file_reference,
+      k09.refdte_k09   AS file_reference_date,
+      k09.ourref_k09   AS internal_edi_reference
     FROM k10_tab k10
     JOIN k11_tab k11 ON k11.idnk10_k11 = k10.idnk10_k10
     JOIN k08_tab k08 ON k08.idnk08_k08 = k11.idnk08_k11
+    LEFT JOIN k09_tab k09 ON k09.idnk09_k09 = k11.idnk09_k11
     LEFT JOIN k34_tab k34 ON k34.idnk11_k34 = k11.idnk11_k11
       AND k34.scage_k34 = '0AG09'
     WHERE k10.closes_k10 >= CAST(GETDATE() AS DATE)
@@ -77,6 +84,14 @@ async function main() {
       return `${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}-${dt.getFullYear()}`;
     };
 
+    // ISO date for file_reference_date so Supabase's DATE column accepts it
+    const isoDate = (d: Date | string | null) => {
+      if (!d) return null;
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return null;
+      return dt.toISOString().slice(0, 10);
+    };
+
     solicitations.push({
       solicitation_number: r.solicitation_number.trim(),
       nsn,
@@ -89,6 +104,9 @@ async function main() {
       data_source: "lamlinks",
       imported_at: new Date().toISOString(),
       scraped_at: new Date().toISOString(),
+      file_reference: r.file_reference?.trim() || null,
+      file_reference_date: isoDate(r.file_reference_date),
+      internal_edi_reference: r.internal_edi_reference?.trim() || null,
     });
   }
   console.log(`  Deduplicated: ${solicitations.length} unique solicitations`);

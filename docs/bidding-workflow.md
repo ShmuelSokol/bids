@@ -38,6 +38,16 @@ The NSN matched (AX first, Master DB second). Pricing ran. A suggested bid is at
 
 **Abe's view:** Solicitations page. The default view. This is where he spends his time.
 
+**File References grid** sits at the top of the page. LamLinks groups incoming EDI notices into `k09_tab` "notice" batches (Abe's daily workflow is "work through today's file ref 8916-156-1626 with 642 lines"). Each batch has:
+- `ref_no_k09` → DIBS column `file_reference` (e.g., `8916-156-1626`)
+- `refdte_k09` → DIBS column `file_reference_date` (date the file posted)
+- `ourref_k09` → DIBS column `internal_edi_reference` (Yosef's private EDI label; often empty)
+- `itmcnt_k09` → derived `items` count in the grid
+
+The join is `k11_tab.idnk09_k11 → k09_tab.idnk09_k09` (per-line-item, NOT per-solicitation — one solicitation line can belong to a batch). Import is in `scripts/import-lamlinks-solicitations.ts`; one-shot backfill in `scripts/backfill-file-reference.ts`.
+
+Clicking a row in the grid sets a scope filter: match-confidence cards (AX / Potential / Non-Sourced) and every filter below rescope to just that batch. A chip next to the grid title lets Abe drop the scope. He can collapse the grid once he's picked a batch to keep the page tidy while he works through it.
+
 The sourceable pile is visually split into **three match-confidence buckets** at the top of the page (large cards):
 
 | Card | Filter predicate | Meaning |

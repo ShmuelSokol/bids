@@ -59,6 +59,9 @@ interface Solicitation {
   final_price: number | null;
   bid_comment: string | null;
   decided_by: string | null;
+  file_reference: string | null;
+  file_reference_date: string | null;
+  internal_edi_reference: string | null;
 }
 
 interface AwardHistory {
@@ -124,6 +127,13 @@ export function SolicitationsList({
   const [selectedQuoted, setSelectedQuoted] = useState<Set<number>>(new Set());
   // Which solicitation is open in the pre-award sourcing modal.
   const [sourcingId, setSourcingId] = useState<number | null>(null);
+  // File-reference filter — when set, the whole page scopes to this batch.
+  // Works alongside the match-confidence (ax_matched / etc.) + status
+  // filters; all filter predicates AND together.
+  const [fileRefFilter, setFileRefFilter] = useState<string | null>(null);
+  // Whether the File References grid is expanded. Collapsed by default once
+  // Abe picks a batch — keeps the page tidy while he works through 642 lines.
+  const [fileRefsExpanded, setFileRefsExpanded] = useState(true);
   const [expandedNsn, setExpandedNsn] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("all");
@@ -216,6 +226,9 @@ export function SolicitationsList({
     let sourceable = 0, axMatched = 0, potentialMatched = 0, nonSourced = 0;
     let quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0, llActive = 0, dibbsOnly = 0;
     for (const s of solicitations) {
+      // Match-confidence counts rescope to the active file reference so the
+      // big cards show "in THIS batch, X are AX-matched" when a batch is picked.
+      if (fileRefFilter && s.file_reference !== fileRefFilter) continue;
       const open = isOpenSolicitation(s.return_by_date);
       if (s.data_source === "lamlinks" && open) llActive++;
       if (s.data_source !== "lamlinks" && open) dibbsOnly++;
@@ -233,6 +246,49 @@ export function SolicitationsList({
       nonSourced++;
     }
     return { total: solicitations.length, sourceable, axMatched, potentialMatched, nonSourced, quoted, submitted, skipped, alreadyBid, llActive, dibbsOnly };
+  }, [solicitations, fileRefFilter]);
+
+  // File-reference rollup for the grid: one row per (file_reference, date)
+  // with item totals and the sourcing breakdown within that batch. Sorted
+  // by refdte DESC so today's batches bubble to the top.
+  const fileReferences = useMemo(() => {
+    type Bucket = {
+      file_reference: string;
+      file_reference_date: string | null;
+      internal_edi_reference: string | null;
+      items: number;
+      ax: number;
+      potential: number;
+      nonsourced: number;
+      quoted: number;
+      submitted: number;
+    };
+    const byRef = new Map<string, Bucket>();
+    for (const s of solicitations) {
+      if (!s.file_reference) continue;
+      let b = byRef.get(s.file_reference);
+      if (!b) {
+        b = {
+          file_reference: s.file_reference,
+          file_reference_date: s.file_reference_date,
+          internal_edi_reference: s.internal_edi_reference,
+          items: 0, ax: 0, potential: 0, nonsourced: 0, quoted: 0, submitted: 0,
+        };
+        byRef.set(s.file_reference, b);
+      }
+      b.items++;
+      if (s.bid_status === "quoted") b.quoted++;
+      else if (s.bid_status === "submitted") b.submitted++;
+      if (s.is_sourceable && s.source === "ax") b.ax++;
+      else if (s.is_sourceable) b.potential++;
+      else b.nonsourced++;
+    }
+    return [...byRef.values()].sort((a, b) => {
+      const ad = a.file_reference_date ? new Date(a.file_reference_date).getTime() : 0;
+      const bd = b.file_reference_date ? new Date(b.file_reference_date).getTime() : 0;
+      if (bd !== ad) return bd - ad;
+      return b.items - a.items;
+    });
   }, [solicitations]);
 
   async function handleFindSuppliers(sol: Solicitation) {
@@ -584,6 +640,11 @@ export function SolicitationsList({
 
   const filtered = useMemo(() => {
     let items = solicitations.filter((s) => {
+      // File-reference filter applies to every other filter predicate —
+      // when Abe is working batch 8916-156-1626, everything else scopes to
+      // it automatically (including AX/Potential/Non-Sourced counts).
+      if (fileRefFilter && s.file_reference !== fileRefFilter) return false;
+
       // Single source of truth for "is this sol still open" — same helper
       // the dashboard and server-side counts use. Don't re-implement.
       const isOpen = isOpenSolicitation(s.return_by_date);
@@ -792,6 +853,98 @@ export function SolicitationsList({
         <span>/</span>
         <span className="text-foreground font-medium">Solicitations</span>
       </div>
+
+      {/* File References grid — Abe works one EDI batch at a time; this
+          lets him pick the batch he's currently on and scope the whole page
+          to it. Clicking a row sets fileRefFilter; a chip below lets him
+          drop it. */}
+      {fileReferences.length > 0 && (
+        <div className="mb-4 rounded-xl border border-card-border bg-card-bg overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-card-border bg-gray-50">
+            <div className="text-sm font-semibold">
+              File References <span className="text-muted font-normal">({fileReferences.length})</span>
+              {fileRefFilter && (
+                <span className="ml-3 inline-flex items-center gap-1 text-xs rounded-full border border-accent bg-accent/10 text-accent px-2 py-0.5">
+                  Scoped to <span className="font-mono">{fileRefFilter}</span>
+                  <button
+                    onClick={() => setFileRefFilter(null)}
+                    className="ml-1 hover:text-red-600 font-semibold"
+                    title="Clear file-reference filter"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setFileRefsExpanded((x) => !x)}
+              className="text-xs text-muted hover:text-foreground"
+            >
+              {fileRefsExpanded ? "Collapse" : "Expand"}
+            </button>
+          </div>
+          {fileRefsExpanded && (
+            <div className="max-h-[260px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50/80 text-muted sticky top-0">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left font-medium">File Ref #</th>
+                    <th className="px-3 py-1.5 text-left font-medium">Date</th>
+                    <th className="px-3 py-1.5 text-right font-medium">Items</th>
+                    <th className="px-3 py-1.5 text-left font-medium">Internal EDI ref</th>
+                    <th className="px-3 py-1.5 text-right font-medium">AX</th>
+                    <th className="px-3 py-1.5 text-right font-medium">Potential</th>
+                    <th className="px-3 py-1.5 text-right font-medium">Non-Sourced</th>
+                    <th className="px-3 py-1.5 text-right font-medium">Quoted</th>
+                    <th className="px-3 py-1.5 text-right font-medium">Submitted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fileReferences.slice(0, 60).map((f) => {
+                    const active = fileRefFilter === f.file_reference;
+                    return (
+                      <tr
+                        key={f.file_reference}
+                        onClick={() => setFileRefFilter(active ? null : f.file_reference)}
+                        className={`border-t border-card-border/60 cursor-pointer ${
+                          active ? "bg-accent/10 ring-1 ring-accent" : "hover:bg-gray-50/70"
+                        }`}
+                      >
+                        <td className="px-3 py-1.5 font-mono text-[11px]">{f.file_reference}</td>
+                        <td className="px-3 py-1.5 text-muted">
+                          {f.file_reference_date ? f.file_reference_date.slice(0, 10) : "—"}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-semibold">{f.items}</td>
+                        <td className="px-3 py-1.5 font-mono text-[11px] text-muted">
+                          {f.internal_edi_reference || <span className="opacity-40">—</span>}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {f.ax > 0 ? <span className="text-green-700 font-medium">{f.ax}</span> : <span className="text-muted">0</span>}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {f.potential > 0 ? <span className="text-yellow-700 font-medium">{f.potential}</span> : <span className="text-muted">0</span>}
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-muted">{f.nonsourced}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          {f.quoted > 0 ? <span className="text-blue-700 font-medium">{f.quoted}</span> : <span className="text-muted">0</span>}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {f.submitted > 0 ? <span className="text-purple-700 font-medium">{f.submitted}</span> : <span className="text-muted">0</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {fileReferences.length > 60 && (
+                <div className="px-3 py-1.5 text-[10px] text-muted text-center border-t border-card-border">
+                  …{fileReferences.length - 60} more — oldest dropped. (Ask if you need pagination.)
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Match-confidence cards — the three buckets Abe filters by before
           bidding. AX NSN Matched is the highest-confidence pile; Potential
