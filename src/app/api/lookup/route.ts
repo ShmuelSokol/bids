@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const digits = nsn.replace(/-/g, "");
 
   // Fire all Supabase queries in parallel
-  const [cost, vendorPrices, awards, histBids, liveBids, sols, matches, spec] = await Promise.all([
+  const [cost, vendorPrices, awards, histBids, liveBids, sols, matches, spec, pid, shipments] = await Promise.all([
     supabase.from("nsn_costs").select("*").eq("nsn", nsn).maybeSingle(),
     supabase.from("nsn_vendor_prices").select("*").eq("nsn", nsn).order("price"),
     supabase.from("awards").select("id, contract_number, unit_price, quantity, award_date, cage, description, fob").eq("fsc", fsc).eq("niin", niin).order("award_date", { ascending: false }).limit(50),
@@ -43,7 +43,29 @@ export async function GET(req: NextRequest) {
     supabase.from("dibbs_solicitations").select("solicitation_number, nsn, quantity, return_by_date, is_sourceable, already_bid, suggested_price, our_cost, margin_pct, cost_source, data_source, channel, created_at").eq("nsn", nsn).order("return_by_date", { ascending: false }).limit(50),
     supabase.from("nsn_matches").select("*").eq("nsn", nsn),
     supabase.from("publog_nsns").select("*").eq("nsn", nsn).maybeSingle(),
+    // NEW: LL PID + packaging (from kah_tab via ll_item_pids cache)
+    supabase.from("ll_item_pids").select("pid_text, packaging_text, packaging_notes, last_award_date, pid_bytes").eq("fsc", fsc).eq("niin", niin).order("last_award_date", { ascending: false }).limit(1).maybeSingle(),
+    // NEW: our shipment history for this NSN from ll_shipments
+    supabase.from("ll_shipments").select("idnkaj, ship_number, contract_number, clin, ship_status, ship_date, transport_mode, tracking_number, quantity, sell_value, fob").eq("nsn", nsn).order("ship_date", { ascending: false }).limit(30),
   ]);
+
+  // NEW: EDI transmission history — join on shipment idnkaj. Gathered
+  // after the shipments query so we know which kaj IDs to pull for.
+  let ediByShipment: Record<number, any[]> = {};
+  const shipmentIdnkajs = (shipments.data || []).map((s: any) => s.idnkaj).filter((v: any) => v != null);
+  if (shipmentIdnkajs.length > 0) {
+    const { data: edi } = await supabase
+      .from("ll_edi_transmissions")
+      .select("idnkbr, parent_id, edi_type, lifecycle, status, transmitted_at")
+      .eq("parent_table", "kaj")
+      .in("parent_id", shipmentIdnkajs)
+      .order("transmitted_at", { ascending: false });
+    for (const e of edi || []) {
+      const k = Number(e.parent_id);
+      if (!ediByShipment[k]) ediByShipment[k] = [];
+      ediByShipment[k].push(e);
+    }
+  }
 
   // AX data from cached nsn_catalog + vendor_parts (refreshed nightly)
   let axItem: any = null;
@@ -77,5 +99,8 @@ export async function GET(req: NextRequest) {
     solicitations: sols.data || [],
     publog_match: matches.data || [],
     publog_spec: spec.data || null,
+    ll_pid: pid.data || null,
+    ll_shipments: shipments.data || [],
+    ll_edi_by_shipment: ediByShipment,
   });
 }

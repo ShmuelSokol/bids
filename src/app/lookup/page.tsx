@@ -215,6 +215,97 @@ export default function LookupPage() {
               </div>
             </div>
           </Section>
+
+          {/* LamLinks PID + Packaging Requirements */}
+          <Section
+            title="LamLinks PID — Procurement Item Description"
+            note={
+              data.ll_pid?.last_award_date
+                ? `Pulled from kah_tab; attached to our most recent awarded k81 line (${formatDateShort(data.ll_pid.last_award_date)}). This is the canonical DLA spec for the item.`
+                : "From LL kah_tab. Only exists for NSNs ERG has previously won."
+            }
+          >
+            {!data.ll_pid ? (
+              <p className="text-sm text-muted italic">
+                No PID cached — ERG hasn&apos;t been awarded this NSN in the last 3 years. DLA only attaches PID text after award.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {data.ll_pid.pid_text && (
+                  <div>
+                    <h4 className="text-[10px] font-semibold uppercase text-muted mb-1">PID ({data.ll_pid.pid_bytes} bytes)</h4>
+                    <pre className="whitespace-pre-wrap font-mono text-[10px] bg-gray-50 rounded p-2 border border-card-border max-h-64 overflow-auto">
+                      {data.ll_pid.pid_text}
+                    </pre>
+                  </div>
+                )}
+                {data.ll_pid.packaging_text && (
+                  <div>
+                    <h4 className="text-[10px] font-semibold uppercase text-muted mb-1">Packaging Requirements</h4>
+                    <pre className="whitespace-pre-wrap font-mono text-[10px] bg-gray-50 rounded p-2 border border-card-border max-h-48 overflow-auto">
+                      {data.ll_pid.packaging_text}
+                    </pre>
+                  </div>
+                )}
+                {data.ll_pid.packaging_notes && (
+                  <div>
+                    <h4 className="text-[10px] font-semibold uppercase text-muted mb-1">Packaging Notes</h4>
+                    <pre className="whitespace-pre-wrap font-mono text-[10px] bg-gray-50 rounded p-2 border border-card-border max-h-40 overflow-auto">
+                      {data.ll_pid.packaging_notes}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </Section>
+
+          {/* Our shipment history + EDI */}
+          <Section
+            title={`Our shipments — last 30 (${data.ll_shipments.length})`}
+            note="From ll_shipments (LamLinks kaj_tab). WAWF column shows most recent 810/856 transmission status from kbr_tab."
+          >
+            {data.ll_shipments.length === 0 ? (
+              <p className="text-sm text-muted italic">We&apos;ve never shipped this NSN (or it was shipped before our 90-day sync window).</p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="text-muted border-b border-card-border">
+                  <tr>
+                    <th className="px-2 py-1 text-left">Ship #</th>
+                    <th className="px-2 py-1 text-left">Contract</th>
+                    <th className="px-2 py-1 text-left">CLIN</th>
+                    <th className="px-2 py-1 text-right">Qty</th>
+                    <th className="px-2 py-1 text-right">Value</th>
+                    <th className="px-2 py-1 text-left">Status</th>
+                    <th className="px-2 py-1 text-left">Date</th>
+                    <th className="px-2 py-1 text-left">WAWF</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.ll_shipments.map((s: any) => {
+                    const edi = (data.ll_edi_by_shipment?.[s.idnkaj] || []) as any[];
+                    const w810 = edi.find((e: any) => e.edi_type === "810");
+                    const w856 = edi.find((e: any) => e.edi_type === "856");
+                    return (
+                      <tr key={s.idnkaj ?? s.ship_number} className="border-t border-card-border/40">
+                        <td className="px-2 py-1 font-mono">{s.ship_number}</td>
+                        <td className="px-2 py-1 font-mono text-[10px]">{s.contract_number}</td>
+                        <td className="px-2 py-1">{s.clin}</td>
+                        <td className="px-2 py-1 text-right">{s.quantity}</td>
+                        <td className="px-2 py-1 text-right font-mono text-green-600">{fmt$(s.sell_value)}</td>
+                        <td className="px-2 py-1 text-[10px]">{s.ship_status}</td>
+                        <td className="px-2 py-1 text-muted text-[10px]">{formatDateShort(s.ship_date)}</td>
+                        <td className="px-2 py-1 text-[10px]">
+                          {w856 && <span className="mr-1 text-blue-700">856:{formatDateShort(w856.transmitted_at)}</span>}
+                          {w810 && <span className="text-purple-700">810:{formatDateShort(w810.transmitted_at)}</span>}
+                          {!w856 && !w810 && <span className="text-muted">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </Section>
         </div>
       )}
     </div>
