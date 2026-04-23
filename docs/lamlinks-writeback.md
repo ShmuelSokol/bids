@@ -42,6 +42,36 @@ Canonical reference: `scripts/append-bid-test2.ts`. That script, run with `--exe
 
 **Fresh-envelope mode (no seed-bid needed):** `scripts/lamlinks-writeback-worker.ts` also supports minting a brand-new `k33_tab` envelope when none is staged. Uses `kdy_tab` to allocate the new idnk33, writes all 13 k33 fields with the staging-state strings, and picks the most recent k34 row under `upname='ajoseph'` as the template for subsequent line inserts. Abe does NOT need to save a dummy bid in LamLinks first — DIBS can initiate an envelope on its own and populate it, then Abe opens LamLinks, sees a ready-to-review envelope, and Posts.
 
+## Incident 2026-04-23: "Update conflict in cursor" is UI-only
+
+**Symptom**: Abe tried to Post envelope `0AG09-46879` (4 DIBS-written lines + 1 UI-staged) and got `Quote file 0AG09-46879: Commit update- commit_k33-NNNN Update conflict in cursor '_9999XXX'` repeatedly over ~1 hour, even after full LL restarts.
+
+**What actually happened**: the EDI transmission succeeded anyway. DLA sent an ack email at 12:51 PM confirming all 5 bids received (as superseded/accepted pairs — LL's internal retry fired 6 seconds after each cursor error). Our `lamlinks_write_queue` audit showed only 4 `done` rows with no retries — the duplicate came from LL's own retry, not us.
+
+**Diagnosis**: the cursor error is LL's desktop UI failing its local bookkeeping update (optimistic cursor on k33_tab row-version). It does NOT prevent the EDI transmit daemon from shipping the envelope. Don't confuse the two code paths.
+
+**Recovery protocol** when this error shows up:
+
+1. Wait ~1 minute. Don't panic, don't nuke.
+2. Check DLA-side: ack email or the DIBBS award tab for that sol.
+3. **If DLA has the quote** → run `scripts/ll-mark-envelope-sent.ts <idnk33> --yes` to flip `t_stat_k33='sent'` + `a_stat_k33='acknowledged'` so LL's UI stops showing the envelope as stuck.
+4. **If DLA does NOT have it after 5+ minutes** → only then consider destructive options: `ll-retire-envelope.ts`, `ll-extract-to-temp.ts`, or `ll-nuke-envelope.ts` (last resort, loses bids).
+5. Never delete k34/k35 rows pre-emptively — the transmission may still be in flight.
+
+### Incident-response script suite
+
+All gated with `--yes`; all refuse to touch envelopes where `t_stat_k33='sent'` (real post, don't modify):
+
+- `scripts/inspect-ll-envelope.ts <idnk33|qotref>` — dump envelope + k34/k35 + lock view
+- `scripts/ll-list-my-envelopes.ts [user] [--staging]` — find recent envelopes by upname
+- `scripts/ll-k33-status-values.ts` — show all distinct k33 status values (only `adding quotes` / `quotes added` — no canceled)
+- `scripts/ll-mark-envelope-sent.ts <idnk33>` — reconcile LL state after a confirmed DLA ack
+- `scripts/ll-retire-envelope.ts <idnk33>` — flip to `quotes added` (stops UI piggyback)
+- `scripts/ll-remove-k34-line.ts <k34_id>` — surgical single-line delete
+- `scripts/ll-extract-to-temp.ts <k33_id>` — park k34s + delete stuck k33
+- `scripts/ll-move-k34-lines.ts --from X --to Y --k34 a,b,c` — transplant lines between envelopes
+- `scripts/ll-nuke-envelope.ts <idnk33>` — full delete, LAST RESORT
+
 ## The id-allocation protocol: `kdy_tab`
 
 LamLinks uses a classic **server-side sequence table** called `kdy_tab`. One row per id-type (one for every k-series and some kc/ka-series tables). The row has:
