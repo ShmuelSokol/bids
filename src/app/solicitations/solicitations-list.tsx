@@ -23,6 +23,7 @@ import { isOpenSolicitation } from "@/lib/solicitation-filters";
 import { NsnHistoryDetail } from "@/components/nsn-history-detail";
 import { SourceTip } from "@/components/source-tip";
 import { SourcingModal } from "./sourcing-modal";
+import { fscLabel } from "@/lib/fsc-names";
 
 interface Solicitation {
   id: number;
@@ -131,6 +132,9 @@ export function SolicitationsList({
   // Works alongside the match-confidence (ax_matched / etc.) + status
   // filters; all filter predicates AND together.
   const [fileRefFilter, setFileRefFilter] = useState<string | null>(null);
+  // FSC state already declared below — the existing dropdown uses "all" as
+  // the no-filter sentinel. The new chip strip at the top reuses that
+  // single source of truth so both UIs stay in sync.
   // Whether the File References grid is expanded. Collapsed by default once
   // Abe picks a batch — keeps the page tidy while he works through 642 lines.
   const [fileRefsExpanded, setFileRefsExpanded] = useState(true);
@@ -226,9 +230,10 @@ export function SolicitationsList({
     let sourceable = 0, axMatched = 0, potentialMatched = 0, nonSourced = 0;
     let quoted = 0, submitted = 0, skipped = 0, alreadyBid = 0, llActive = 0, dibbsOnly = 0;
     for (const s of solicitations) {
-      // Match-confidence counts rescope to the active file reference so the
-      // big cards show "in THIS batch, X are AX-matched" when a batch is picked.
+      // Match-confidence counts rescope to the active file reference + FSC
+      // so the big cards show "in THIS batch + THIS category, X are AX-matched."
       if (fileRefFilter && s.file_reference !== fileRefFilter) continue;
+      if (fscFilter !== "all" && s.fsc !== fscFilter) continue;
       const open = isOpenSolicitation(s.return_by_date);
       if (s.data_source === "lamlinks" && open) llActive++;
       if (s.data_source !== "lamlinks" && open) dibbsOnly++;
@@ -246,6 +251,30 @@ export function SolicitationsList({
       nonSourced++;
     }
     return { total: solicitations.length, sourceable, axMatched, potentialMatched, nonSourced, quoted, submitted, skipped, alreadyBid, llActive, dibbsOnly };
+  }, [solicitations, fileRefFilter, fscFilter]);
+
+  // FSC rollup — one entry per FSC in the current file_reference scope.
+  // Excludes closed / quoted / submitted / already-bid items so the
+  // counts reflect "what's left to decide in this category". Sorted by
+  // count DESC so Abe sees his biggest remaining categories first.
+  const fscRollup = useMemo(() => {
+    const byFsc = new Map<string, { fsc: string; total: number; ax: number; potential: number; nonsourced: number }>();
+    for (const s of solicitations) {
+      // Rescope to the active file_reference so FSCs shown are the ones
+      // present in Abe's current batch. Do NOT rescope to fscFilter itself
+      // (otherwise picking 6515 would leave only 6515 in the chip strip).
+      if (fileRefFilter && s.file_reference !== fileRefFilter) continue;
+      if (!isOpenSolicitation(s.return_by_date)) continue;
+      if (s.bid_status || s.already_bid) continue;
+      if (!s.fsc) continue;
+      let b = byFsc.get(s.fsc);
+      if (!b) { b = { fsc: s.fsc, total: 0, ax: 0, potential: 0, nonsourced: 0 }; byFsc.set(s.fsc, b); }
+      b.total++;
+      if (s.is_sourceable && s.source === "ax") b.ax++;
+      else if (s.is_sourceable) b.potential++;
+      else b.nonsourced++;
+    }
+    return [...byFsc.values()].sort((a, b) => b.total - a.total);
   }, [solicitations, fileRefFilter]);
 
   // File-reference rollup for the grid: one row per (file_reference, date)
@@ -942,6 +971,57 @@ export function SolicitationsList({
                 </div>
               )}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* FSC (category) filter — chips for the top categories in the current
+          scope plus a dropdown for the rest. Lets Abe knock out one category
+          at a time ("all the 6515 first, then 6510, …"). Reuses the existing
+          fscFilter state ("all" = no filter) so the dropdown in the lower
+          filter bar and this chip strip stay in sync. */}
+      {fscRollup.length > 0 && (
+        <div className="mb-4 flex items-center gap-2 flex-wrap text-xs">
+          <span className="text-muted font-medium">Category:</span>
+          {fscFilter !== "all" && (
+            <button
+              onClick={() => setFscFilter("all")}
+              className="inline-flex items-center gap-1 rounded-full border border-accent bg-accent/10 text-accent px-2.5 py-0.5 font-medium hover:bg-accent/20"
+            >
+              <span className="font-mono">{fscFilter}</span>
+              <span className="text-[11px]">{fscLabel(fscFilter).replace(`${fscFilter} · `, "· ")}</span>
+              <span className="ml-1 font-semibold">×</span>
+            </button>
+          )}
+          {fscRollup.slice(0, 8).map((b) => {
+            const active = fscFilter === b.fsc;
+            return (
+              <button
+                key={b.fsc}
+                onClick={() => setFscFilter(active ? "all" : b.fsc)}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 hover:bg-gray-100 ${
+                  active ? "border-accent bg-accent/10 text-accent" : "border-card-border bg-card-bg text-foreground"
+                }`}
+                title={fscLabel(b.fsc)}
+              >
+                <span className="font-mono font-semibold">{b.fsc}</span>
+                <span className="text-muted">·</span>
+                <span className="truncate max-w-[140px]">{fscLabel(b.fsc).replace(`${b.fsc} · `, "")}</span>
+                <span className="ml-1 rounded bg-gray-200 text-gray-700 px-1.5 text-[10px] font-semibold">{b.total}</span>
+              </button>
+            );
+          })}
+          {fscRollup.length > 8 && (
+            <select
+              value={fscFilter !== "all" && !fscRollup.slice(0, 8).some((b) => b.fsc === fscFilter) ? fscFilter : ""}
+              onChange={(e) => setFscFilter(e.target.value || "all")}
+              className="rounded-full border border-card-border bg-card-bg px-2 py-0.5 text-xs"
+            >
+              <option value="">More…</option>
+              {fscRollup.slice(8).map((b) => (
+                <option key={b.fsc} value={b.fsc}>{fscLabel(b.fsc)} — {b.total}</option>
+              ))}
+            </select>
           )}
         </div>
       )}
