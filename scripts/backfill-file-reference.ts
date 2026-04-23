@@ -74,9 +74,11 @@ async function main() {
   let llTotal = 0;
   for (let i = 0; i < sols.length; i += CHUNK) {
     const batch = sols.slice(i, i + CHUNK);
-    const placeholders = batch.map((_, j) => `@p${j}`).join(",");
+    // msnodesqlv8 reserves the @p prefix internally — use @sol instead
+    // so its auto-numbered @p1 doesn't collide with our bound names.
+    const placeholders = batch.map((_, j) => `@sol${j}`).join(",");
     const req = pool.request();
-    batch.forEach((s, j) => req.input(`p${j}`, sql.VarChar, s));
+    batch.forEach((s, j) => req.input(`sol${j}`, sql.VarChar, s));
     const q = await req.query(`
       SELECT
         k10.sol_no_k10 AS solicitation_number,
