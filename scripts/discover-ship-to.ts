@@ -26,8 +26,35 @@ async function main() {
   const arg1 = process.argv[3];
   const pool = await sql.connect(config);
 
+  // k10_tab full schema — we also need buyer-name + required-delivery-days
+  // for the Q-vs-T work. Bundling the dump here so one run covers all three
+  // unknowns (ship-to table, buyer column, delivery-days column).
+  console.log("=== k10_tab full schema (looking for buyer + delivery-days) ===");
+  const k10cols = await pool.request().query(`
+    SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
+    FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='k10_tab'
+    ORDER BY ORDINAL_POSITION
+  `);
+  for (const c of k10cols.recordset) {
+    console.log(`  ${c.COLUMN_NAME.padEnd(20)} ${c.DATA_TYPE}${c.CHARACTER_MAXIMUM_LENGTH ? `(${c.CHARACTER_MAXIMUM_LENGTH})` : ""}`);
+  }
+
+  // One sample k10 row so we can see actual values
+  if (arg0 && arg0 !== "--find") {
+    console.log(`\n=== Sample k10 row for sol_no=${arg0} ===`);
+    const k10 = await pool.request().input("sol", sql.VarChar, arg0).query(`SELECT TOP 1 * FROM k10_tab WHERE sol_no_k10 = @sol`);
+    if (k10.recordset.length > 0) {
+      const r = k10.recordset[0];
+      for (const k of Object.keys(r)) {
+        const v = r[k];
+        const s = v instanceof Date ? v.toISOString() : String(v ?? "").trim();
+        if (s && s !== "0") console.log(`  ${k.padEnd(20)} = ${s}`);
+      }
+    }
+  }
+
   // Find every table with an idnk11_* column (FK to k11 → solicitation line)
-  console.log("=== Tables with idnk11_* column (candidates for ship-to children) ===");
+  console.log("\n=== Tables with idnk11_* column (candidates for ship-to children) ===");
   const fks = await pool.request().query(`
     SELECT TABLE_NAME, COLUMN_NAME
     FROM INFORMATION_SCHEMA.COLUMNS
