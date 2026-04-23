@@ -81,6 +81,11 @@ const TASKS: Task[] = [
   // awards' PIDs without hammering LL SQL. Full 3-year backfill is a
   // manual `npx tsx scripts/sync-ll-item-pids.ts --years 3` run.
   { script: "sync-ll-item-pids", args: ["--years", "1"], mode: "periodic", intervalMs: 4 * 60 * 60_000, skipInitialRun: true },
+
+  // LL inventory on hand — k93_tab aggregation into ll_inventory_on_hand.
+  // Keeps the /inventory page fresh. Query is fast (~1s for 25K NSN rollup)
+  // but receipts/reservations update throughout the day. 30-min cadence.
+  { script: "sync-ll-inventory-on-hand", mode: "periodic", intervalMs: 30 * 60_000, skipInitialRun: true },
 ];
 
 const LOG_DIR = "C:\\tmp\\dibs-logs";

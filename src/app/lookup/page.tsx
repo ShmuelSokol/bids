@@ -216,6 +216,39 @@ export default function LookupPage() {
             </div>
           </Section>
 
+          {/* LamLinks Inventory on Hand */}
+          <Section
+            title="LamLinks Inventory on Hand"
+            note="From k93_tab via ll_inventory_on_hand. 'Available' = on hand minus reserved for existing orders."
+          >
+            {!data.ll_inventory ? (
+              <p className="text-sm text-muted italic">No inventory records for this NSN.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div>
+                  <div className="text-[10px] text-muted uppercase">On hand</div>
+                  <div className="font-mono text-lg">{Number(data.ll_inventory.qty_on_hand).toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted uppercase">Reserved</div>
+                  <div className="font-mono text-lg text-amber-700">{Number(data.ll_inventory.qty_reserved ?? 0).toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted uppercase">Available</div>
+                  <div className="font-mono text-lg text-green-700">{Number(data.ll_inventory.qty_available ?? 0).toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted uppercase">Lots</div>
+                  <div className="font-mono text-lg">{data.ll_inventory.lots}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted uppercase">Stock value</div>
+                  <div className="font-mono text-lg">{fmt$(data.ll_inventory.stock_value)}</div>
+                </div>
+              </div>
+            )}
+          </Section>
+
           {/* LamLinks PID + Packaging Requirements */}
           <Section
             title="LamLinks PID — Procurement Item Description"

@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const digits = nsn.replace(/-/g, "");
 
   // Fire all Supabase queries in parallel
-  const [cost, vendorPrices, awards, histBids, liveBids, sols, matches, spec, pid, shipments] = await Promise.all([
+  const [cost, vendorPrices, awards, histBids, liveBids, sols, matches, spec, pid, shipments, inventory] = await Promise.all([
     supabase.from("nsn_costs").select("*").eq("nsn", nsn).maybeSingle(),
     supabase.from("nsn_vendor_prices").select("*").eq("nsn", nsn).order("price"),
     supabase.from("awards").select("id, contract_number, unit_price, quantity, award_date, cage, description, fob").eq("fsc", fsc).eq("niin", niin).order("award_date", { ascending: false }).limit(50),
@@ -47,6 +47,8 @@ export async function GET(req: NextRequest) {
     supabase.from("ll_item_pids").select("pid_text, packaging_text, packaging_notes, last_award_date, pid_bytes").eq("fsc", fsc).eq("niin", niin).order("last_award_date", { ascending: false }).limit(1).maybeSingle(),
     // NEW: our shipment history for this NSN from ll_shipments
     supabase.from("ll_shipments").select("idnkaj, ship_number, contract_number, clin, ship_status, ship_date, transport_mode, tracking_number, quantity, sell_value, fob").eq("nsn", nsn).order("ship_date", { ascending: false }).limit(30),
+    // NEW: current on-hand inventory for this NSN from ll_inventory_on_hand
+    supabase.from("ll_inventory_on_hand").select("lots, qty_on_hand, qty_reserved, qty_available, stock_value").eq("fsc", fsc).eq("niin", niin).maybeSingle(),
   ]);
 
   // NEW: EDI transmission history — join on shipment idnkaj. Gathered
@@ -102,5 +104,6 @@ export async function GET(req: NextRequest) {
     ll_pid: pid.data || null,
     ll_shipments: shipments.data || [],
     ll_edi_by_shipment: ediByShipment,
+    ll_inventory: inventory.data || null,
   });
 }
