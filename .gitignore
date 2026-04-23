@@ -51,3 +51,6 @@ next-env.d.ts
 
 # local snapshot/diagnostic output
 /tmp/
+
+# reverse-engineering strings dumps (~32 MB; regenerate via rev-eng/README.md)
+/rev-eng/strings/*.txt
