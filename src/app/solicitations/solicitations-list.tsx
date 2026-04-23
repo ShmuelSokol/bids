@@ -2169,8 +2169,41 @@ export function SolicitationsList({
                                 </div>
                               )}
 
-                              {supplierResults.webResults?.length === 0 && supplierResults.vendorPrices?.length === 0 && supplierResults.pastWinners?.length === 0 && (
-                                <div className="text-xs text-muted py-2">No suppliers found. Try a different search term.</div>
+                              {/* External lookups — ALWAYS shown. When Railway can't
+                                  scrape Google (captcha / rate-limit) these are the
+                                  places Abe was already manually checking; one-click
+                                  out. Kept compact; opens in new tabs. */}
+                              {supplierResults.externalLookups?.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-medium text-teal-700 mb-1">External Lookups (one-click)</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {supplierResults.externalLookups.map((ext: any, i: number) => (
+                                      <a
+                                        key={i}
+                                        href={ext.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={ext.hint}
+                                        className="inline-flex items-center gap-1 text-[11px] rounded border border-teal-300 bg-teal-50 text-teal-800 px-2 py-0.5 hover:bg-teal-100"
+                                      >
+                                        {ext.label}
+                                        <span aria-hidden className="text-[9px]">↗</span>
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {supplierResults.internalEmpty && supplierResults.webEmpty && (
+                                <div className="rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
+                                  <div className="font-semibold mb-0.5">Nothing in our internal tables for this NSN.</div>
+                                  <div className="leading-snug">
+                                    AX doesn&apos;t have it (no nsn_catalog / nsn_vendor_prices row), no past award history, and web-scraping returned nothing (Railway IPs are often blocked by Google).
+                                    Use the external lookups above — DIBBS awards + NSNLookup usually tell the full story.
+                                    If you find a supplier, set it via the{" "}
+                                    <span className="font-mono">Sourcing</span> button on the row to lock it in for future awards.
+                                  </div>
+                                </div>
                               )}
                             </div>
                           ) : (

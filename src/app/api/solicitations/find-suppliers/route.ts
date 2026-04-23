@@ -123,6 +123,21 @@ export async function GET(req: NextRequest) {
     userAgent,
   });
 
+  // External-lookup links — ALWAYS returned. When the Railway box can't
+  // scrape Google (blocked / rate-limited) these are Abe's one-click path
+  // to the actual authoritative sites. No API costs, no fragile regex —
+  // just parameterized URLs he was already visiting manually.
+  const nsnDigits = nsn.replace(/-/g, "");
+  const externalLookups = [
+    { label: "DIBBS awards", url: `https://www.dibbs.bsm.dla.mil/Awards/AwdRecs.aspx?Category=NSN&Value=${encodeURIComponent(nsnDigits)}`, hint: "DLA award history by NSN" },
+    { label: "DLA NSN search", url: `https://www.dibbs.bsm.dla.mil/RFQ/RfqRecs.aspx?category=NSN&value=${encodeURIComponent(nsnDigits)}&scope=open`, hint: "Current open DLA RFQs for this NSN" },
+    { label: "NSNLookup", url: `https://www.nsnlookup.com/search?q=${encodeURIComponent(nsnDigits)}`, hint: "Approved mfr CAGEs + part numbers" },
+    { label: "NATOStockNumber", url: `https://www.natostocknumber.org/?q=${encodeURIComponent(nsn)}`, hint: "Community cross-reference" },
+    { label: "GSA Advantage", url: `https://www.gsaadvantage.gov/advantage/ws/search/specific_items?q=${encodeURIComponent(nsnDigits)}`, hint: "GSA schedule sources" },
+    { label: "Google (mfr)", url: `https://www.google.com/search?q=${encodeURIComponent(`"${nsn}" OR "${nsnDigits}" manufacturer supplier`)}`, hint: "Open search" },
+    { label: "Google (nomenclature)", url: `https://www.google.com/search?q=${encodeURIComponent(`${cleanName} supplier wholesale`)}`, hint: "Nomenclature-based search" },
+  ];
+
   return NextResponse.json({
     nsn,
     description: cleanName,
@@ -131,6 +146,9 @@ export async function GET(req: NextRequest) {
     vendorPrices,
     pastWinners: pastAwards,
     masterDbMatches: masterDb,
+    externalLookups,
     searchCount: 3,
+    internalEmpty: (vendorPrices?.length ?? 0) === 0 && (pastAwards?.length ?? 0) === 0 && (masterDb?.length ?? 0) === 0,
+    webEmpty: webResults.length === 0,
   });
 }
