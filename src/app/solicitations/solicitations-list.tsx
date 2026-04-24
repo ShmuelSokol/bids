@@ -2129,7 +2129,7 @@ export function SolicitationsList({
                                     {supplierResults.vendorPrices.map((v: any, i: number) => (
                                       <div key={i} className="text-xs bg-green-50 border border-green-200 rounded px-2 py-1">
                                         <span className="font-mono font-medium">{v.vendor}</span>
-                                        <span className="text-green-700 ml-1">${v.price.toFixed(2)}</span>
+                                        {v.price != null && <span className="text-green-700 ml-1">${Number(v.price).toFixed(2)}</span>}
                                         <span className="text-[9px] text-muted ml-1">({v.price_source === "recent_po" ? "PO" : "Agreement"})</span>
                                       </div>
                                     ))}
@@ -2145,7 +2145,7 @@ export function SolicitationsList({
                                     {supplierResults.pastWinners.map((w: any, i: number) => (
                                       <div key={i} className="text-xs bg-blue-50 border border-blue-200 rounded px-2 py-1">
                                         <span className="font-mono font-medium">CAGE {w.cage}</span>
-                                        <span className="ml-1">${w.lastPrice.toFixed(2)}</span>
+                                        {w.lastPrice != null && <span className="ml-1">${Number(w.lastPrice).toFixed(2)}</span>}
                                         <span className="text-[9px] text-muted ml-1">({w.wins}x won)</span>
                                       </div>
                                     ))}
@@ -2162,7 +2162,7 @@ export function SolicitationsList({
                                       <div key={i} className="text-xs bg-purple-50 border border-purple-200 rounded px-2 py-1">
                                         <span className="font-medium">{m.supplier}</span>
                                         <span className="font-mono ml-1">{m.sku}</span>
-                                        {m.cost && <span className="text-purple-700 ml-1">${m.cost.toFixed(2)}</span>}
+                                        {m.cost != null && <span className="text-purple-700 ml-1">${Number(m.cost).toFixed(2)}</span>}
                                       </div>
                                     ))}
                                   </div>
