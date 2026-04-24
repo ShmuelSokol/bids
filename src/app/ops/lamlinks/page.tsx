@@ -20,12 +20,20 @@ export default async function OpsLamlinksPage() {
             can&apos;t reach the LL DB directly). Superadmin only.
           </p>
         </div>
-        <Link
-          href="/ops/lamlinks/transmissions"
-          className="inline-flex items-center gap-2 rounded-lg border border-card-border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
-        >
-          <Activity className="h-4 w-4" /> EDI Transmissions
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href="/ops/lamlinks/ack-tracker"
+            className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 px-3 py-1.5 text-sm font-medium hover:bg-red-100"
+          >
+            <Activity className="h-4 w-4" /> Ack Tracker
+          </Link>
+          <Link
+            href="/ops/lamlinks/transmissions"
+            className="inline-flex items-center gap-2 rounded-lg border border-card-border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+          >
+            <Activity className="h-4 w-4" /> EDI Transmissions
+          </Link>
+        </div>
       </div>
       <OpsLamlinks />
     </div>

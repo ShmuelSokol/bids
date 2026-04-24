@@ -86,6 +86,19 @@ const TASKS: Task[] = [
   // Keeps the /inventory page fresh. Query is fast (~1s for 25K NSN rollup)
   // but receipts/reservations update throughout the day. 30-min cadence.
   { script: "sync-ll-inventory-on-hand", mode: "periodic", intervalMs: 30 * 60_000, skipInitialRun: true },
+
+  // LL kaj-level shipments — one row per shipment header with aggregated
+  // CLIN count + total qty + total value + representative NSN. Used by
+  // the ack tracker to resolve idnkaj → shipment detail. 180-day window
+  // so every kbr_tab row can join to its shipment.
+  { script: "sync-ll-shipments-by-kaj", args: ["--days", "180"], mode: "periodic", intervalMs: 30 * 60_000, skipInitialRun: true },
+
+  // WAWF 810 ack digest — computes inferred ack status per transmission.
+  // Once daily at morning roll-up time. --alert --min 5 fires a WhatsApp
+  // to Yosef if 5+ invoices cross the 30-day staleness line without
+  // payment. Every interval runs regardless, logs to console + sync_log;
+  // alert only fires at the threshold.
+  { script: "ack-tracker-digest", args: ["--alert", "--min", "5"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
 ];
 
 const LOG_DIR = "C:\\tmp\\dibs-logs";

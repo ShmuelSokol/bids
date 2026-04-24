@@ -161,11 +161,11 @@ export function ShippingDashboard({
         <div className="mb-4 flex items-center gap-2 flex-wrap">
           {staleWawf > 0 && (
             <Link
-              href="/ops/lamlinks/transmissions"
+              href="/ops/lamlinks/ack-tracker"
               className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 px-3 py-1.5 text-xs font-medium hover:bg-red-100"
             >
               ⚠ {staleWawf} WAWF 810 sent &gt;30 days, no ack
-              <span className="text-[10px] opacity-70">→ Transmissions</span>
+              <span className="text-[10px] opacity-70">→ Ack Tracker</span>
             </Link>
           )}
           {dpmsPending > 0 && (

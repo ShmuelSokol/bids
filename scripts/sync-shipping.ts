@@ -23,8 +23,13 @@ async function main() {
 
   const pool = await sql.connect(config);
 
+  // Pull enough shipments to cover 120d of WAWF-810 transmissions — the
+  // ack-tracker joins by idnkaj and needs every shipment in the window.
+  // Also relax the tmp-shipping-v2.sql WHERE clause to 120 days so we
+  // don't miss shipments that got kbr writes in our window.
   const query = readFileSync(join(__dirname, "tmp-shipping-v2.sql"), "utf-8")
-    .replace("TOP 50", "TOP 500"); // Get more data
+    .replace("TOP 50", "TOP 5000")
+    .replace("DATEADD(day, -90,", "DATEADD(day, -150,");
 
   const result = await pool.request().query(query);
   console.log(`Found ${result.recordset.length} shipments from LamLinks\n`);
