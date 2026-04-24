@@ -821,7 +821,40 @@ export function SolicitationsList({
     }
 
     items = items.map((s) => {
-      const potVal = s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
+      // Derive a fallback suggested price for non-sourceable (unmatched)
+      // NSNs from past award history. Use the most recent non-zero unit
+      // price from the awards table; if Abe has bid on this NSN and his
+      // bid is more recent, prefer that (he's closer to the market).
+      const hist = historyByNsn.get(s.nsn) || [];
+      const ourBids = abeBidsByNsn.get(s.nsn) || [];
+      let derivedPrice: number | null = null;
+      let derivedPriceSource: string | null = null;
+      if (!s.suggested_price) {
+        const sortedAwards = [...hist].filter((a) => Number(a.unit_price) > 0).sort((a, b) => (b.award_date || "").localeCompare(a.award_date || ""));
+        const lastOurBid = [...ourBids].filter((b: any) => Number(b.bid_price) > 0).sort((a: any, b: any) => (b.bid_date || b.bid_time || "").localeCompare(a.bid_date || a.bid_time || ""))[0];
+        const recentAward = sortedAwards[0];
+        if (recentAward && lastOurBid) {
+          const awardTs = new Date(recentAward.award_date || 0).getTime();
+          const bidTs = new Date((lastOurBid as any).bid_date || (lastOurBid as any).bid_time || 0).getTime();
+          if (bidTs > awardTs) {
+            derivedPrice = Number((lastOurBid as any).bid_price);
+            derivedPriceSource = "our last bid";
+          } else {
+            derivedPrice = Number(recentAward.unit_price);
+            derivedPriceSource = `last award (${recentAward.cage?.trim() || "competitor"})`;
+          }
+        } else if (recentAward) {
+          derivedPrice = Number(recentAward.unit_price);
+          derivedPriceSource = `last award (${recentAward.cage?.trim() || "competitor"})`;
+        } else if (lastOurBid) {
+          derivedPrice = Number((lastOurBid as any).bid_price);
+          derivedPriceSource = "our last bid";
+        }
+      }
+      const effectivePrice = s.suggested_price ?? derivedPrice;
+      const potVal = s.est_value
+        || (effectivePrice && s.quantity ? effectivePrice * s.quantity : 0)
+        || ((s.suggested_price || s.final_price || 0) * (s.quantity || 1));
       const bidScore = calculateBidScore({
         suggestedPrice: s.suggested_price,
         ourCost: s.our_cost,
@@ -839,7 +872,7 @@ export function SolicitationsList({
         daysUntilDue: parseDaysUntilDue(s.return_by_date),
         fob: s.fob,
       });
-      return { ...s, _potentialValue: potVal, _bidScore: bidScore };
+      return { ...s, _potentialValue: potVal, _bidScore: bidScore, _derivedPrice: derivedPrice, _derivedPriceSource: derivedPriceSource };
     });
 
     // Score filter (after scores computed)
@@ -983,20 +1016,33 @@ export function SolicitationsList({
 
         {/* Pricing + Bid Form */}
         <div className="grid md:grid-cols-3 gap-4 mb-3">
-          <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-            <div className="text-[10px] text-green-700 font-medium mb-1">Suggested Bid</div>
-            <div className="text-2xl font-bold font-mono text-green-700">{s.suggested_price ? `$${s.suggested_price.toFixed(2)}` : "—"}</div>
-            {s.price_source && <div className="text-[10px] text-green-600 mt-1">{s.price_source}</div>}
-            {s.our_cost && (
-              <div className="text-xs text-green-600 mt-1">
-                Cost: ${s.our_cost.toFixed(2)} · Margin: {s.margin_pct}%
-                {s.est_shipping && ` · Ship: ~$${s.est_shipping}`}
+          {(() => {
+            const derivedPrice = (s as any)._derivedPrice as number | null;
+            const derivedSrc = (s as any)._derivedPriceSource as string | null;
+            const displayPrice = s.suggested_price ?? derivedPrice ?? null;
+            const isDerived = s.suggested_price == null && derivedPrice != null;
+            return (
+              <div className={`rounded-lg p-3 border ${isDerived ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"}`}>
+                <div className={`text-[10px] font-medium mb-1 ${isDerived ? "text-amber-700" : "text-green-700"}`}>
+                  {isDerived ? "Suggested Bid (from history)" : "Suggested Bid"}
+                </div>
+                <div className={`text-2xl font-bold font-mono ${isDerived ? "text-amber-700" : "text-green-700"}`}>
+                  {displayPrice != null ? `$${Number(displayPrice).toFixed(2)}` : "—"}
+                </div>
+                {isDerived && derivedSrc && <div className="text-[10px] text-amber-700 mt-1">via {derivedSrc}</div>}
+                {!isDerived && s.price_source && <div className="text-[10px] text-green-600 mt-1">{s.price_source}</div>}
+                {s.our_cost && (
+                  <div className={`text-xs mt-1 ${isDerived ? "text-amber-700" : "text-green-600"}`}>
+                    Cost: ${s.our_cost.toFixed(2)} · Margin: {s.margin_pct}%
+                    {s.est_shipping && ` · Ship: ~$${s.est_shipping}`}
+                  </div>
+                )}
+                <div className={`text-xs font-medium mt-1 ${isDerived ? "text-amber-700" : "text-green-700"}`}>
+                  Potential: ${potValue > 0 ? potValue.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}
+                </div>
               </div>
-            )}
-            <div className="text-xs font-medium text-green-700 mt-1">
-              Potential: ${potValue > 0 ? potValue.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}
-            </div>
-          </div>
+            );
+          })()}
 
           <div className="bg-gray-50 rounded-lg p-3 border border-card-border">
             <div className="text-[10px] text-muted font-medium mb-1">Your Bid</div>
@@ -1922,9 +1968,24 @@ export function SolicitationsList({
                         {s.cost_source && <div className="text-[9px] text-muted/60 truncate max-w-[80px]">{s.cost_source}</div>}
                       </td>
                       <td className="px-3 py-2 text-right font-mono font-medium text-green-600">
-                        {s.bid_status === "quoted" || s.bid_status === "submitted"
-                          ? `$${(s.final_price || 0).toFixed(2)}`
-                          : s.suggested_price ? `$${s.suggested_price.toFixed(2)}` : "—"}
+                        {(() => {
+                          if (s.bid_status === "quoted" || s.bid_status === "submitted") {
+                            return <>${(s.final_price || 0).toFixed(2)}</>;
+                          }
+                          if (s.suggested_price != null) {
+                            return <>${s.suggested_price.toFixed(2)}</>;
+                          }
+                          const dp = (s as any)._derivedPrice as number | null;
+                          if (dp != null) {
+                            return (
+                              <span className="text-amber-700" title={(s as any)._derivedPriceSource || "from history"}>
+                                ${Number(dp).toFixed(2)}
+                                <span className="block text-[9px] font-normal text-amber-600">history*</span>
+                              </span>
+                            );
+                          }
+                          return <span className="text-muted">—</span>;
+                        })()}
                         {s.price_source && (
                           <div className="text-[9px] text-muted/60 font-normal truncate max-w-[120px]">{s.price_source}</div>
                         )}
