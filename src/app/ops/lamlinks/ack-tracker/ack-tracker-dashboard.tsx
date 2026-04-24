@@ -81,13 +81,32 @@ function fmt$(n: number | null | undefined) {
   return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+interface DlaPayment {
+  ax_voucher: string | null;
+  marked_invoice: string;
+  marked_invoice_normalized: string;
+  payment_date: string;
+  payment_amount: number | null;
+  payment_reference: string | null;
+}
+
 type Props = {
   transmissions: Transmission[];
   shipmentsByKaj: Record<string, Shipment>;
   lastSync: string | null;
+  unsettledDlaInvoices?: DlaPayment[];
+  recentDlaSettlements?: DlaPayment[];
+  axPaymentsSync?: { created_at: string; details: any } | null;
 };
 
-export function AckTrackerDashboard({ transmissions, shipmentsByKaj, lastSync }: Props) {
+export function AckTrackerDashboard({
+  transmissions,
+  shipmentsByKaj,
+  lastSync,
+  unsettledDlaInvoices = [],
+  recentDlaSettlements = [],
+  axPaymentsSync,
+}: Props) {
   const [bucket, setBucket] = useState<Bucket | "all" | "actionable">("actionable");
   const [search, setSearch] = useState("");
 
@@ -236,6 +255,73 @@ export function AckTrackerDashboard({ transmissions, shipmentsByKaj, lastSync }:
           className="ml-auto text-xs border border-card-border rounded-lg px-3 py-1.5 w-72"
         />
       </div>
+
+      {/* Phase 2 — AX payment cross-reference */}
+      {(unsettledDlaInvoices.length > 0 || recentDlaSettlements.length > 0) && (
+        <div className="grid md:grid-cols-2 gap-4 mb-6">
+          <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-amber-900">DLA hasn&apos;t paid yet</h3>
+              <span className="text-xs text-amber-700">{unsettledDlaInvoices.length} invoices</span>
+            </div>
+            <p className="text-[11px] text-amber-800 mb-2">
+              From AX CustTransactions where Settlement=No. These are real unpaid DLA invoices —
+              far more reliable than age-based inference. Cross-reference any aging WAWF 810 with
+              this list.
+            </p>
+            <div className="bg-white/70 rounded border border-amber-200 max-h-48 overflow-y-auto">
+              <table className="w-full text-[10px]">
+                <thead className="bg-amber-100 sticky top-0">
+                  <tr><th className="px-2 py-1 text-left">Invoice</th><th className="px-2 py-1 text-left">Voucher</th><th className="px-2 py-1 text-left">Date</th></tr>
+                </thead>
+                <tbody>
+                  {unsettledDlaInvoices.slice(0, 100).map((p, i) => (
+                    <tr key={i} className="border-t border-amber-100">
+                      <td className="px-2 py-1 font-mono">{p.marked_invoice}</td>
+                      <td className="px-2 py-1 font-mono text-muted">{p.ax_voucher}</td>
+                      <td className="px-2 py-1 text-muted">{formatDateShort(p.payment_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {axPaymentsSync && (
+              <div className="text-[10px] text-amber-700 mt-2">
+                AX last synced: {formatDateTime(axPaymentsSync.created_at)} · ${(axPaymentsSync.details?.settled_amount ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} settled in window
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border-2 border-green-200 bg-green-50 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-green-900">DLA paid — last 14 days</h3>
+              <span className="text-xs text-green-700">
+                ${recentDlaSettlements.reduce((s, p) => s + (p.payment_amount || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <p className="text-[11px] text-green-800 mb-2">
+              From AX CustTransactions where Settlement=Yes. These invoices ARE paid; if any aging
+              810 in the table below matches one of these by invoice number, it&apos;s resolved.
+            </p>
+            <div className="bg-white/70 rounded border border-green-200 max-h-48 overflow-y-auto">
+              <table className="w-full text-[10px]">
+                <thead className="bg-green-100 sticky top-0">
+                  <tr><th className="px-2 py-1 text-left">Invoice</th><th className="px-2 py-1 text-right">$</th><th className="px-2 py-1 text-left">Paid</th></tr>
+                </thead>
+                <tbody>
+                  {recentDlaSettlements.slice(0, 100).map((p, i) => (
+                    <tr key={i} className="border-t border-green-100">
+                      <td className="px-2 py-1 font-mono">{p.marked_invoice}</td>
+                      <td className="px-2 py-1 text-right font-mono">${(p.payment_amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                      <td className="px-2 py-1 text-muted">{formatDateShort(p.payment_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-xl border border-card-border bg-card-bg shadow-sm">

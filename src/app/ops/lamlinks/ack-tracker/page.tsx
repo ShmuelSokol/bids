@@ -81,7 +81,33 @@ async function getData() {
     }
   }
 
-  // Also surface: total unique contracts affected + aggregate $ at risk per bucket
+  // PHASE 2: AX DLA payment data — gives us the authoritative list of
+  // (1) unsettled DLA invoices (DLA hasn't paid yet) and (2) recent
+  // settlements (DLA just paid these). Lets Yosef cross-reference aging
+  // 810s with what's actually been paid.
+  const [{ data: unsettled }, { data: recentSettled }, paymentsLastSync] = await Promise.all([
+    sb
+      .from("ax_dla_payments")
+      .select("ax_voucher, marked_invoice, marked_invoice_normalized, payment_date, payment_amount, payment_reference")
+      .is("payment_amount", null)
+      .order("payment_date", { ascending: true })
+      .limit(500),
+    sb
+      .from("ax_dla_payments")
+      .select("ax_voucher, marked_invoice, marked_invoice_normalized, payment_date, payment_amount, payment_reference")
+      .not("payment_amount", "is", null)
+      .gte("payment_date", new Date(Date.now() - 14 * 86_400_000).toISOString())
+      .order("payment_date", { ascending: false })
+      .limit(200),
+    sb
+      .from("sync_log")
+      .select("created_at, details")
+      .eq("action", "ax_dla_payments_sync")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
   const { data: lastSync } = await sb
     .from("sync_log")
     .select("created_at")
@@ -94,6 +120,9 @@ async function getData() {
     transmissions: transmissions || [],
     shipmentsByKaj: Object.fromEntries(shipmentsByKaj),
     lastSync: lastSync?.created_at || null,
+    unsettledDlaInvoices: unsettled || [],
+    recentDlaSettlements: recentSettled || [],
+    axPaymentsSync: paymentsLastSync.data || null,
   };
 }
 
@@ -105,7 +134,14 @@ export default async function AckTrackerPage() {
   const data = await getData();
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
-      <AckTrackerDashboard {...data} />
+      <AckTrackerDashboard
+        transmissions={data.transmissions}
+        shipmentsByKaj={data.shipmentsByKaj}
+        lastSync={data.lastSync}
+        unsettledDlaInvoices={data.unsettledDlaInvoices}
+        recentDlaSettlements={data.recentDlaSettlements}
+        axPaymentsSync={data.axPaymentsSync}
+      />
     </div>
   );
 }

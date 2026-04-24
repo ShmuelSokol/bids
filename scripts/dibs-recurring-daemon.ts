@@ -93,6 +93,12 @@ const TASKS: Task[] = [
   // so every kbr_tab row can join to its shipment.
   { script: "sync-ll-shipments-by-kaj", args: ["--days", "180"], mode: "periodic", intervalMs: 30 * 60_000, skipInitialRun: true },
 
+  // AX DLA payment sync — Phase 2 of the ack tracker. Pulls DLA's
+  // CustTransactions (invoices + settlements) so we can cross-reference
+  // aging 810s with what's actually been paid. Hourly is fine; nothing
+  // changes within hours.
+  { script: "sync-ax-dla-payments", args: ["--days", "365"], mode: "periodic", intervalMs: 60 * 60_000, skipInitialRun: true },
+
   // WAWF 810 ack digest — computes inferred ack status per transmission.
   // Once daily at morning roll-up time. --alert --min 5 fires a WhatsApp
   // to Yosef if 5+ invoices cross the 30-day staleness line without
