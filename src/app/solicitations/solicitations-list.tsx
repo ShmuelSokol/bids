@@ -145,9 +145,9 @@ export function SolicitationsList({
   // user "Show more" incrementally. Reset on filter change below.
   const [visibleLimit, setVisibleLimit] = useState(200);
 
-  // Fullscreen review modal — Abe clicks "Review" on a row to enter
-  // distraction-free review with prev/next navigation through the filter.
-  const [reviewModalId, setReviewModalId] = useState<number | null>(null);
+  // (reviewModalId removed — modal now triggered directly by detailId,
+  // which is already set when Abe clicks a row. One state, same modal
+  // experience on sourceable + non-sourceable.)
   const [sortField, setSortField] = useState<SortField>((initialSort as SortField) || "score");
   const [sortAsc, setSortAsc] = useState(false);
   const [scraping, setScraping] = useState(false);
@@ -905,6 +905,297 @@ export function SolicitationsList({
       <ArrowUpDown className="h-3 w-3" />
     </button>
   );
+
+  // Shared render helper for the full bid-detail content (header + pricing +
+  // ship-to + buyer + AX vendor parts + P/N matches + history). Used both
+  // for the inline expanded row and the fullscreen review modal so they
+  // stay in sync with one source of truth.
+  //
+  // Options:
+  //   hideInlineNext — when rendered inside the modal, skip the "Next →"
+  //     button in the header since the modal has its own navigation.
+  const renderSolDetail = (s: Solicitation, opts: { hideInlineNext?: boolean } = {}) => {
+    const cached = historyCache.get(s.nsn);
+    const potValue = (s as any)._potentialValue || s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
+    return (
+      <div className="p-4 border-t-2 border-accent/30">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-bold">{s.nomenclature}</h3>
+            <div className="flex items-center gap-3 text-xs text-muted mt-0.5">
+              <span className="font-mono text-accent">{s.nsn}</span>
+              <span>{s.solicitation_number}</span>
+              <span>Qty: {s.quantity}</span>
+              <span>Due: {s.return_by_date}</span>
+              {s.fob && <span>FOB: {s.fob === "D" ? "Dest" : "Origin"}</span>}
+              {s.procurement_type && s.procurement_type !== "RFQ" && <span className="px-1 rounded bg-indigo-100 text-indigo-700">{s.procurement_type}</span>}
+              {(() => {
+                const bs = (s as any)._bidScore as BidScore | undefined;
+                if (!bs) return null;
+                const color = bs.recommendation === "BID" ? "bg-green-600" : bs.recommendation === "CONSIDER" ? "bg-yellow-500" : "bg-red-500";
+                return (
+                  <span className={`px-2 py-0.5 rounded text-white text-[10px] font-bold ${color}`} title={bs.reasons.join(" · ")}>
+                    {bs.recommendation} ({bs.score}/100)
+                  </span>
+                );
+              })()}
+            </div>
+            {(() => {
+              const bs = (s as any)._bidScore as BidScore | undefined;
+              if (!bs || !bs.reasons.length) return null;
+              return (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {bs.reasons.map((r, i) => (
+                    <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{r}</span>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={(e) => { e.stopPropagation(); handleFindSuppliers(s); }}
+              className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-medium">
+              Find Suppliers
+            </button>
+            <button onClick={async (e) => {
+              e.stopPropagation();
+              const btn = e.currentTarget;
+              btn.textContent = "Checking...";
+              try {
+                const res = await fetch(`/api/dibbs/check-open?sol=${encodeURIComponent(s.solicitation_number)}`);
+                const data = await res.json();
+                btn.textContent = data.is_open ? "Still Open" : "Closed/Not Found";
+                btn.className = `text-xs px-2 py-1 rounded font-medium border ${data.is_open ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`;
+              } catch { btn.textContent = "Check Failed"; }
+            }}
+              className="text-xs px-2 py-1 rounded bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 font-medium">
+              Check DIBBS
+            </button>
+            {!opts.hideInlineNext && filtered.indexOf(s) < filtered.length - 1 && (
+              <button onClick={(e) => { e.stopPropagation(); setDetailId(filtered[filtered.indexOf(s) + 1].id); }}
+                className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium">
+                Next →
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Pricing + Bid Form */}
+        <div className="grid md:grid-cols-3 gap-4 mb-3">
+          <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+            <div className="text-[10px] text-green-700 font-medium mb-1">Suggested Bid</div>
+            <div className="text-2xl font-bold font-mono text-green-700">{s.suggested_price ? `$${s.suggested_price.toFixed(2)}` : "—"}</div>
+            {s.price_source && <div className="text-[10px] text-green-600 mt-1">{s.price_source}</div>}
+            {s.our_cost && (
+              <div className="text-xs text-green-600 mt-1">
+                Cost: ${s.our_cost.toFixed(2)} · Margin: {s.margin_pct}%
+                {s.est_shipping && ` · Ship: ~$${s.est_shipping}`}
+              </div>
+            )}
+            <div className="text-xs font-medium text-green-700 mt-1">
+              Potential: ${potValue > 0 ? potValue.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-3 border border-card-border">
+            <div className="text-[10px] text-muted font-medium mb-1">Your Bid</div>
+            <div className="space-y-2">
+              <input type="number" value={editingId === s.id ? editPrice : (s.suggested_price?.toFixed(2) || "")}
+                onChange={(e) => { setEditingId(s.id); setEditPrice(e.target.value); }}
+                onFocus={() => { if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}}
+                step="0.01" placeholder="Price"
+                className="w-full rounded border border-card-border px-3 py-2 text-sm font-mono" />
+              <div className="flex gap-2">
+                <input type="number" value={editingId === s.id ? editDays : "45"}
+                  onChange={(e) => { setEditingId(s.id); setEditDays(e.target.value); }}
+                  className="w-20 rounded border border-card-border px-2 py-1.5 text-xs font-mono" placeholder="Days" />
+                <input type="text" value={editingId === s.id ? editComment : ""}
+                  onChange={(e) => { setEditingId(s.id); setEditComment(e.target.value); }}
+                  className="flex-1 rounded border border-card-border px-2 py-1.5 text-xs" placeholder="Reason for change (optional)" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={(e) => { e.stopPropagation(); if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); } handleApprove(s); }}
+                  disabled={saving} className="flex-1 flex items-center justify-center gap-1 rounded bg-green-600 px-3 py-2 text-xs text-white font-medium hover:bg-green-700 disabled:opacity-50">
+                  <Check className="h-3 w-3" /> Approve &amp; Next
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); handleSkip(s); }}
+                  disabled={saving} className="flex items-center gap-1 rounded bg-gray-300 px-3 py-2 text-xs text-gray-700 font-medium hover:bg-gray-400 disabled:opacity-50">
+                  <X className="h-3 w-3" /> Skip
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+            <div className="text-[10px] text-blue-700 font-medium mb-1">Source Info</div>
+            <div className="space-y-1 text-xs">
+              <div>Data: <span className={`px-1 rounded font-medium ${s.data_source === "lamlinks" ? "bg-cyan-100 text-cyan-700" : "bg-gray-100 text-gray-600"}`}>{s.data_source === "lamlinks" ? "LamLinks Import" : "DIBBS Scrape"}</span></div>
+              {s.source && <div>Matched: <span className={`px-1 rounded font-medium ${s.source === "ax" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{s.source === "ax" ? "via AX" : "via Master"}</span></div>}
+              {s.cost_source && <div className="text-muted">Cost: {s.cost_source}</div>}
+              {s.channel === "dibbs_only" && <div><span className="px-1 rounded bg-orange-100 text-orange-700 font-medium">DIBBS only — not in LamLinks</span></div>}
+              {s.already_bid && <div className="text-purple-700 font-medium">Already bid in LamLinks @${s.last_bid_price?.toFixed(2)}</div>}
+              {(s.award_count ?? 0) > 0 && (
+                <div>Competitors: <span className="font-mono font-medium text-orange-700">{s.competitor_cage?.split(",").join(", ") || s.award_count}</span></div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Ship-to + buyer */}
+        {((s.ship_to_locations?.length ?? 0) > 0 || s.buyer_name || s.priority_code) && (
+          <div className="mb-3 rounded-lg border border-card-border bg-gray-50/50 p-3">
+            <div className="grid md:grid-cols-2 gap-3">
+              {(s.buyer_name || s.priority_code) && (
+                <div className="text-xs">
+                  <div className="text-[10px] font-bold text-muted mb-1">Buyer (LamLinks k10)</div>
+                  {s.buyer_name && (
+                    <div>👤 <span className="font-medium">{s.buyer_name}</span></div>
+                  )}
+                  {s.buyer_email && (
+                    <div className="text-[11px] text-muted">
+                      <a href={`mailto:${s.buyer_email}`} className="hover:underline">{s.buyer_email}</a>
+                      {s.buyer_phone && <span> · {s.buyer_phone}</span>}
+                    </div>
+                  )}
+                  {s.priority_code && (
+                    <div className="text-[11px] text-muted mt-1">Priority: <span className="font-mono font-medium">{s.priority_code}</span></div>
+                  )}
+                  {s.required_delivery_days && (
+                    <div className="text-[11px] mt-1 inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-900 px-1.5 py-0.5 font-medium">
+                      📅 Buyer wants delivery in {s.required_delivery_days}d — suggested lead time will match
+                    </div>
+                  )}
+                </div>
+              )}
+              {(s.ship_to_locations?.length ?? 0) > 0 && (
+                <div className="text-xs">
+                  <div className="text-[10px] font-bold text-muted mb-1">
+                    Ship-to ({s.ship_to_locations!.length}) — LamLinks k32
+                  </div>
+                  <div className="rounded border border-card-border bg-white overflow-hidden">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-gray-50 text-muted">
+                        <tr>
+                          <th className="px-2 py-1 text-left">CLIN</th>
+                          <th className="px-2 py-1 text-left">Destination</th>
+                          <th className="px-2 py-1 text-right">Qty</th>
+                          <th className="px-2 py-1 text-left">Deliver by</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {s.ship_to_locations!.map((loc, i) => (
+                          <tr key={i} className="border-t border-card-border/60">
+                            <td className="px-2 py-1 font-mono">{loc.clin || "—"}</td>
+                            <td className="px-2 py-1 truncate max-w-[260px]" title={loc.destination || ""}>
+                              {loc.destination || "—"}
+                            </td>
+                            <td className="px-2 py-1 text-right font-mono">{loc.qty?.toLocaleString() || "—"}</td>
+                            <td className="px-2 py-1 text-muted">{loc.delivery_date || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Item Spec + AX Vendor Parts + Part Number Matches */}
+        {(() => {
+          const spec = (cached as any)?.itemSpec;
+          const matches = (cached as any)?.matches;
+          const axVendorParts: any[] = (cached as any)?.axVendorParts || [];
+          if (!spec && !matches?.length && axVendorParts.length === 0) return null;
+          return (
+            <div className="grid md:grid-cols-2 gap-3 mb-3">
+              {spec && (
+                <div className="bg-gray-50 rounded-lg p-2 border border-card-border text-xs">
+                  <div className="text-[10px] font-bold text-gray-600 mb-1">Item Details (LamLinks k08)</div>
+                  {spec.item_name && <div>{spec.item_name}</div>}
+                  <div className="grid grid-cols-2 gap-1 mt-1 text-[10px] text-muted">
+                    {spec.part_number && <div>P/N: <span className="font-mono">{spec.part_number}</span></div>}
+                    {spec.cage_code && <div>CAGE: <span className="font-mono">{spec.cage_code}</span></div>}
+                    {spec.unit_price > 0 && <div>LL Price: ${spec.unit_price}</div>}
+                    {spec.unit_of_issue && <div>UoI: {spec.unit_of_issue}</div>}
+                  </div>
+                  <div className="mt-1 text-[9px] text-muted italic">LamLinks&apos; best guess — may not match DLA&apos;s approved mfr list</div>
+                </div>
+              )}
+              {axVendorParts.length > 0 && (
+                <div className="bg-blue-50 rounded-lg p-2 border border-blue-200 text-xs">
+                  <div className="text-[10px] font-bold text-blue-700 mb-1 flex items-center gap-1">
+                    AX Vendor Parts ({axVendorParts.length})
+                    <span className="inline-block rounded bg-green-100 text-green-700 border border-green-200 px-1 text-[9px] font-semibold">
+                      ✓ NSN-direct match
+                    </span>
+                  </div>
+                  {axVendorParts[0]?.ax_item_number && (
+                    <div className="text-[9px] text-muted mb-1 leading-snug">
+                      AX has NSN <span className="font-mono">{s.nsn}</span> on item{" "}
+                      <span className="font-mono font-medium">{axVendorParts[0].ax_item_number}</span>
+                      {" "}via <span className="font-mono">ProductBarcodesV3</span>. Vendors below come from{" "}
+                      <span className="font-mono">VendorProductDescriptionsV2</span> joined on that ItemNumber.
+                    </div>
+                  )}
+                  <div className="text-[9px] text-muted mb-1 italic">Our vendor chain — not DLA-approved mfr list. For cross-reference.</div>
+                  {axVendorParts.slice(0, 5).map((vp: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
+                      <span className="font-mono text-blue-800">{vp.vendor_account || "—"}</span>
+                      <span className="font-mono">{vp.vendor_product_number}</span>
+                      {vp.vendor_description && <span className="text-muted truncate">{vp.vendor_description.slice(0, 40)}</span>}
+                    </div>
+                  ))}
+                  {axVendorParts.length > 5 && <div className="text-[9px] text-muted mt-1">…{axVendorParts.length - 5} more</div>}
+                </div>
+              )}
+              {matches?.length > 0 && (() => {
+                const fuzzy = matches.filter((m: any) => m.match_type?.startsWith("TITLE_SIMILARITY"));
+                const exact = matches.filter((m: any) => !m.match_type?.startsWith("TITLE_SIMILARITY"));
+                return (
+                  <div className="space-y-2">
+                    {exact.length > 0 && (
+                      <div className="bg-yellow-50 rounded-lg p-2 border border-yellow-200 text-xs">
+                        <div className="text-[10px] font-bold text-yellow-700 mb-1">Part Number Matches ({exact.length})</div>
+                        {exact.map((m: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
+                            <span className={`px-1 rounded font-medium ${m.confidence === "HIGH" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{m.confidence}</span>
+                            <span className="font-mono">{m.matched_part_number}</span>
+                            <span className="text-muted truncate">{m.matched_description?.slice(0, 40)}</span>
+                            <span className="text-[9px] text-muted">({m.matched_source})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {fuzzy.length > 0 && !s.is_sourceable && (
+                      <div className="bg-red-50 rounded-lg p-2 border border-red-300 text-xs">
+                        <div className="text-[10px] font-bold text-red-800 mb-1">⚠ Title-Only Candidates — VERIFY before bidding ({fuzzy.length})</div>
+                        <div className="text-[10px] text-red-700 mb-1 leading-tight">
+                          These part numbers belong to <em>different</em> NSNs that happen to share this nomenclature. Using them as your bid&apos;s mfr part# can misroute the order. Confirm via PUB LOG or the vendor before using.
+                        </div>
+                        {fuzzy.map((m: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
+                            <span className="px-1 rounded font-medium bg-red-200 text-red-800">FUZZY</span>
+                            <span className="font-mono">{m.matched_part_number}</span>
+                            <span className="text-muted truncate">{m.matched_description?.slice(0, 40)}</span>
+                            <span className="text-[9px] text-muted">({m.matched_source})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })()}
+
+        <NsnHistoryDetail nsn={s.nsn} />
+      </div>
+    );
+  };
 
   return (
     <>
@@ -1742,12 +2033,6 @@ export function SolicitationsList({
                               Bid
                             </button>
                           )}
-                          {s.is_sourceable && !s.bid_status && (
-                            <button onClick={(e) => { e.stopPropagation(); setReviewModalId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); setEditDays("45"); setEditComment(""); }}
-                              className="text-[10px] px-2 py-1 rounded bg-accent text-white border border-accent hover:opacity-90 font-semibold">
-                              Review ▶
-                            </button>
-                          )}
                           {!isEditing && (
                             <button onClick={() => handleFindSuppliers(s)}
                               className={`text-[10px] px-2 py-1 rounded border font-medium ${supplierSearchId === s.id ? "bg-blue-100 text-blue-700 border-blue-300" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-blue-50 hover:text-blue-700"}`}>
@@ -1820,305 +2105,6 @@ export function SolicitationsList({
                       </tr>
                     )}
 
-                    {/* Detail / Bid Panel */}
-                    {detailId === s.id && (
-                      <tr key={`detail-${s.id}`} className="border-b border-card-border bg-white">
-                        <td colSpan={filter === "quoted" ? 14 : 13} className="p-0">
-                          <div className="p-4 border-t-2 border-accent/30">
-                            {/* Header */}
-                            <div className="flex items-start justify-between mb-3">
-                              <div>
-                                <h3 className="text-sm font-bold">{s.nomenclature}</h3>
-                                <div className="flex items-center gap-3 text-xs text-muted mt-0.5">
-                                  <span className="font-mono text-accent">{s.nsn}</span>
-                                  <span>{s.solicitation_number}</span>
-                                  <span>Qty: {s.quantity}</span>
-                                  <span>Due: {s.return_by_date}</span>
-                                  {s.fob && <span>FOB: {s.fob === "D" ? "Dest" : "Origin"}</span>}
-                                  {s.procurement_type && s.procurement_type !== "RFQ" && <span className="px-1 rounded bg-indigo-100 text-indigo-700">{s.procurement_type}</span>}
-                                  {(() => {
-                                    const bs = (s as any)._bidScore as BidScore | undefined;
-                                    if (!bs) return null;
-                                    const color = bs.recommendation === "BID" ? "bg-green-600" : bs.recommendation === "CONSIDER" ? "bg-yellow-500" : "bg-red-500";
-                                    return (
-                                      <span className={`px-2 py-0.5 rounded text-white text-[10px] font-bold ${color}`} title={bs.reasons.join(" · ")}>
-                                        {bs.recommendation} ({bs.score}/100)
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
-                                {(() => {
-                                  const bs = (s as any)._bidScore as BidScore | undefined;
-                                  if (!bs || !bs.reasons.length) return null;
-                                  return (
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {bs.reasons.map((r, i) => (
-                                        <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{r}</span>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                              <div className="flex gap-2">
-                                <button onClick={(e) => { e.stopPropagation(); handleFindSuppliers(s); }}
-                                  className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-medium">
-                                  Find Suppliers
-                                </button>
-                                <button onClick={async (e) => {
-                                  e.stopPropagation();
-                                  const btn = e.currentTarget;
-                                  btn.textContent = "Checking...";
-                                  try {
-                                    const res = await fetch(`/api/dibbs/check-open?sol=${encodeURIComponent(s.solicitation_number)}`);
-                                    const data = await res.json();
-                                    btn.textContent = data.is_open ? "Still Open" : "Closed/Not Found";
-                                    btn.className = `text-xs px-2 py-1 rounded font-medium border ${data.is_open ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`;
-                                  } catch { btn.textContent = "Check Failed"; }
-                                }}
-                                  className="text-xs px-2 py-1 rounded bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 font-medium">
-                                  Check DIBBS
-                                </button>
-                                {filtered.indexOf(s) < filtered.length - 1 && (
-                                  <button onClick={(e) => { e.stopPropagation(); setDetailId(filtered[filtered.indexOf(s) + 1].id); }}
-                                    className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium">
-                                    Next →
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Pricing + Bid Form */}
-                            <div className="grid md:grid-cols-3 gap-4 mb-3">
-                              <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                                <div className="text-[10px] text-green-700 font-medium mb-1">Suggested Bid</div>
-                                <div className="text-2xl font-bold font-mono text-green-700">{s.suggested_price ? `$${s.suggested_price.toFixed(2)}` : "—"}</div>
-                                {s.price_source && <div className="text-[10px] text-green-600 mt-1">{s.price_source}</div>}
-                                {s.our_cost && (
-                                  <div className="text-xs text-green-600 mt-1">
-                                    Cost: ${s.our_cost.toFixed(2)} · Margin: {s.margin_pct}%
-                                    {s.est_shipping && ` · Ship: ~$${s.est_shipping}`}
-                                  </div>
-                                )}
-                                <div className="text-xs font-medium text-green-700 mt-1">
-                                  Potential: ${potValue > 0 ? potValue.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}
-                                </div>
-                              </div>
-
-                              <div className="bg-gray-50 rounded-lg p-3 border border-card-border">
-                                <div className="text-[10px] text-muted font-medium mb-1">Your Bid</div>
-                                <div className="space-y-2">
-                                  <input type="number" value={editingId === s.id ? editPrice : (s.suggested_price?.toFixed(2) || "")}
-                                    onChange={(e) => { setEditingId(s.id); setEditPrice(e.target.value); }}
-                                    onFocus={() => { if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}}
-                                    step="0.01" placeholder="Price"
-                                    className="w-full rounded border border-card-border px-3 py-2 text-sm font-mono" />
-                                  <div className="flex gap-2">
-                                    <input type="number" value={editingId === s.id ? editDays : "45"}
-                                      onChange={(e) => { setEditingId(s.id); setEditDays(e.target.value); }}
-                                      className="w-20 rounded border border-card-border px-2 py-1.5 text-xs font-mono" placeholder="Days" />
-                                    <input type="text" value={editingId === s.id ? editComment : ""}
-                                      onChange={(e) => { setEditingId(s.id); setEditComment(e.target.value); }}
-                                      className="flex-1 rounded border border-card-border px-2 py-1.5 text-xs" placeholder="Reason for change (optional)" />
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <button onClick={(e) => { e.stopPropagation(); if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); } handleApprove(s); }}
-                                      disabled={saving} className="flex-1 flex items-center justify-center gap-1 rounded bg-green-600 px-3 py-2 text-xs text-white font-medium hover:bg-green-700 disabled:opacity-50">
-                                      <Check className="h-3 w-3" /> Approve & Next
-                                    </button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleSkip(s); }}
-                                      disabled={saving} className="flex items-center gap-1 rounded bg-gray-300 px-3 py-2 text-xs text-gray-700 font-medium hover:bg-gray-400 disabled:opacity-50">
-                                      <X className="h-3 w-3" /> Skip
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                                <div className="text-[10px] text-blue-700 font-medium mb-1">Source Info</div>
-                                <div className="space-y-1 text-xs">
-                                  <div>Data: <span className={`px-1 rounded font-medium ${s.data_source === "lamlinks" ? "bg-cyan-100 text-cyan-700" : "bg-gray-100 text-gray-600"}`}>{s.data_source === "lamlinks" ? "LamLinks Import" : "DIBBS Scrape"}</span></div>
-                                  {s.source && <div>Matched: <span className={`px-1 rounded font-medium ${s.source === "ax" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{s.source === "ax" ? "via AX" : "via Master"}</span></div>}
-                                  {s.cost_source && <div className="text-muted">Cost: {s.cost_source}</div>}
-                                  {s.channel === "dibbs_only" && <div><span className="px-1 rounded bg-orange-100 text-orange-700 font-medium">DIBBS only — not in LamLinks</span></div>}
-                                  {s.already_bid && <div className="text-purple-700 font-medium">Already bid in LamLinks @${s.last_bid_price?.toFixed(2)}</div>}
-                                  {(s.award_count ?? 0) > 0 && (
-                                    <div>Competitors: <span className="font-mono font-medium text-orange-700">{s.competitor_cage?.split(",").join(", ") || s.award_count}</span></div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Ship-to + buyer (from k32 + k10). Shown BEFORE AX vendor
-                                parts because Abe checks destinations first before deciding
-                                to quote — FOB and delivery window can kill a bid. */}
-                            {((s.ship_to_locations?.length ?? 0) > 0 || s.buyer_name || s.priority_code) && (
-                              <div className="mb-3 rounded-lg border border-card-border bg-gray-50/50 p-3">
-                                <div className="grid md:grid-cols-2 gap-3">
-                                  {/* Buyer block */}
-                                  {(s.buyer_name || s.priority_code) && (
-                                    <div className="text-xs">
-                                      <div className="text-[10px] font-bold text-muted mb-1">Buyer (LamLinks k10)</div>
-                                      {s.buyer_name && (
-                                        <div>
-                                          👤 <span className="font-medium">{s.buyer_name}</span>
-                                        </div>
-                                      )}
-                                      {s.buyer_email && (
-                                        <div className="text-[11px] text-muted">
-                                          <a href={`mailto:${s.buyer_email}`} className="hover:underline">{s.buyer_email}</a>
-                                          {s.buyer_phone && <span> · {s.buyer_phone}</span>}
-                                        </div>
-                                      )}
-                                      {s.priority_code && (
-                                        <div className="text-[11px] text-muted mt-1">
-                                          Priority: <span className="font-mono font-medium">{s.priority_code}</span>
-                                        </div>
-                                      )}
-                                      {s.required_delivery_days && (
-                                        <div className="text-[11px] mt-1 inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-900 px-1.5 py-0.5 font-medium">
-                                          📅 Buyer wants delivery in {s.required_delivery_days}d — suggested lead time will match
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                  {/* Ship-to block */}
-                                  {(s.ship_to_locations?.length ?? 0) > 0 && (
-                                    <div className="text-xs">
-                                      <div className="text-[10px] font-bold text-muted mb-1">
-                                        Ship-to ({s.ship_to_locations!.length}) — LamLinks k32
-                                      </div>
-                                      <div className="rounded border border-card-border bg-white overflow-hidden">
-                                        <table className="w-full text-[11px]">
-                                          <thead className="bg-gray-50 text-muted">
-                                            <tr>
-                                              <th className="px-2 py-1 text-left">CLIN</th>
-                                              <th className="px-2 py-1 text-left">Destination</th>
-                                              <th className="px-2 py-1 text-right">Qty</th>
-                                              <th className="px-2 py-1 text-left">Deliver by</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {s.ship_to_locations!.map((loc, i) => (
-                                              <tr key={i} className="border-t border-card-border/60">
-                                                <td className="px-2 py-1 font-mono">{loc.clin || "—"}</td>
-                                                <td className="px-2 py-1 truncate max-w-[260px]" title={loc.destination || ""}>
-                                                  {loc.destination || "—"}
-                                                </td>
-                                                <td className="px-2 py-1 text-right font-mono">{loc.qty?.toLocaleString() || "—"}</td>
-                                                <td className="px-2 py-1 text-muted">{loc.delivery_date || "—"}</td>
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Item Spec + AX Vendor Parts + Part Number Matches (from lazy-loaded data) */}
-                            {(() => {
-                              const cached = historyCache.get(s.nsn);
-                              const spec = (cached as any)?.itemSpec;
-                              const matches = (cached as any)?.matches;
-                              const axVendorParts: any[] = (cached as any)?.axVendorParts || [];
-                              if (!spec && !matches?.length && axVendorParts.length === 0) return null;
-                              return (
-                                <div className="grid md:grid-cols-2 gap-3 mb-3">
-                                  {spec && (
-                                    <div className="bg-gray-50 rounded-lg p-2 border border-card-border text-xs">
-                                      <div className="text-[10px] font-bold text-gray-600 mb-1">Item Details (LamLinks k08)</div>
-                                      {spec.item_name && <div>{spec.item_name}</div>}
-                                      <div className="grid grid-cols-2 gap-1 mt-1 text-[10px] text-muted">
-                                        {spec.part_number && <div>P/N: <span className="font-mono">{spec.part_number}</span></div>}
-                                        {spec.cage_code && <div>CAGE: <span className="font-mono">{spec.cage_code}</span></div>}
-                                        {spec.unit_price > 0 && <div>LL Price: ${spec.unit_price}</div>}
-                                        {spec.unit_of_issue && <div>UoI: {spec.unit_of_issue}</div>}
-                                      </div>
-                                      <div className="mt-1 text-[9px] text-muted italic">LamLinks&apos; best guess — may not match DLA&apos;s approved mfr list</div>
-                                    </div>
-                                  )}
-                                  {axVendorParts.length > 0 && (
-                                    <div className="bg-blue-50 rounded-lg p-2 border border-blue-200 text-xs">
-                                      <div className="text-[10px] font-bold text-blue-700 mb-1 flex items-center gap-1">
-                                        AX Vendor Parts ({axVendorParts.length})
-                                        <span className="inline-block rounded bg-green-100 text-green-700 border border-green-200 px-1 text-[9px] font-semibold">
-                                          ✓ NSN-direct match
-                                        </span>
-                                      </div>
-                                      {axVendorParts[0]?.ax_item_number && (
-                                        <div className="text-[9px] text-muted mb-1 leading-snug">
-                                          AX has NSN <span className="font-mono">{s.nsn}</span> on item{" "}
-                                          <span className="font-mono font-medium">{axVendorParts[0].ax_item_number}</span>
-                                          {" "}via <span className="font-mono">ProductBarcodesV3</span>. Vendors below come from{" "}
-                                          <span className="font-mono">VendorProductDescriptionsV2</span> joined on that ItemNumber.
-                                        </div>
-                                      )}
-                                      <div className="text-[9px] text-muted mb-1 italic">Our vendor chain — not DLA-approved mfr list. For cross-reference.</div>
-                                      {axVendorParts.slice(0, 5).map((vp: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
-                                          <span className="font-mono text-blue-800">{vp.vendor_account || "—"}</span>
-                                          <span className="font-mono">{vp.vendor_product_number}</span>
-                                          {vp.vendor_description && <span className="text-muted truncate">{vp.vendor_description.slice(0, 40)}</span>}
-                                        </div>
-                                      ))}
-                                      {axVendorParts.length > 5 && <div className="text-[9px] text-muted mt-1">…{axVendorParts.length - 5} more</div>}
-                                    </div>
-                                  )}
-                                  {matches?.length > 0 && (() => {
-                                    const fuzzy = matches.filter((m: any) => m.match_type?.startsWith("TITLE_SIMILARITY"));
-                                    const exact = matches.filter((m: any) => !m.match_type?.startsWith("TITLE_SIMILARITY"));
-                                    return (
-                                      <div className="space-y-2">
-                                        {exact.length > 0 && (
-                                          <div className="bg-yellow-50 rounded-lg p-2 border border-yellow-200 text-xs">
-                                            <div className="text-[10px] font-bold text-yellow-700 mb-1">Part Number Matches ({exact.length})</div>
-                                            {exact.map((m: any, i: number) => (
-                                              <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
-                                                <span className={`px-1 rounded font-medium ${m.confidence === "HIGH" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{m.confidence}</span>
-                                                <span className="font-mono">{m.matched_part_number}</span>
-                                                <span className="text-muted truncate">{m.matched_description?.slice(0, 40)}</span>
-                                                <span className="text-[9px] text-muted">({m.matched_source})</span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {/* Fuzzy title-only candidates — only show when we do NOT
-                                            already have an authoritative AX / Master DB link.
-                                            If is_sourceable is true, the fuzzy result is noise
-                                            left over from the title-similarity pass. */}
-                                        {fuzzy.length > 0 && !s.is_sourceable && (
-                                          <div className="bg-red-50 rounded-lg p-2 border border-red-300 text-xs">
-                                            <div className="text-[10px] font-bold text-red-800 mb-1">⚠ Title-Only Candidates — VERIFY before bidding ({fuzzy.length})</div>
-                                            <div className="text-[10px] text-red-700 mb-1 leading-tight">
-                                              These part numbers belong to <em>different</em> NSNs that happen to share this nomenclature. Using them as your bid&apos;s mfr part# can misroute the order. Confirm via PUB LOG or the vendor before using.
-                                            </div>
-                                            {fuzzy.map((m: any, i: number) => (
-                                              <div key={i} className="flex items-center gap-2 text-[10px] mt-0.5">
-                                                <span className="px-1 rounded font-medium bg-red-200 text-red-800">FUZZY</span>
-                                                <span className="font-mono">{m.matched_part_number}</span>
-                                                <span className="text-muted truncate">{m.matched_description?.slice(0, 40)}</span>
-                                                <span className="text-[9px] text-muted">({m.matched_source})</span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              );
-                            })()}
-
-                            {/* History (Our Awards / Competitor Awards / Our Bids / P/N matches)
-                                — same shared component used on /bids/today so both
-                                pages always render the same data layout. */}
-                            <NsnHistoryDetail nsn={s.nsn} />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
 
                     {/* Supplier Search Results */}
                     {supplierSearchId === s.id && (
@@ -2350,26 +2336,26 @@ export function SolicitationsList({
         />
       )}
 
-      {/* Fullscreen review modal — distraction-free bid review with prev/next nav */}
-      {reviewModalId !== null && (() => {
-        const idx = filtered.findIndex((x) => x.id === reviewModalId);
+      {/* Fullscreen review modal — triggered by detailId. Same UX for
+          sourceable + non-sourceable. Clicking any row opens this. */}
+      {detailId !== null && (() => {
+        const idx = filtered.findIndex((x) => x.id === detailId);
         if (idx < 0) return null;
         const current = filtered[idx];
         const prev = idx > 0 ? filtered[idx - 1] : null;
         const next = idx < filtered.length - 1 ? filtered[idx + 1] : null;
         const goTo = (s: Solicitation | null) => {
           if (!s) return;
-          setReviewModalId(s.id);
+          setDetailId(s.id);
           setEditPrice(s.suggested_price?.toFixed(2) || "");
           setEditDays("45");
           setEditComment("");
         };
         const close = () => {
-          setReviewModalId(null);
+          setDetailId(null);
           setEditingId(null);
         };
         const approveAndNext = async () => {
-          // Ensure editingId is set so handleApprove reads the current edits
           setEditingId(current.id);
           await handleApprove(current);
           if (next) goTo(next); else close();
@@ -2379,7 +2365,6 @@ export function SolicitationsList({
           await handleSkip(current);
           if (next) goTo(next); else close();
         };
-        const potValue = (current as any)._potentialValue || current.est_value || (current.suggested_price || current.final_price || 0) * (current.quantity || 1);
 
         return (
           <div
@@ -2453,93 +2438,12 @@ export function SolicitationsList({
                 </button>
               </div>
 
-              {/* Body — key bidding context */}
-              <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-                <div className="grid md:grid-cols-3 gap-3 mb-3">
-                  <div className="bg-white rounded-lg p-3 border border-card-border">
-                    <div className="text-[10px] text-muted uppercase">Solicitation</div>
-                    <div className="font-mono text-xs">{current.solicitation_number}</div>
-                    <div className="text-xs text-muted mt-1">
-                      Due {current.return_by_date} · Issued {current.issue_date}
-                    </div>
-                    <div className="text-xs text-muted">FSC {current.fsc}{current.set_aside && ` · ${current.set_aside}`}</div>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 border border-card-border">
-                    <div className="text-[10px] text-muted uppercase">Cost · Suggested · Margin</div>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-[10px] text-muted">Cost</span>
-                      <span className="font-mono text-sm">${current.our_cost?.toFixed(2) ?? "—"}</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-[10px] text-muted">Sugg.</span>
-                      <span className="font-mono text-lg text-green-700 font-semibold">${current.suggested_price?.toFixed(2) ?? "—"}</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-[10px] text-muted">Margin</span>
-                      <span className="font-mono text-sm">{current.margin_pct != null ? `${Number(current.margin_pct).toFixed(0)}%` : "—"}</span>
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 border border-card-border">
-                    <div className="text-[10px] text-muted uppercase">Potential Value</div>
-                    <div className="font-mono text-lg text-accent font-semibold">
-                      ${Number(potValue).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                    </div>
-                    <div className="text-[10px] text-muted mt-1">
-                      FOB {current.fob === "D" ? "Destination" : current.fob === "O" ? "Origin" : "—"}
-                    </div>
-                    <div className="text-[10px] text-muted">
-                      {current.already_bid ? "⚠ already bid in LL" : "new bid"}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ship-to destinations, when parseable */}
-                {(() => {
-                  const st = (current as any).ship_to_locations;
-                  if (!Array.isArray(st) || st.length === 0) return null;
-                  return (
-                    <div className="bg-white rounded-lg p-3 border border-card-border mb-3">
-                      <div className="text-[10px] text-muted uppercase mb-1">Ship-to ({st.length})</div>
-                      <div className="grid md:grid-cols-3 gap-1 text-[11px]">
-                        {st.map((d: any, i: number) => (
-                          <div key={i} className="flex items-baseline gap-1">
-                            <span className="text-muted">CLIN {d.clin}</span>
-                            <span className="font-medium">qty {d.qty}</span>
-                            <span className="text-muted truncate">{d.destination}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Sourcing / AX */}
-                {(current.source_item || (current as any).bid_vendor) && (
-                  <div className="bg-white rounded-lg p-3 border border-card-border mb-3">
-                    <div className="text-[10px] text-muted uppercase mb-1">Sourcing</div>
-                    <div className="text-xs">
-                      Source: <span className="font-mono">{current.source || (current as any).data_source}</span>
-                      {current.source_item && <span className="ml-2">· AX item <span className="font-mono">{current.source_item}</span></span>}
-                    </div>
-                    {(current as any).bid_vendor && (
-                      <div className="text-xs mt-1">
-                        Chosen vendor: <span className="font-semibold">{(current as any).bid_vendor}</span>
-                        {(current as any).bid_cost != null && <span className="ml-2">@ ${Number((current as any).bid_cost).toFixed(2)}</span>}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Buyer & procurement detail */}
-                {(current as any).buyer_name && (
-                  <div className="bg-white rounded-lg p-3 border border-card-border text-xs">
-                    <div className="text-[10px] text-muted uppercase mb-1">Buyer</div>
-                    <div><span className="font-semibold">{(current as any).buyer_name}</span> · {(current as any).buyer_email}</div>
-                    {(current as any).required_delivery_days != null && (
-                      <div className="text-muted">Required delivery: {(current as any).required_delivery_days}d</div>
-                    )}
-                  </div>
-                )}
+              {/* Body — identical content to the old inline expanded view,
+                  rendered via the shared renderSolDetail helper so the two
+                  never drift. hideInlineNext=true because the modal has its
+                  own prev/next navigation in the top bar + footer. */}
+              <div className="flex-1 overflow-y-auto bg-gray-50">
+                {renderSolDetail(current, { hideInlineNext: true })}
               </div>
 
               {/* Footer — edit inputs + action buttons */}
