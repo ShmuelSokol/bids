@@ -108,6 +108,11 @@ const TASKS: Task[] = [
   //   npx tsx scripts/research-worker.ts --loop
   //   npx tsx scripts/enqueue-research.ts --days 2
 
+  // Pipeline snapshot — queries llk_db1 for stuck / unshipped / recent
+  // envelopes and writes into ll_pipeline_snapshots. Powers /ops/dibs-pipeline.
+  // 5 min is a comfortable cadence; the UI shows latest snapshot + age.
+  { script: "snapshot-ll-pipeline", mode: "periodic", intervalMs: 5 * 60_000, skipInitialRun: false },
+
   // WAWF 810 ack digest — computes inferred ack status per transmission.
   // Once daily at morning roll-up time. --alert --min 5 fires a WhatsApp
   // to Yosef if 5+ invoices cross the 30-day staleness line without

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DIBS ↔ LamLinks — API Access Request</title>
+<style>
+  @page { size: Letter; margin: 0.75in; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #222;
+    line-height: 1.5;
+    max-width: 7in;
+    margin: 0 auto;
+    padding: 0.5em;
+  }
+  h1 {
+    color: #0b3d91;
+    border-bottom: 2px solid #0b3d91;
+    padding-bottom: 0.25em;
+    margin-top: 0;
+  }
+  h2 {
+    color: #0b3d91;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 0.15em;
+    margin-top: 1.5em;
+    page-break-after: avoid;
+  }
+  .meta {
+    background: #f3f6fa;
+    padding: 0.5em 0.75em;
+    border-left: 3px solid #0b3d91;
+    margin-bottom: 1em;
+    font-size: 0.95em;
+  }
+  .meta strong { color: #0b3d91; }
+  .tldr {
+    background: #fff8e1;
+    border: 1px solid #e2c36a;
+    padding: 0.75em 1em;
+    border-radius: 4px;
+    margin: 1em 0;
+  }
+  code {
+    background: #f3f6fa;
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    font-family: "Consolas", "Monaco", monospace;
+    font-size: 0.92em;
+  }
+  ul { padding-left: 1.3em; }
+  li { margin-bottom: 0.3em; }
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li::before {
+    content: "✓ ";
+    color: #2a8f3a;
+    font-weight: bold;
+  }
+  .sig {
+    margin-top: 2em;
+    color: #555;
+  }
+</style>
+</head>
+<body>
+
+<h1>DIBS ↔ LamLinks — Sally API Access Request</h1>
+
+<div class="meta">
+  <strong>To:</strong> Yosef Schapiro (LamLinks admin)<br>
+  <strong>From:</strong> Shmuel Sokol<br>
+  <strong>Date:</strong> 2026-04-24
+</div>
+
+<div class="tldr">
+  <strong>TL;DR:</strong> Abe's bids are flowing through DIBS → LL → DLA,
+  but each one still requires him to click "Post" in LL. If we get Sally API
+  credentials (<code>api_key</code> + <code>api_secret</code>), DIBS can
+  transmit directly and save ~45 min/day on invoice posting alone.
+</div>
+
+<h2>What DIBS is today</h2>
+<p>
+  DIBS is the internal intelligence layer on top of LamLinks — suggested bid prices, sourcing matches from AX,
+  competitor history, near-real-time dashboard for Abe's bids pipeline. Live at
+  <code>dibs-gov-production.up.railway.app</code>.
+</p>
+
+<h2>What we tested today (2026-04-24)</h2>
+<ol>
+  <li>Turned on DIBS → LL SQL writeback so DIBS could push bids into <code>k33_tab</code> / <code>k34_tab</code> / <code>k35_tab</code> directly.</li>
+  <li>Abe submitted 2 bids through DIBS:
+    <ul>
+      <li><code>SPE2DH-26-T-3287</code> @ $216 (native LL baseline — <strong>transmitted cleanly</strong>)</li>
+      <li><code>SPE2DS-26-T-009G</code> @ $239 (via DIBS → DIBS wrote rows → Abe clicked Post → <strong>DLA ack'd the $239</strong>)</li>
+    </ul>
+  </li>
+</ol>
+<p>
+  <strong>Bottom line: end-to-end works.</strong> DIBS can prepare bids, write them into LL's staging tables,
+  and when Abe clicks Post in LL once, LamLinks transmits to DLA via Sally.
+</p>
+
+<h2>What went wrong</h2>
+<p>
+  On the DIBS-submitted bid, Abe saw VFP cursor errors <code>9999806</code> and <code>9999607</code> when opening LL.
+  Same "Update conflict in cursor" errors you'd get when LL's local cursor cache sees rows it didn't create itself.
+</p>
+<p>
+  <strong>Key learning:</strong> the cursor error is cosmetic — the Sally HTTP transmission happens anyway. DLA's
+  ack email confirmed receipt at 11:47 and 11:50 ET. First attempt was superseded by second (standard Sally dedup).
+</p>
+<p>
+  So the bid shipped. But cursor errors are jarring for Abe and he can't tell at a glance whether it actually worked.
+</p>
+
+<h2>Cursor-error fix (already patched, awaiting test)</h2>
+<p>
+  Before re-enabling writeback, I patched the DIBS worker based on the trace I captured of your native LL Post
+  (envelope 46895 at 11:24 today). Native LL does a specific step DIBS wasn't doing:
+</p>
+<pre style="background: #f3f6fa; padding: 0.75em; border-radius: 4px; font-size: 0.85em; overflow-x: auto;">UPDATE k07_tab
+SET uptime_k07 = GETDATE()
+WHERE upname_k07 = 'ajoseph'
+  AND ss_key_k07 = 'SOL_FORM_PREFERENCES'
+  AND ss_tid_k07 = 'U'</pre>
+<p>
+  That bumps Abe's session-state row. We suspect this "warms" VFP's local cursor cache so it accepts newly-inserted
+  <code>k33</code>/<code>k34</code>/<code>k35</code> rows without throwing <code>9999806</code>/<code>9999607</code>
+  cursor conflicts. DIBS worker now mimics this exact step after each envelope finalize. To validate: next
+  writeback-enabled test session, Abe checks whether the cursor error still appears. If yes, we iterate with more
+  trace-informed fixes.
+</p>
+
+<h2>What we want from you</h2>
+<p>Sally API credentials for Abe (or a DIBS service user):</p>
+<ul>
+  <li><code>api_key</code> — 27-char string, prefix likely <code>7Lx...</code></li>
+  <li><code>api_secret</code> — companion secret</li>
+</ul>
+<p>We scanned thoroughly on Abe's box and couldn't find them:</p>
+<ul>
+  <li><code>C:\LamlinkP\LLPro.ini</code> → only workstation paths</li>
+  <li>Windows registry (<code>HKCU\Software\LamLinks</code>, etc.) → no keys</li>
+  <li>Abe's local LL binaries (.exe / .dll / .fxp / .dbf) → no <code>7Lx...</code> pattern</li>
+  <li><code>G:\PROGRAMS\LAMLINKS\</code> server configs → nothing matching</li>
+  <li><code>llk_db1.kah_tab</code> → only <code>sally_login</code> + <code>sally_password</code>; no <code>api_key</code> entries</li>
+</ul>
+<p>Best guess: the API creds are installed only on admin workstations (yours?) or obtained from the LamLinks vendor on request.</p>
+
+<h2>What this unlocks</h2>
+<p>Using the Sally API (<code>api.lamlinks.com/api/llsm/create</code>, Digest auth, <code>put_client_quote</code>):</p>
+<ul class="checklist">
+  <li><strong>Zero-click bid transmission</strong> — DIBS Approve → bid at DLA. No Abe-in-LL step.</li>
+  <li><strong>Bulk invoice posting</strong> — Abe spends ~45 min/day clicking through 6-7 screens per invoice in LL. Sally's equivalent function lets us one-click-all.</li>
+  <li><strong>Fully autonomous</strong> — DIBS batches 50 bids overnight, transmits at 6 AM, Abe walks in to a dashboard of acks, not a queue.</li>
+</ul>
+<p>
+  Without the creds, DIBS still provides lots of value (pricing intelligence, CLIN validation, AX matching,
+  auto-research, etc.) — but Abe keeps his LL "Post" click habit forever.
+</p>
+
+<h2>What I need</h2>
+<p>Either:</p>
+<ul>
+  <li>Copy/paste of your <code>api_key</code> + <code>api_secret</code> from wherever they live on your box (DM only — treat like a password), OR</li>
+  <li>Who at LamLinks vendor to ask for fresh credentials for ERG</li>
+</ul>
+
+<h2>Where to look on your box</h2>
+<p>
+  On Abe's workstation, his <code>C:\LamlinkP\LLPro.ini</code> only contained workstation paths —
+  no API credentials. Since you're the LamLinks admin, your install may differ.
+  Please run these PowerShell commands on your own LL workstation and send back anything that shows a hit.
+</p>
+
+<h3>Step 1 — Check Abe's known paths on your box</h3>
+<pre style="background: #f3f6fa; padding: 0.75em; border-radius: 4px; font-size: 0.82em; overflow-x: auto;">Get-Content "C:\LamlinkP\LLPro.ini" -ErrorAction SilentlyContinue
+Get-Content "C:\LamlinkP\LLPclint\data\files\llpro.ini" -ErrorAction SilentlyContinue</pre>
+<p>Your admin install may have extra lines like <code>api_key=...</code> / <code>api_secret=...</code> that Abe's doesn't.</p>
+
+<h3>Step 2 — Scan your LL folder for any admin-only config file</h3>
+<pre style="background: #f3f6fa; padding: 0.75em; border-radius: 4px; font-size: 0.82em; overflow-x: auto;">Get-ChildItem -Path "C:\LamlinkP","C:\Program Files\LamLinks","C:\ProgramData\LamLinks" -Recurse -Include "*.ini","*.cfg","*.config","*.xml","*.txt","*.key","*.json" -ErrorAction SilentlyContinue -Force |
+  Where-Object { $_.Length -lt 100KB } |
+  ForEach-Object {
+    $m = Select-String -Path $_.FullName -Pattern "api_key|api_secret|apikey|apisecret|7Lx|sally" -ErrorAction SilentlyContinue
+    if ($m) { Write-Host "--- $($_.FullName) ---"; $m | Select-Object -First 5 }
+  }</pre>
+
+<h3>Step 3 — Check Windows registry and LL binaries</h3>
+<pre style="background: #f3f6fa; padding: 0.75em; border-radius: 4px; font-size: 0.82em; overflow-x: auto;">"HKCU","HKLM","HKLM:\SOFTWARE\WOW6432Node" | ForEach-Object {
+  $r = "${_}:\SOFTWARE\LamLinks"
+  if (Test-Path $r) { Write-Host "=== $r ==="; Get-ItemProperty $r }
+}
+Get-ChildItem "C:\LamlinkP" -Recurse -Include "*.exe","*.dll","*.fxp","*.dbf" -ErrorAction SilentlyContinue |
+  ForEach-Object {
+    if ((Select-String -Path $_.FullName -Pattern "7Lx[A-Za-z0-9]{20,}" -ErrorAction SilentlyContinue)) {
+      Write-Host "HIT: $($_.FullName)"
+    }
+  }</pre>
+
+<h3>Step 4 — Check the server folder on G:\</h3>
+<pre style="background: #f3f6fa; padding: 0.75em; border-radius: 4px; font-size: 0.82em; overflow-x: auto;">Get-ChildItem -Path "G:\PROGRAMS\LAMLINKS" -Recurse -Include "*.ini","*.cfg","*.xml","*.txt","*.key","*.json" -ErrorAction SilentlyContinue -Force |
+  Where-Object { $_.Length -lt 100KB } |
+  ForEach-Object {
+    $m = Select-String -Path $_.FullName -Pattern "api_key|api_secret|apikey|apisecret|7Lx|sally" -ErrorAction SilentlyContinue
+    if ($m) { Write-Host "--- $($_.FullName) ---"; $m | Select-Object -First 3 }
+  }</pre>
+
+<h3>Step 5 — If nothing found, contact LamLinks vendor</h3>
+<p>
+  Reach out to <strong>henry@lamlinks.com</strong> (the same sender as DLA quote ack emails)
+  and ask: "We need to retrieve or re-issue our Sally API credentials (<code>api_key</code> + <code>api_secret</code>)
+  for ERG's LamLinks Client install — CAGE 0AG09, e_code 0AG09. These were installed at some point but
+  aren't surfacing on any workstation. Can you confirm what they are, or re-issue?"
+</p>
+
+<p style="background: #fff3e0; padding: 0.75em; border-left: 3px solid #e09400; border-radius: 4px; margin: 1em 0; font-size: 0.95em;">
+  <strong>⚠ Treat the api_key / api_secret like a password.</strong>
+  Don't paste them in group chats. DM me the values at
+  <strong>+1 (516) 236-7397</strong> (WhatsApp) or email Shmuel directly.
+</p>
+
+<p>
+  Happy to jump on a 10-min screen-share if anything's unclear.
+</p>
+
+<p class="sig">Thanks,<br>Shmuel</p>
+
+</body>
+</html>

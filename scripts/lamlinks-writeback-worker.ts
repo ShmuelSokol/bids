@@ -369,6 +369,26 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
         // Don't fail the pass — bids are in k34, envelope just needs the
         // janitor or manual flip. Surfaces via the stuck-envelope alert.
       }
+
+      // Bump ajoseph's k07_tab session-state row. The 2026-04-24 XE trace
+      // captured LL's own Post flow doing exactly this: before finalizing
+      // a bid, LL UPDATEs its SOL_FORM_PREFERENCES k07 row to stamp a
+      // fresh uptime. We suspect this is what "warms" the VFP local
+      // cursor so it accepts the new k33/k34 rows without throwing
+      // 9999806/9999607 cursor conflicts. Best-effort — if the row is
+      // missing or LL's not running, this is harmless no-op.
+      try {
+        const k07 = await pool.request().query(`
+          UPDATE k07_tab
+          SET uptime_k07 = GETDATE()
+          WHERE LTRIM(RTRIM(upname_k07)) = 'ajoseph'
+            AND LTRIM(RTRIM(ss_key_k07)) = 'SOL_FORM_PREFERENCES'
+            AND LTRIM(RTRIM(ss_tid_k07)) = 'U'
+        `);
+        console.log(`  ✓ bumped k07_tab SOL_FORM_PREFERENCES row (${k07.rowsAffected?.[0] || 0} rows, matches LL Post trace)`);
+      } catch (e: any) {
+        console.log(`  note: k07 bump skipped: ${e.message?.slice(0, 80)}`);
+      }
     }
   } finally {
     await pool.close();

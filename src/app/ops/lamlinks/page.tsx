@@ -22,6 +22,12 @@ export default async function OpsLamlinksPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link
+            href="/ops/dibs-pipeline"
+            className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 px-3 py-1.5 text-sm font-medium hover:bg-indigo-100"
+          >
+            <Activity className="h-4 w-4" /> DIBS Pipeline
+          </Link>
+          <Link
             href="/ops/lamlinks/ack-tracker"
             className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 px-3 py-1.5 text-sm font-medium hover:bg-red-100"
           >
