@@ -10,6 +10,7 @@ export type ResearchInput = {
   fsc?: string | null;
   niin?: string | null;
   description?: string | null;
+  nomenclature?: string | null;
   manufacturer_hint?: string | null;
   manufacturer_part_number?: string | null;
   quantity?: number | null;
@@ -128,8 +129,9 @@ export async function researchNsn(
 
 function buildUserMessage(input: ResearchInput, maxCandidates: number): string {
   const parts: string[] = [`NSN: ${input.nsn}`];
+  if (input.nomenclature) parts.push(`Nomenclature: ${input.nomenclature}`);
   if (input.description) parts.push(`Description: ${input.description}`);
-  if (input.manufacturer_hint) parts.push(`Manufacturer hint: ${input.manufacturer_hint}`);
+  if (input.manufacturer_hint) parts.push(`Manufacturer CAGE hint: ${input.manufacturer_hint}`);
   if (input.manufacturer_part_number) parts.push(`Manufacturer P/N hint: ${input.manufacturer_part_number}`);
   if (input.quantity) parts.push(`Solicitation quantity: ${input.quantity} units`);
   if (input.fob) parts.push(`FOB: ${input.fob}`);

@@ -99,6 +99,16 @@ const TASKS: Task[] = [
   // changes within hours.
   { script: "sync-ax-dla-payments", args: ["--days", "365"], mode: "periodic", intervalMs: 60 * 60_000, skipInitialRun: true },
 
+  // NSN auto-research worker — drains the queue in nsn_research_status,
+  // calls Claude, saves findings. Respects daily budget from
+  // research_settings table. Every 60s so new queued items surface fast.
+  { script: "research-worker", mode: "periodic", intervalMs: 60_000, skipInitialRun: true },
+
+  // Enqueue new research work daily — scans for sols imported since last
+  // run, adds their NSNs to the research queue (unless already fresh).
+  // Once a day is fine; it's cheap.
+  { script: "enqueue-research", mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
+
   // WAWF 810 ack digest — computes inferred ack status per transmission.
   // Once daily at morning roll-up time. --alert --min 5 fires a WhatsApp
   // to Yosef if 5+ invoices cross the 30-day staleness line without

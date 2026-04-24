@@ -22,6 +22,7 @@ import { formatDateShort, formatDateTime, formatTime } from "@/lib/dates";
 import { isOpenSolicitation } from "@/lib/solicitation-filters";
 import { NsnHistoryDetail } from "@/components/nsn-history-detail";
 import { LlPidPopover } from "@/components/ll-pid-popover";
+import { ResearchDrawer } from "@/components/research-drawer";
 import { SourceTip } from "@/components/source-tip";
 import { SourcingModal } from "./sourcing-modal";
 import { fscLabel } from "@/lib/fsc-names";
@@ -125,6 +126,8 @@ export function SolicitationsList({
 }) {
   const [solicitations, setSolicitations] = useState(initialData);
   const [filter, setFilter] = useState<string>(initialFilter || "sourceable");
+  const [researchNsn, setResearchNsn] = useState<string | null>(null);
+  const [researchSolNo, setResearchSolNo] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>((initialSort as SortField) || "score");
   const [sortAsc, setSortAsc] = useState(false);
   const [scraping, setScraping] = useState(false);
@@ -1469,6 +1472,17 @@ export function SolicitationsList({
                             <div className="flex items-center gap-1 flex-wrap">
                               <SourceTip source="LamLinks k08_tab.fsc_k08 + niin_k08. Matched to AX via ProductBarcodesV3."><span className="font-mono text-xs text-accent">{s.nsn}</span></SourceTip>
                               <LlPidPopover nsn={s.nsn} compact />
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setResearchNsn(s.nsn);
+                                  setResearchSolNo(s.solicitation_number);
+                                }}
+                                className="text-[10px] rounded border border-card-border px-1.5 py-0.5 hover:bg-gray-50 inline-flex items-center gap-1"
+                                title="Auto-research: find suppliers for this NSN"
+                              >
+                                🔍 research
+                              </button>
                               {s.bid_status && (
                                 <span className={`text-[10px] px-1 rounded ${
                                   s.bid_status === "quoted" ? "bg-blue-100 text-blue-700" :
@@ -2275,6 +2289,17 @@ export function SolicitationsList({
           />
         );
       })()}
+
+      {researchNsn && (
+        <ResearchDrawer
+          nsn={researchNsn}
+          solicitationNumber={researchSolNo || undefined}
+          onClose={() => {
+            setResearchNsn(null);
+            setResearchSolNo(null);
+          }}
+        />
+      )}
     </>
   );
 }

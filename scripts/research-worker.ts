@@ -93,7 +93,7 @@ async function getSolicitationContext(nsn: string): Promise<any> {
   // Most recent sol for this NSN
   const { data } = await sb
     .from("dibbs_solicitations")
-    .select("quantity, fob, nomenclature, description, mfr_name, part_number")
+    .select("quantity, fob, nomenclature, approved_parts")
     .eq("nsn", nsn)
     .order("return_by_date", { ascending: false })
     .limit(1)
@@ -114,12 +114,23 @@ async function processOne(nsn: string, settings: SettingsMap): Promise<{ ok: boo
 
   const t0 = Date.now();
   try {
+    // approved_parts is JSON — may contain { cage, part_number } entries
+    let mfrHint: string | null = null;
+    let pnHint: string | null = null;
+    try {
+      const parts = solCtx?.approved_parts;
+      if (Array.isArray(parts) && parts.length > 0) {
+        mfrHint = parts[0]?.cage || null;
+        pnHint = parts[0]?.part_number || null;
+      }
+    } catch {}
+
     const { output, call } = await researchNsn(
       {
         nsn,
-        description: solCtx?.description || solCtx?.nomenclature || null,
-        manufacturer_hint: solCtx?.mfr_name || null,
-        manufacturer_part_number: solCtx?.part_number || null,
+        nomenclature: solCtx?.nomenclature || null,
+        manufacturer_hint: mfrHint,
+        manufacturer_part_number: pnHint,
         quantity: solCtx?.quantity || null,
         fob: solCtx?.fob || null,
         recent_winners: winners,
