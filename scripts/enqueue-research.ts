@@ -47,19 +47,24 @@ async function main() {
   console.log(`Cache stale threshold: ${cacheStaleDays} days`);
   console.log(`Mode: ${DRY_RUN ? "DRY RUN" : "ENQUEUE"}\n`);
 
-  // Pull solicitations in the window
+  // Pull solicitations in the window. Only SPE* (DLA) sols can be bid
+  // through LamLinks — W*, N*, etc. are Navy/Army and can't be acted on
+  // from DIBS, so researching them burns Claude tokens for nothing.
+  // Also skip already_bid — Abe already committed, research is moot.
   const sols: any[] = [];
   for (let p = 0; p < 20; p++) {
     const { data } = await sb
       .from("dibbs_solicitations")
-      .select("nsn, nomenclature, quantity, is_sourceable, suggested_price, potential_value, lamlinks_estimated_value, return_by_date, imported_at")
+      .select("nsn, nomenclature, quantity, is_sourceable, suggested_price, potential_value, lamlinks_estimated_value, return_by_date, imported_at, solicitation_number, already_bid")
       .gte("imported_at", since)
+      .ilike("solicitation_number", "SPE%")
+      .eq("already_bid", false)
       .range(p * 1000, (p + 1) * 1000 - 1);
     if (!data || data.length === 0) break;
     sols.push(...data);
     if (data.length < 1000) break;
   }
-  console.log(`Solicitations in window: ${sols.length}`);
+  console.log(`Solicitations in window (SPE* + not bid): ${sols.length}`);
 
   // Build map: NSN → best info we have (highest qty or most recent)
   const byNsn = new Map<string, { quantity: number; is_sourceable: boolean; suggested_price: number | null; est_value: number | null }>();

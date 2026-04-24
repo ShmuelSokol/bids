@@ -277,6 +277,11 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
   let processed = 0, failed = 0, waiting = 0;
   try {
     let envelope = await findStagedEnvelope(pool);
+    // Track whether we created the envelope in this pass. If we did, we own
+    // its lifecycle — flip it to 'quotes added' at pass end so LL's transmit
+    // daemon actually ships. If we're piggybacking into an envelope Abe
+    // himself started in LL, we leave the state alone (he'll Post it).
+    let weCreatedEnvelope = false;
     if (!envelope) {
       // No staged envelope. Mint a fresh one so DIBS doesn't have to wait
       // for Abe to save a seed bid first. Uses kdy_tab for the idnk33 and
@@ -290,6 +295,7 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
       }
       const newIdnK33 = await createFreshEnvelope(pool, templateK34);
       envelope = { idnk33: newIdnK33, templateK34 };
+      weCreatedEnvelope = true;
     } else {
       console.log(`  piggybacking into envelope ${envelope.idnk33}, template k34=${envelope.templateK34}`);
     }
@@ -340,6 +346,28 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
           .eq("id", row.id);
         failed++;
         console.log(`  ✗ ${row.solicitation_number}: ${e.message}`);
+      }
+    }
+
+    // Finalize the envelope: flip o_stat_k33 from 'adding quotes' to
+    // 'quotes added' so LL's transmit daemon actually picks it up and
+    // ships the bids to DLA. Without this, the envelope sat half-built
+    // forever (the 2026-04-24 shipping outage). Only flip envelopes we
+    // created in this pass — Abe's own in-progress envelopes are his to
+    // Post. Skip if zero bids landed (nothing worth shipping).
+    if (weCreatedEnvelope && processed > 0) {
+      try {
+        await pool.request().query(`
+          UPDATE k33_tab
+          SET o_stat_k33 = 'quotes added', s_stat_k33 = 'quotes added', uptime_k33 = GETDATE()
+          WHERE idnk33_k33 = ${envelope.idnk33}
+            AND LTRIM(RTRIM(o_stat_k33)) = 'adding quotes'
+        `);
+        console.log(`  ✓ finalized envelope ${envelope.idnk33} → 'quotes added' (daemon will ship ${processed} bids)`);
+      } catch (e: any) {
+        console.error(`  ⚠ failed to finalize envelope ${envelope.idnk33}: ${e.message}`);
+        // Don't fail the pass — bids are in k34, envelope just needs the
+        // janitor or manual flip. Surfaces via the stuck-envelope alert.
       }
     }
   } finally {

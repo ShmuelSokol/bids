@@ -13,19 +13,22 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
 
   console.log(`Window: ${from} → ${to}`);
 
+  // SPE* + not already_bid — only bidable DLA sols are worth researching.
   const rows: any[] = [];
   for (let p = 0; p < 10; p++) {
     const { data } = await sb
       .from("dibbs_solicitations")
-      .select("nsn, quantity, is_sourceable, suggested_price, potential_value, lamlinks_estimated_value, imported_at")
+      .select("nsn, quantity, is_sourceable, suggested_price, potential_value, lamlinks_estimated_value, imported_at, solicitation_number, already_bid")
       .gte("imported_at", from)
       .lt("imported_at", to)
+      .ilike("solicitation_number", "SPE%")
+      .eq("already_bid", false)
       .range(p * 1000, (p + 1) * 1000 - 1);
     if (!data || data.length === 0) break;
     rows.push(...data);
     if (data.length < 1000) break;
   }
-  console.log(`Sols in window: ${rows.length}`);
+  console.log(`Sols in window (SPE* + not bid): ${rows.length}`);
 
   const byNsn = new Map<string, any>();
   for (const s of rows) {

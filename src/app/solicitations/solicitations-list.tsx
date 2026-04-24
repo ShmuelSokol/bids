@@ -21,6 +21,7 @@ import { calculateBidScore, type BidScore } from "@/lib/bid-score";
 import { formatDateShort, formatDateTime, formatTime } from "@/lib/dates";
 import { isOpenSolicitation } from "@/lib/solicitation-filters";
 import { NsnHistoryDetail } from "@/components/nsn-history-detail";
+import { AxRecentReceipts } from "@/components/ax-recent-receipts";
 import { LlPidPopover } from "@/components/ll-pid-popover";
 import { ResearchDrawer } from "@/components/research-drawer";
 import { SourceTip } from "@/components/source-tip";
@@ -775,7 +776,9 @@ export function SolicitationsList({
     // the ones we can actually quote through LamLinks. Other prefixes
     // (W* etc) come through the LamLinks feed but are Army/DoD
     // non-DIBBS solicitations we can't act on from DIBS.
-    if (dibbsOnly) {
+    // When the user is searching for a specific NSN/sol, bypass this —
+    // they typed an exact identifier and want to find it regardless of prefix.
+    if (dibbsOnly && !searchQuery.trim()) {
       items = items.filter((s) => s.solicitation_number?.trim().toUpperCase().startsWith("SPE"));
     }
     if (marginFilter === "high") items = items.filter((s) => (s.margin_pct || 0) >= 20);
@@ -849,6 +852,12 @@ export function SolicitationsList({
         } else if (lastOurBid) {
           derivedPrice = Number((lastOurBid as any).bid_price);
           derivedPriceSource = "our last bid";
+        } else if (s.last_award_price && Number(s.last_award_price) > 0) {
+          // Fallback: awardHistory prop is empty (page doesn't ship bulk
+          // history), so use the denormalized last_award_price on the sol
+          // itself. This is what makes Potential $ show for non-sourceable.
+          derivedPrice = Number(s.last_award_price);
+          derivedPriceSource = `last award${s.last_award_winner ? ` (${String(s.last_award_winner).trim()})` : ""}`;
         }
       }
       const effectivePrice = s.suggested_price ?? derivedPrice;
@@ -947,7 +956,7 @@ export function SolicitationsList({
   // Options:
   //   hideInlineNext — when rendered inside the modal, skip the "Next →"
   //     button in the header since the modal has its own navigation.
-  const renderSolDetail = (s: Solicitation, opts: { hideInlineNext?: boolean } = {}) => {
+  const renderSolDetail = (s: Solicitation, opts: { hideInlineNext?: boolean; hideBidForm?: boolean } = {}) => {
     const cached = historyCache.get(s.nsn);
     const potValue = (s as any)._potentialValue || s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
     return (
@@ -1014,8 +1023,11 @@ export function SolicitationsList({
           </div>
         </div>
 
-        {/* Pricing + Bid Form */}
-        <div className="grid md:grid-cols-3 gap-4 mb-3">
+        {/* Pricing + Bid Form. In modal mode (hideBidForm=true) we drop the
+            "Your Bid" card — the frozen footer already has those inputs — and
+            pin Suggested Bid + Source Info to the top so they stay visible
+            while scrolling through the rest of the details. */}
+        <div className={`grid ${opts.hideBidForm ? "md:grid-cols-2 sticky top-0 z-10 bg-gray-50 pt-2 pb-2" : "md:grid-cols-3"} gap-4 mb-3`}>
           {(() => {
             const derivedPrice = (s as any)._derivedPrice as number | null;
             const derivedSrc = (s as any)._derivedPriceSource as string | null;
@@ -1044,34 +1056,36 @@ export function SolicitationsList({
             );
           })()}
 
-          <div className="bg-gray-50 rounded-lg p-3 border border-card-border">
-            <div className="text-[10px] text-muted font-medium mb-1">Your Bid</div>
-            <div className="space-y-2">
-              <input type="number" value={editingId === s.id ? editPrice : (s.suggested_price?.toFixed(2) || "")}
-                onChange={(e) => { setEditingId(s.id); setEditPrice(e.target.value); }}
-                onFocus={() => { if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}}
-                step="0.01" placeholder="Price"
-                className="w-full rounded border border-card-border px-3 py-2 text-sm font-mono" />
-              <div className="flex gap-2">
-                <input type="number" value={editingId === s.id ? editDays : "45"}
-                  onChange={(e) => { setEditingId(s.id); setEditDays(e.target.value); }}
-                  className="w-20 rounded border border-card-border px-2 py-1.5 text-xs font-mono" placeholder="Days" />
-                <input type="text" value={editingId === s.id ? editComment : ""}
-                  onChange={(e) => { setEditingId(s.id); setEditComment(e.target.value); }}
-                  className="flex-1 rounded border border-card-border px-2 py-1.5 text-xs" placeholder="Reason for change (optional)" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={(e) => { e.stopPropagation(); if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); } handleApprove(s); }}
-                  disabled={saving} className="flex-1 flex items-center justify-center gap-1 rounded bg-green-600 px-3 py-2 text-xs text-white font-medium hover:bg-green-700 disabled:opacity-50">
-                  <Check className="h-3 w-3" /> Approve &amp; Next
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); handleSkip(s); }}
-                  disabled={saving} className="flex items-center gap-1 rounded bg-gray-300 px-3 py-2 text-xs text-gray-700 font-medium hover:bg-gray-400 disabled:opacity-50">
-                  <X className="h-3 w-3" /> Skip
-                </button>
+          {!opts.hideBidForm && (
+            <div className="bg-gray-50 rounded-lg p-3 border border-card-border">
+              <div className="text-[10px] text-muted font-medium mb-1">Your Bid</div>
+              <div className="space-y-2">
+                <input type="number" value={editingId === s.id ? editPrice : (s.suggested_price?.toFixed(2) || "")}
+                  onChange={(e) => { setEditingId(s.id); setEditPrice(e.target.value); }}
+                  onFocus={() => { if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); }}}
+                  step="0.01" placeholder="Price"
+                  className="w-full rounded border border-card-border px-3 py-2 text-sm font-mono" />
+                <div className="flex gap-2">
+                  <input type="number" value={editingId === s.id ? editDays : "45"}
+                    onChange={(e) => { setEditingId(s.id); setEditDays(e.target.value); }}
+                    className="w-20 rounded border border-card-border px-2 py-1.5 text-xs font-mono" placeholder="Days" />
+                  <input type="text" value={editingId === s.id ? editComment : ""}
+                    onChange={(e) => { setEditingId(s.id); setEditComment(e.target.value); }}
+                    className="flex-1 rounded border border-card-border px-2 py-1.5 text-xs" placeholder="Reason for change (optional)" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={(e) => { e.stopPropagation(); if (editingId !== s.id) { setEditingId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); } handleApprove(s); }}
+                    disabled={saving} className="flex-1 flex items-center justify-center gap-1 rounded bg-green-600 px-3 py-2 text-xs text-white font-medium hover:bg-green-700 disabled:opacity-50">
+                    <Check className="h-3 w-3" /> Approve &amp; Next
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); handleSkip(s); }}
+                    disabled={saving} className="flex items-center gap-1 rounded bg-gray-300 px-3 py-2 text-xs text-gray-700 font-medium hover:bg-gray-400 disabled:opacity-50">
+                    <X className="h-3 w-3" /> Skip
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
             <div className="text-[10px] text-blue-700 font-medium mb-1">Source Info</div>
@@ -1237,6 +1251,10 @@ export function SolicitationsList({
             </div>
           );
         })()}
+
+        <div className="mb-3">
+          <AxRecentReceipts nsn={s.nsn} />
+        </div>
 
         <NsnHistoryDetail nsn={s.nsn} />
       </div>
@@ -2504,7 +2522,7 @@ export function SolicitationsList({
                   never drift. hideInlineNext=true because the modal has its
                   own prev/next navigation in the top bar + footer. */}
               <div className="flex-1 overflow-y-auto bg-gray-50">
-                {renderSolDetail(current, { hideInlineNext: true })}
+                {renderSolDetail(current, { hideInlineNext: true, hideBidForm: true })}
               </div>
 
               {/* Footer — edit inputs + action buttons */}
