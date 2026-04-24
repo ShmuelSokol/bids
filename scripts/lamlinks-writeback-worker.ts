@@ -530,6 +530,25 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       } catch (e) { try { await tx.rollback(); } catch {} throw e; }
       return { moved: ids.length };
     }
+    case "refresh_nsn_history": {
+      // Spawn the CLI script so the worker and the manual CLI invocation
+      // share the exact same refresh logic (scripts/refresh-ll-history-for-nsn.ts).
+      const nsn = String(a.params?.nsn || "").trim();
+      if (!/^\d{4}-\d{2}-\d{3}-\d{4}$/.test(nsn)) throw new Error(`invalid nsn: ${nsn}`);
+      if (dry) return { would_refresh: nsn };
+      const { spawnSync } = require("child_process");
+      const proc = spawnSync("npx", ["tsx", "scripts/refresh-ll-history-for-nsn.ts", "--nsn", nsn], {
+        cwd: "C:\\tmp\\dibs-init\\dibs",
+        encoding: "utf8",
+        shell: true,
+        timeout: 90_000,
+      });
+      const out = `${proc.stdout || ""}\n${proc.stderr || ""}`;
+      if (proc.status !== 0) throw new Error(`refresh failed: ${out.slice(-400)}`);
+      // Parse the stdout's summary lines
+      const awardsMatch = out.match(/(\d+) newly inserted/g);
+      return { nsn, output_tail: out.slice(-500), awards_inserted: awardsMatch?.[0], bids_inserted: awardsMatch?.[1] };
+    }
     case "extract_to_temp":
     case "nuke": {
       // Keep UI shipping; these two are destructive enough that we route

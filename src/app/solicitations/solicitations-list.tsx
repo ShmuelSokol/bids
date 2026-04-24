@@ -965,13 +965,39 @@ export function SolicitationsList({
         <div className="flex items-start justify-between mb-3">
           <div>
             <h3 className="text-sm font-bold">{s.nomenclature}</h3>
-            <div className="flex items-center gap-3 text-xs text-muted mt-0.5">
+            <div className="flex items-center gap-3 text-xs text-muted mt-0.5 flex-wrap">
               <span className="font-mono text-accent">{s.nsn}</span>
               <span>{s.solicitation_number}</span>
-              <span>Qty: {s.quantity}</span>
+              <span>Qty: <strong className="text-foreground">{s.quantity}</strong></span>
               <span>Due: {s.return_by_date}</span>
               {s.fob && <span>FOB: {s.fob === "D" ? "Dest" : "Origin"}</span>}
               {s.procurement_type && s.procurement_type !== "RFQ" && <span className="px-1 rounded bg-indigo-100 text-indigo-700">{s.procurement_type}</span>}
+              {/* CLIN count — prominent so Abe can sanity-check against DIBBS.
+                  LL sometimes imports only the first CLIN of multi-CLIN sols
+                  (2026-04-24 SPE2DH-26-T-3287: 4 CLINs on DIBBS, 1 in LL). */}
+              {(() => {
+                const clinCount = s.ship_to_locations?.length ?? 0;
+                if (clinCount === 0) return null;
+                const estVal = Number(s.lamlinks_estimated_value || 0);
+                const ourVal = Number(s.suggested_price || 0) * Number(s.quantity || 1);
+                // Heuristic: if LL's estimated value is >> our qty × suggested price,
+                // there may be CLINs LL didn't import. Only flag when the gap is >3x
+                // to avoid noise from honest pricing margin.
+                const valueGap = estVal > 0 && ourVal > 0 ? estVal / ourVal : 1;
+                const suspicious = clinCount === 1 && valueGap > 3;
+                return (
+                  <span
+                    className={`px-1.5 rounded text-[10px] font-medium ${suspicious ? "bg-red-100 text-red-700 border border-red-300" : "bg-blue-50 text-blue-700"}`}
+                    title={
+                      suspicious
+                        ? `Only 1 CLIN imported but LL est value $${estVal.toLocaleString()} >> our qty × price $${ourVal.toLocaleString()}. LL may have missed CLINs. Click "View on DIBBS" above to verify.`
+                        : `${clinCount} CLIN${clinCount > 1 ? "s" : ""} imported from LL k32`
+                    }
+                  >
+                    {suspicious ? "⚠ " : ""}{clinCount} CLIN{clinCount > 1 ? "s" : ""}
+                  </span>
+                );
+              })()}
               {(() => {
                 const bs = (s as any)._bidScore as BidScore | undefined;
                 if (!bs) return null;
@@ -1013,6 +1039,66 @@ export function SolicitationsList({
             }}
               className="text-xs px-2 py-1 rounded bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 font-medium">
               Check DIBBS
+            </button>
+            <a
+              href={`https://www.dibbs.bsm.dla.mil/Rfq/RfqRecs.aspx?category=SOL&value=${encodeURIComponent(s.solicitation_number.replace(/-/g, ""))}&scope=open`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs px-2 py-1 rounded bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 font-medium inline-flex items-center gap-1"
+              title="Open this sol on DIBBS — use to verify CLIN count / full RFQ detail (LL sometimes imports only 1 of N CLINs)"
+            >
+              ↗ View on DIBBS
+            </a>
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                const btn = e.currentTarget;
+                const orig = btn.textContent;
+                btn.textContent = "Queuing...";
+                btn.disabled = true;
+                try {
+                  const r = await fetch(`/api/ll/refresh-nsn-history`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ nsn: s.nsn }),
+                  });
+                  const j = await r.json();
+                  if (!r.ok) throw new Error(j.error || "queue failed");
+                  btn.textContent = "Queued — polling...";
+                  // Poll every 3s, up to 60s
+                  for (let i = 0; i < 20; i++) {
+                    await new Promise((res) => setTimeout(res, 3000));
+                    const pr = await fetch(`/api/ll/refresh-nsn-history?id=${j.id}`);
+                    const pd = await pr.json();
+                    if (pd.status === "done") {
+                      btn.textContent = "✓ Done — reload";
+                      btn.className = "text-xs px-2 py-1 rounded bg-green-50 text-green-700 border border-green-300 font-medium";
+                      // Invalidate cache so next open re-fetches
+                      setHistoryCache((prev) => {
+                        const next = new Map(prev);
+                        next.delete(s.nsn);
+                        return next;
+                      });
+                      // Kick an immediate re-fetch
+                      loadNsnHistory(s.nsn);
+                      return;
+                    }
+                    if (pd.status === "error") { throw new Error(pd.error || "refresh errored"); }
+                  }
+                  btn.textContent = "Timed out";
+                } catch (err: any) {
+                  btn.textContent = "Failed";
+                  btn.title = err.message;
+                } finally {
+                  btn.disabled = false;
+                  setTimeout(() => { if (btn) btn.textContent = orig; }, 8000);
+                }
+              }}
+              className="text-xs px-2 py-1 rounded bg-cyan-50 text-cyan-700 border border-cyan-200 hover:bg-cyan-100 font-medium inline-flex items-center gap-1"
+              title="Pull this NSN's full award + bid history from LamLinks into DIBS. Use when the history section looks empty but LL has data."
+            >
+              ⟳ Refresh from LL
             </button>
             {!opts.hideInlineNext && filtered.indexOf(s) < filtered.length - 1 && (
               <button onClick={(e) => { e.stopPropagation(); setDetailId(filtered[filtered.indexOf(s) + 1].id); }}
