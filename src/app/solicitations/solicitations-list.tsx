@@ -125,9 +125,25 @@ export function SolicitationsList({
   initialSort?: string;
 }) {
   const [solicitations, setSolicitations] = useState(initialData);
-  const [filter, setFilter] = useState<string>(initialFilter || "sourceable");
+  const [filter, setFilterRaw] = useState<string>(initialFilter || "sourceable");
+  // Wrap setFilter so switching filters always resets the render limit —
+  // otherwise clicking 'non-sourced' from 'sourceable' would inherit the
+  // previous Show-all expansion and re-render 5K rows.
+  const setFilter = (v: string | ((prev: string) => string)) => {
+    setVisibleLimitReset();
+    setFilterRaw(v as any);
+  };
+  const setVisibleLimitReset = () => {
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "auto" });
+    setVisibleLimit(200);
+  };
   const [researchNsn, setResearchNsn] = useState<string | null>(null);
   const [researchSolNo, setResearchSolNo] = useState<string | null>(null);
+
+  // Render-limit guard: large filters (non-sourceable especially) can exceed
+  // 5K rows × ~400 lines of JSX each → browser stalls. Show first N, let
+  // user "Show more" incrementally. Reset on filter change below.
+  const [visibleLimit, setVisibleLimit] = useState(200);
   const [sortField, setSortField] = useState<SortField>((initialSort as SortField) || "score");
   const [sortAsc, setSortAsc] = useState(false);
   const [scraping, setScraping] = useState(false);
@@ -1412,7 +1428,7 @@ export function SolicitationsList({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => {
+              {filtered.slice(0, visibleLimit).map((s) => {
                 const potValue = (s as any)._potentialValue || s.est_value || (s.suggested_price || s.final_price || 0) * (s.quantity || 1);
                 const isEditing = editingId === s.id;
                 // Use lazy-loaded cache first, fall back to server-provided data
@@ -2240,6 +2256,29 @@ export function SolicitationsList({
             </tbody>
           </table>
         </div>
+
+        {filtered.length > visibleLimit && (
+          <div className="px-4 py-3 border-t border-card-border bg-gray-50 flex items-center justify-between text-xs">
+            <span className="text-muted">
+              Showing <strong>{visibleLimit}</strong> of <strong>{filtered.length}</strong> matching
+              {visibleLimit < filtered.length && ` · next ${Math.min(200, filtered.length - visibleLimit)} not rendered yet`}
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setVisibleLimit((n) => Math.min(filtered.length, n + 200))}
+                className="rounded border border-card-border bg-white px-3 py-1 font-medium hover:bg-accent/10"
+              >
+                Show +200
+              </button>
+              <button
+                onClick={() => setVisibleLimit(filtered.length)}
+                className="rounded border border-card-border bg-white px-3 py-1 font-medium hover:bg-accent/10"
+              >
+                Show all ({filtered.length})
+              </button>
+            </div>
+          </div>
+        )}
 
         {filtered.length === 0 && (
           <div className="text-center py-12 text-muted">

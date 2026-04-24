@@ -78,17 +78,19 @@ Respond with STRICT JSON matching this schema. No prose. No markdown fences.
       "rationale": "<brief reason for suggesting: 'Medline is the #1 US distributor of this class', 'Listed in Grainger's catalog', etc.>"
     }
   ],
-  "no_results_reason": "<null OR a short explanation if you can't find candidates — custom/legacy DoD items, obsolete NSNs, etc.>"
+  "no_results_reason": "<null if you returned any candidates; ONLY fill this if candidates=[]>"
 }
 
 Guidelines:
 - Return UP TO max_candidates entries, ranked by likelihood of fulfillment success (availability × reasonable pricing × ERG fit).
-- Prefer candidates where ERG has_account = true — surface those in the top positions.
+- Prefer candidates where ERG has_account = true — surface those in the top positions, and set erg_has_account=true.
+- Match ERG supplier names fuzzily: if "Grainger Industrial Supply" is in ERG's list, and you're suggesting "W.W. Grainger Inc", set erg_has_account=true. Case-insensitive substring matching.
 - For commercial items (medical, office, electrical), include well-known US distributors: Grainger, Zoro, McMaster-Carr, MSC, Medline, Cardinal Health, Henry Schein, VWR, Fisher Scientific, Amazon Business, Global Industrial, Home Depot, Uline.
 - For specialty/defense-only items, lean on your knowledge of mil-spec suppliers; be honest with lower confidence.
 - NEVER fabricate a specific URL or exact price you're not confident about. Use null.
 - NEVER fabricate a CAGE code — only fill supplier_cage if you're certain.
 - If the item looks genuinely rare or defense-specific and you can't find candidates, set candidates=[] and fill no_results_reason.
+- IMPORTANT: if candidates has ANY entries, set no_results_reason to null. Do NOT use it as a notes field.
 
 Output ONLY the JSON object.`;
 
@@ -144,9 +146,11 @@ function buildUserMessage(input: ResearchInput, maxCandidates: number): string {
   }
 
   if (input.erg_suppliers?.length) {
-    parts.push(`\nERG's existing suppliers (we have accounts with these — prefer them in candidates):`);
-    for (const s of input.erg_suppliers.slice(0, 50)) {
-      parts.push(`  ${s.name} (CAGE ${s.cage})`);
+    parts.push(`\nERG's existing suppliers (we have accounts/history with these — set erg_has_account=true if your suggestion matches any of these names, even fuzzy match):`);
+    // Pass up to 300 supplier names — Haiku can handle the context, and
+    // more names means more fuzzy-match hits on common distributors.
+    for (const s of input.erg_suppliers.slice(0, 300)) {
+      parts.push(`  ${s.name}${s.cage ? ` (${s.cage})` : ""}`);
     }
   }
 

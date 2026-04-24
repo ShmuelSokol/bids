@@ -99,15 +99,14 @@ const TASKS: Task[] = [
   // changes within hours.
   { script: "sync-ax-dla-payments", args: ["--days", "365"], mode: "periodic", intervalMs: 60 * 60_000, skipInitialRun: true },
 
-  // NSN auto-research worker — drains the queue in nsn_research_status,
-  // calls Claude, saves findings. Respects daily budget from
-  // research_settings table. Every 60s so new queued items surface fast.
-  { script: "research-worker", mode: "periodic", intervalMs: 60_000, skipInitialRun: true },
-
-  // Enqueue new research work daily — scans for sols imported since last
-  // run, adds their NSNs to the research queue (unless already fresh).
-  // Once a day is fine; it's cheap.
-  { script: "enqueue-research", mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
+  // NSN auto-research worker + daily enqueue are INTENTIONALLY NOT in the
+  // daemon right now — team is reviewing initial results before we let it
+  // run on future DIBBS batches unattended. To re-enable:
+  //   1. Add the two task entries back here
+  //   2. Restart the daemon
+  // Meanwhile, run manually as needed:
+  //   npx tsx scripts/research-worker.ts --loop
+  //   npx tsx scripts/enqueue-research.ts --days 2
 
   // WAWF 810 ack digest — computes inferred ack status per transmission.
   // Once daily at morning roll-up time. --alert --min 5 fires a WhatsApp

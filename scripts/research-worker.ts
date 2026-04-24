@@ -56,20 +56,64 @@ async function recordSpend(costUsd: number) {
   );
 }
 
+// Module-level cache for the ERG supplier list — expensive to rebuild and
+// doesn't change during a worker run.
+let ergSupplierCache: { cage: string; name: string }[] | null = null;
+
 async function getErgSuppliers(): Promise<{ cage: string; name: string }[]> {
-  // Pull from vendor_parts (we have ~30K) — distinct vendor accounts
-  const { data } = await sb
-    .from("vendor_parts")
-    .select("vendor_account, vendor_description")
-    .limit(2000);
-  const map = new Map<string, string>();
-  for (const r of data || []) {
-    if (r.vendor_account && !map.has(r.vendor_account)) {
-      // vendor_account in ERG's AX isn't always a CAGE; we pass both name + account
-      map.set(r.vendor_account, r.vendor_description || r.vendor_account);
+  if (ergSupplierCache) return ergSupplierCache;
+
+  // Pull DISTINCT vendor accounts from multiple sources — paginate to get all.
+  const names = new Map<string, string>();  // lowercase-name → display
+  const accounts = new Map<string, string>(); // account → display name
+
+  // 1. vendor_parts (AX-sourced per-NSN vendor records)
+  for (let p = 0; p < 10; p++) {
+    const { data } = await sb
+      .from("vendor_parts")
+      .select("vendor_account, vendor_description")
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      if (r.vendor_description) names.set(r.vendor_description.toLowerCase().trim(), r.vendor_description.trim());
+      if (r.vendor_account) accounts.set(r.vendor_account, r.vendor_description || r.vendor_account);
     }
+    if (data.length < 1000) break;
   }
-  return [...map.entries()].map(([cage, name]) => ({ cage, name })).slice(0, 50);
+
+  // 2. nsn_vendor_prices — another slice of ERG's vendor universe
+  for (let p = 0; p < 10; p++) {
+    const { data } = await sb
+      .from("nsn_vendor_prices")
+      .select("vendor")
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      if (r.vendor) names.set(r.vendor.toLowerCase().trim(), r.vendor.trim());
+    }
+    if (data.length < 1000) break;
+  }
+
+  // Build final list: one entry per distinct vendor name
+  const out: { cage: string; name: string }[] = [];
+  for (const [lc, display] of names) {
+    // Find a matching account if available
+    let matchedCage = "";
+    for (const [acct, acctName] of accounts) {
+      if ((acctName || "").toLowerCase().trim() === lc) {
+        matchedCage = acct;
+        break;
+      }
+    }
+    out.push({ cage: matchedCage, name: display });
+  }
+
+  // Sort alphabetically for stable prompt (helps prompt caching)
+  out.sort((a, b) => a.name.localeCompare(b.name));
+
+  ergSupplierCache = out;
+  console.log(`  [research] built ERG supplier list: ${out.length} distinct names`);
+  return out;
 }
 
 async function getRecentWinners(nsn: string): Promise<{ cage: string; price: number; date: string }[]> {
