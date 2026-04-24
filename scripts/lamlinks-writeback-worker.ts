@@ -530,6 +530,30 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       } catch (e) { try { await tx.rollback(); } catch {} throw e; }
       return { moved: ids.length };
     }
+    case "curl_test": {
+      // One-off test: curl Sally from this host and return response.
+      // Used to verify whether LL's API IP-whitelists our workstation.
+      // Runs a minimal --digest call with the env creds; doesn't touch
+      // DB. Safe. Returns HTTP status + first 500 bytes of response.
+      if (dry) return { would_test: true };
+      // Accept creds via params for one-off testing (worker's .env may not
+      // have LL_* vars yet). Params override env. Stored in rescue table
+      // briefly — delete the row after the test.
+      const login = a.params?.sally_login || process.env.LL_SALLY_LOGIN || "";
+      const key = a.params?.api_key || process.env.LL_API_KEY || "";
+      const secret = a.params?.api_secret || process.env.LL_API_SECRET || "";
+      const user = `${login}#${key}`;
+      const pass = secret;
+      const url = String(a.params?.url || "http://api.lamlinks.com/api/rfq/get_sent_quotes_by_timeframe");
+      const body = "quote_min_datetime=4%2F24%2F2026+3%3A00%3A00+AM+UTC&quote_max_datetime=4%2F24%2F2026+7%3A00%3A00+AM+UTC";
+      const { spawnSync } = require("child_process");
+      const proc = spawnSync("curl", ["-s", "-w", "\nHTTP %{http_code}\n", "--digest", "-u", `${user}:${pass}`, "--data", body, url], {
+        encoding: "utf8",
+        timeout: 20_000,
+      });
+      const out = `${proc.stdout || ""}\n${proc.stderr || ""}`;
+      return { url, output: out.slice(0, 1500) };
+    }
     case "refresh_nsn_history": {
       // Spawn the CLI script so the worker and the manual CLI invocation
       // share the exact same refresh logic (scripts/refresh-ll-history-for-nsn.ts).

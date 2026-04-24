@@ -2,6 +2,88 @@
 
 Things that broke, how we noticed, and what we learned. If you're about to touch one of these areas, read the relevant section first or you'll repeat our mistakes.
 
+## LL VFP cursor errors 9999806 / 9999607 are cosmetic — don't panic-nuke
+
+> Symptom (2026-04-24): DIBS writeback inserted k33/k34/k35 rows for envelope 46896 (sol `SPE2DS-26-T-009G` @ $239). Abe saw `9999806` on LL reopen and `9999607` on his manual Post. I nuked the DIBS-inserted rows assuming the transmit had failed. DLA's ack email came back confirming BOTH the DIBS-created envelope AND Abe's re-post had actually reached Sally (standard dedup kept the later one). I'd deleted valid sent data.
+
+**The rule: cursor errors do NOT imply transmission failure.** LL's VFP client throws
+9999xxx cursor conflicts when its local cursor snapshot disagrees with a row we
+inserted out-of-band. The conflict is purely a local-UI state issue — the Sally
+HTTP POST that LL kicks off when Abe clicks Post still goes through (or already
+went through), and DLA ack's it.
+
+**Verification protocol before touching a DIBS-created envelope on cursor error:**
+1. Wait for LL's ack email — typically arrives 1-2 hours after the quote cycle
+2. OR check `k33_tab.t_stat_k33` for that envelope — `'sent'` means Sally got it
+3. OR check LL's local log files at `\\NYEVRVTC001\c$\LamlinkP\data\log\*.txt` — successful API calls end with `lam_api function ... succeeded`
+
+**If transmit DID succeed and local DB is still broken**, use `scripts/ll-reinsert-orphan-bid.ts` to re-create the k33/k34/k35 shell with `qotref_k33` matching the original, preserving the DLA link.
+
+**Hypothesized fix (patched, unverified)** at the worker side: after the worker
+inserts k34/k35 and finalizes the envelope, it bumps `k07_tab SOL_FORM_PREFERENCES`
+for ajoseph — the same UPDATE LL's own Post flow does per our XE trace of the
+11:24 native Post (envelope 46895). We think the k07 uptime is how LL's local
+VFP invalidates its cursor cache. Needs an end-to-end test once writeback is re-enabled.
+
+**The 2026-04-24 dead-end trace**: XE sessions `dibs_ll_trace` + `dibs_ll_trace_server` captured the native LL Post pattern. Key SQL that DIBS wasn't mimicking:
+```
+set implicit_transactions on
+UPDATE k07_tab SET uptime_k07=GETDATE() WHERE upname='ajoseph' AND ss_key='SOL_FORM_PREFERENCES' AND ss_tid='U'
+COMMIT TRAN
+set implicit_transactions off
+```
+
+## LamLinks Sally REST: creds are in LL's own curl logs
+
+> Discovery (2026-04-24): `api_key` + `api_secret` weren't in LLPro.ini, registry, binaries, or `kah_tab`. They were sitting in cleartext in every line of LL's own curl verbose output on NYEVRVTC001 at `\\NYEVRVTC001\c$\LamlinkP\data\log\*.txt` — every line with `-u "<sally_login>#<api_key>:<api_secret>"`.
+
+**Why this matters:** we no longer need Yosef to surface the creds. Also
+**IP whitelist is suspected** — the creds extracted byte-for-byte return HTTP 401
+from GLOVE via both our Sally client and raw `curl --digest`, but they succeed
+from NYEVRVTC001 per LL's own logs.
+
+Test script at `https://jzgvdfzboknpcrhymjob.supabase.co/storage/v1/object/public/briefings/ll-api-test.ps1` — downloads + runs from any Windows box, writes HTTP result back to Supabase Storage. On older Windows, must force TLS 1.2 first: `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12`.
+
+**Creds live in `.env` on GLOVE now** (`LL_SALLY_LOGIN`, `LL_API_KEY`, `LL_API_SECRET`, `LL_E_CODE`). Never commit `.env`.
+
+**Before enabling REST writeback:** verify the running host is whitelisted by
+running the test script from it. If writeback runs on NYEVRVSQL001 and that
+host is NOT whitelisted, the REST path won't work from there — we'd need to
+route the Sally call through NYEVRVTC001 or get Yosef to whitelist NYEVRVSQL001.
+
+## LL imports only 1 CLIN of multi-CLIN DIBBS sols
+
+> Symptom (2026-04-24): `SPE2DH-26-T-3287` showed 4 CLINs on DIBBS web UI but only 1 in LL's k11_tab. DIBS (which mirrors LL) showed qty 1 when the real sol was qty 4 across 4 destinations. Abe's bid would have covered only one CLIN.
+
+**Cause:** LL's internal DIBBS scraper misses CLINs on certain multi-CLIN sol formats — the "Package View" detail page isn't traversed. LL's k11/k32 only captures the row shown in the search results table.
+
+**Partial fix shipped:** solicitations modal header now shows CLIN count + a red warning badge when single-CLIN but `lamlinks_estimated_value` >> `suggested_price × quantity` (3× threshold). Plus a "↗ View on DIBBS" button that opens the sol's RfqRecs page in a new tab so Abe can visually cross-check.
+
+**Real fix (deferred):** a Playwright-driven scraper that navigates DIBBS "Package View" doPostBack and parses the actual CLIN breakdown. Caches per-sol in a new `dibbs_sol_clins` table. Shows a diff on the modal when LL disagrees.
+
+## NSN history gap: DIBS `awards`/`abe_bids` miss international FSCs
+
+> Symptom (2026-04-24): NSN `6665-12-193-2113` (FSC 6665 NATO country 12 = Germany) showed 0 awards in DIBS but 209 in LL + 6 Abe bids. Abe couldn't price the bid from DIBS because history looked empty.
+
+**Cause:** DIBS's nightly `awards` sync has gaps on certain NSN prefixes — international-origin FSCs and some niche FSCs aren't in the scrape's scope. The data does exist in LL's k81_tab.
+
+**Fix shipped:** on-demand `scripts/refresh-ll-history-for-nsn.ts` + "⟳ Refresh from LL" button in the solicitations modal. Queues a `refresh_nsn_history` rescue action → worker spawns the script → writes missing rows to `awards` + `abe_bids`. Usually completes in <10s; UI polls and re-fetches history panel when done.
+
+**Follow-up ideas:** nightly bulk sync covering ALL NSNs seen in today's batch, not just those matched via the current filter; or pull LL history every time DIBS imports a new sol.
+
+## PowerShell on older Windows: TLS + ::new() don't work
+
+> Symptom (2026-04-24): `iwr https://...` → "could not create SSL/TLS secure channel" on an older Windows box. `[System.Net.Http.StringContent]::new(...)` → "system doesn't contain method named 'new'".
+
+**Cause:** older Windows (Server 2008 R2, possibly some 2012) ships PowerShell 2/3 + .NET 4.0, which doesn't support TLS 1.2 by default and doesn't have the `::new()` constructor shorthand.
+
+**Fix pattern when writing cross-box PS one-liners:**
+1. Always prepend `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12` before any HTTPS call
+2. Use `New-Object X` instead of `[X]::new()`
+3. Use `[System.Net.HttpWebRequest]::Create(...)` (.NET 2.0) instead of `System.Net.Http.HttpClient` (requires 4.5+)
+
+Test script `https://jzgvdfzboknpcrhymjob.supabase.co/storage/v1/object/public/briefings/ll-api-test.ps1` follows this pattern.
+
 ## AX OData silent 1000-row cap on filtered queries
 
 > Symptom: `PurchaseOrderLinesV2` with `$filter=toupper(CustomerRequisitionNumber) eq 'DD219'` returned exactly 1000 rows with no `@odata.nextLink`. We thought that was the complete set. It wasn't — the real count via `@odata.count` was 8,533. We were silently losing 88% of DD219 PO history, which broke the DD219 PO ↔ award linker.
