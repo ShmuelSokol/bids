@@ -144,6 +144,10 @@ export function SolicitationsList({
   // 5K rows × ~400 lines of JSX each → browser stalls. Show first N, let
   // user "Show more" incrementally. Reset on filter change below.
   const [visibleLimit, setVisibleLimit] = useState(200);
+
+  // Fullscreen review modal — Abe clicks "Review" on a row to enter
+  // distraction-free review with prev/next navigation through the filter.
+  const [reviewModalId, setReviewModalId] = useState<number | null>(null);
   const [sortField, setSortField] = useState<SortField>((initialSort as SortField) || "score");
   const [sortAsc, setSortAsc] = useState(false);
   const [scraping, setScraping] = useState(false);
@@ -1738,6 +1742,12 @@ export function SolicitationsList({
                               Bid
                             </button>
                           )}
+                          {s.is_sourceable && !s.bid_status && (
+                            <button onClick={(e) => { e.stopPropagation(); setReviewModalId(s.id); setEditPrice(s.suggested_price?.toFixed(2) || ""); setEditDays("45"); setEditComment(""); }}
+                              className="text-[10px] px-2 py-1 rounded bg-accent text-white border border-accent hover:opacity-90 font-semibold">
+                              Review ▶
+                            </button>
+                          )}
                           {!isEditing && (
                             <button onClick={() => handleFindSuppliers(s)}
                               className={`text-[10px] px-2 py-1 rounded border font-medium ${supplierSearchId === s.id ? "bg-blue-100 text-blue-700 border-blue-300" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-blue-50 hover:text-blue-700"}`}>
@@ -2339,6 +2349,244 @@ export function SolicitationsList({
           }}
         />
       )}
+
+      {/* Fullscreen review modal — distraction-free bid review with prev/next nav */}
+      {reviewModalId !== null && (() => {
+        const idx = filtered.findIndex((x) => x.id === reviewModalId);
+        if (idx < 0) return null;
+        const current = filtered[idx];
+        const prev = idx > 0 ? filtered[idx - 1] : null;
+        const next = idx < filtered.length - 1 ? filtered[idx + 1] : null;
+        const goTo = (s: Solicitation | null) => {
+          if (!s) return;
+          setReviewModalId(s.id);
+          setEditPrice(s.suggested_price?.toFixed(2) || "");
+          setEditDays("45");
+          setEditComment("");
+        };
+        const close = () => {
+          setReviewModalId(null);
+          setEditingId(null);
+        };
+        const approveAndNext = async () => {
+          // Ensure editingId is set so handleApprove reads the current edits
+          setEditingId(current.id);
+          await handleApprove(current);
+          if (next) goTo(next); else close();
+        };
+        const skipAndNext = async () => {
+          setEditingId(current.id);
+          await handleSkip(current);
+          if (next) goTo(next); else close();
+        };
+        const potValue = (current as any)._potentialValue || current.est_value || (current.suggested_price || current.final_price || 0) * (current.quantity || 1);
+
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/60 flex items-stretch justify-center"
+            onClick={close}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") close();
+              if (e.key === "ArrowLeft" && prev) goTo(prev);
+              if (e.key === "ArrowRight" && next) goTo(next);
+            }}
+            tabIndex={-1}
+          >
+            <div
+              className="bg-white w-full max-w-6xl mx-4 my-4 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top nav bar: prev preview · position · next preview */}
+              <div className="bg-gradient-to-r from-gray-50 to-white border-b border-card-border px-4 py-3 flex items-center gap-3">
+                <button
+                  onClick={() => prev && goTo(prev)}
+                  disabled={!prev}
+                  className={`rounded border border-card-border px-3 py-2 text-left flex-1 max-w-[220px] transition ${
+                    prev ? "hover:bg-accent/10" : "opacity-40 cursor-not-allowed"
+                  }`}
+                >
+                  <div className="text-[10px] text-muted">← Previous</div>
+                  {prev ? (
+                    <>
+                      <div className="font-mono text-[10px] text-accent truncate">{prev.nsn}</div>
+                      <div className="text-[11px] truncate">{prev.nomenclature}</div>
+                      <div className="text-[10px] text-muted">qty {prev.quantity}</div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-muted italic">first item</div>
+                  )}
+                </button>
+
+                <div className="flex-1 text-center px-2">
+                  <div className="text-[11px] text-muted font-mono uppercase tracking-wide">
+                    {idx + 1} of {filtered.length} · {filter}
+                  </div>
+                  <div className="text-lg font-bold truncate">{current.nomenclature}</div>
+                  <div className="text-xs font-mono text-accent">{current.nsn}</div>
+                  <div className="mt-2 inline-block bg-gray-900 text-white rounded-lg px-6 py-2">
+                    <div className="text-[10px] uppercase tracking-widest opacity-70">Qty</div>
+                    <div className="text-4xl font-bold leading-none">{current.quantity}</div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => next && goTo(next)}
+                  disabled={!next}
+                  className={`rounded border border-card-border px-3 py-2 text-right flex-1 max-w-[220px] transition ${
+                    next ? "hover:bg-accent/10" : "opacity-40 cursor-not-allowed"
+                  }`}
+                >
+                  <div className="text-[10px] text-muted">Next →</div>
+                  {next ? (
+                    <>
+                      <div className="font-mono text-[10px] text-accent truncate">{next.nsn}</div>
+                      <div className="text-[11px] truncate">{next.nomenclature}</div>
+                      <div className="text-[10px] text-muted">qty {next.quantity}</div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-muted italic">last item</div>
+                  )}
+                </button>
+
+                <button onClick={close} className="text-muted hover:text-foreground ml-2">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Body — key bidding context */}
+              <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+                <div className="grid md:grid-cols-3 gap-3 mb-3">
+                  <div className="bg-white rounded-lg p-3 border border-card-border">
+                    <div className="text-[10px] text-muted uppercase">Solicitation</div>
+                    <div className="font-mono text-xs">{current.solicitation_number}</div>
+                    <div className="text-xs text-muted mt-1">
+                      Due {current.return_by_date} · Issued {current.issue_date}
+                    </div>
+                    <div className="text-xs text-muted">FSC {current.fsc}{current.set_aside && ` · ${current.set_aside}`}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 border border-card-border">
+                    <div className="text-[10px] text-muted uppercase">Cost · Suggested · Margin</div>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="text-[10px] text-muted">Cost</span>
+                      <span className="font-mono text-sm">${current.our_cost?.toFixed(2) ?? "—"}</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[10px] text-muted">Sugg.</span>
+                      <span className="font-mono text-lg text-green-700 font-semibold">${current.suggested_price?.toFixed(2) ?? "—"}</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[10px] text-muted">Margin</span>
+                      <span className="font-mono text-sm">{current.margin_pct != null ? `${Number(current.margin_pct).toFixed(0)}%` : "—"}</span>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 border border-card-border">
+                    <div className="text-[10px] text-muted uppercase">Potential Value</div>
+                    <div className="font-mono text-lg text-accent font-semibold">
+                      ${Number(potValue).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </div>
+                    <div className="text-[10px] text-muted mt-1">
+                      FOB {current.fob === "D" ? "Destination" : current.fob === "O" ? "Origin" : "—"}
+                    </div>
+                    <div className="text-[10px] text-muted">
+                      {current.already_bid ? "⚠ already bid in LL" : "new bid"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ship-to destinations, when parseable */}
+                {(() => {
+                  const st = (current as any).ship_to_locations;
+                  if (!Array.isArray(st) || st.length === 0) return null;
+                  return (
+                    <div className="bg-white rounded-lg p-3 border border-card-border mb-3">
+                      <div className="text-[10px] text-muted uppercase mb-1">Ship-to ({st.length})</div>
+                      <div className="grid md:grid-cols-3 gap-1 text-[11px]">
+                        {st.map((d: any, i: number) => (
+                          <div key={i} className="flex items-baseline gap-1">
+                            <span className="text-muted">CLIN {d.clin}</span>
+                            <span className="font-medium">qty {d.qty}</span>
+                            <span className="text-muted truncate">{d.destination}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Sourcing / AX */}
+                {(current.source_item || (current as any).bid_vendor) && (
+                  <div className="bg-white rounded-lg p-3 border border-card-border mb-3">
+                    <div className="text-[10px] text-muted uppercase mb-1">Sourcing</div>
+                    <div className="text-xs">
+                      Source: <span className="font-mono">{current.source || (current as any).data_source}</span>
+                      {current.source_item && <span className="ml-2">· AX item <span className="font-mono">{current.source_item}</span></span>}
+                    </div>
+                    {(current as any).bid_vendor && (
+                      <div className="text-xs mt-1">
+                        Chosen vendor: <span className="font-semibold">{(current as any).bid_vendor}</span>
+                        {(current as any).bid_cost != null && <span className="ml-2">@ ${Number((current as any).bid_cost).toFixed(2)}</span>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Buyer & procurement detail */}
+                {(current as any).buyer_name && (
+                  <div className="bg-white rounded-lg p-3 border border-card-border text-xs">
+                    <div className="text-[10px] text-muted uppercase mb-1">Buyer</div>
+                    <div><span className="font-semibold">{(current as any).buyer_name}</span> · {(current as any).buyer_email}</div>
+                    {(current as any).required_delivery_days != null && (
+                      <div className="text-muted">Required delivery: {(current as any).required_delivery_days}d</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer — edit inputs + action buttons */}
+              <div className="bg-white border-t border-card-border p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted uppercase">Price</span>
+                    <input type="number" value={editPrice} onChange={(e) => { setEditingId(current.id); setEditPrice(e.target.value); }}
+                      step="0.01" autoFocus
+                      className="w-28 rounded border border-card-border px-2 py-1.5 text-sm font-mono text-right" />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted uppercase">Days</span>
+                    <input type="number" value={editDays} onChange={(e) => { setEditingId(current.id); setEditDays(e.target.value); }}
+                      className="w-16 rounded border border-card-border px-2 py-1.5 text-sm font-mono text-right" />
+                  </div>
+                  <input type="text" value={editComment} onChange={(e) => { setEditingId(current.id); setEditComment(e.target.value); }}
+                    placeholder="Reason (optional)"
+                    className="flex-1 min-w-[200px] rounded border border-card-border px-2 py-1.5 text-sm" />
+
+                  <div className="flex items-center gap-1 ml-auto">
+                    <button onClick={() => prev && goTo(prev)} disabled={!prev}
+                      className="px-3 py-1.5 text-xs rounded border border-card-border disabled:opacity-40 hover:bg-gray-50">
+                      ← Prev
+                    </button>
+                    <button onClick={skipAndNext} disabled={saving}
+                      className="px-3 py-1.5 text-xs rounded bg-gray-500 text-white disabled:opacity-50 hover:opacity-90 inline-flex items-center gap-1">
+                      <X className="h-3 w-3" /> Skip &amp; Next
+                    </button>
+                    <button onClick={approveAndNext} disabled={saving}
+                      className="px-3 py-1.5 text-xs rounded bg-green-600 text-white font-semibold disabled:opacity-50 hover:opacity-90 inline-flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Approve &amp; Next
+                    </button>
+                    <button onClick={() => next && goTo(next)} disabled={!next}
+                      className="px-3 py-1.5 text-xs rounded border border-card-border disabled:opacity-40 hover:bg-gray-50">
+                      Next →
+                    </button>
+                  </div>
+                </div>
+                <div className="text-[10px] text-muted mt-2">
+                  Tip: ← / → arrow keys to navigate · Esc to close
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }
