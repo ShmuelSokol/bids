@@ -178,4 +178,49 @@ or filesystem scrape).
 npx tsx scripts/_trace-deep-look.ts        # last 1000 events with pattern hits
 npx tsx scripts/_trace-mine-novel.ts       # find NEW tables / SPs / patterns
 npx tsx scripts/_trace-k34-insert.ts       # extract full INSERT statements
+npx tsx scripts/_trace-transmit.ts         # all writes by table + slow queries
 ```
+
+## Bonus discoveries from 2026-04-27 deep mine
+
+### LL views worth using from DIBS
+
+- **`our_quote_line_5_view`** — joins k10 (sol) + k08 (NSN) + k34/k35 (our bid + qty/price/lead) + k33 (`t_stat_k33`) + kc4 (award if any). Single-row "everything about a quote we made" pull. Could simplify several existing DIBS queries.
+- **`our_quote_line_1..7_view`** — sibling views, likely earlier shapes / different join scopes. Worth probing if 5 doesn't have the field you need.
+- **`clin_basic_2_view`** — joins k79 (contract header) + k80 (release) + k81 (CLIN award detail) + k71 (line) + k08 (NSN) + k06 + k12 + k31 + k13. Full **award-side** CLIN view. Useful for award reconciliation. Slow (>2s per query) — cache or paginate.
+- **`sally_credential_1_view`** — k14 + kah_tab joined for Sally Credentials. Reveals Sally creds for every user as cleartext XML. Useful only if you want sally_login dynamically.
+- **`credential_control_1_view`** — kdf + kdg auth metadata (system, type, refresh cycle, athxml). For ERG ajoseph: `athsys='Sally'`, `athtyp='quote_web_rfqs'`, lifecycle 'refresh' every 24h. **`athxml_kdg` is empty** for ERG — confirmed api_key/api_secret are NOT in this view either.
+
+### sally_password is NOT api_secret
+
+`sally_password` from kah_tab is a **4-digit PIN** (e.g. `8137` for ajoseph) used for LL's desktop UI auth. The Sally REST API uses **api_secret** (14-char string with symbols, e.g. `6i^,j5F29jQxCF`) which is **different** and lives only in LLPro.ini-style files on disk. Don't conflate.
+
+So `credentialsFromKahTab()` (added today) only gives us fresh `sally_login` — for the password-half (`api_secret`) we still need the .env or filesystem capture.
+
+### Server-side write picture (NYEVRVTC001 daemon)
+
+Heavy hitters from the daemon:
+- `UPDATE kc4_tab` (133 hits) — incoming awards being updated
+- `INSERT k20_tab` (78) — log/audit of operations
+- `UPDATE k81_tab` (7), `INSERT k81_tab` (2) — actual award rows being added/updated
+- `INSERT k83_tab/k84_tab/k85_tab/k86_tab` — **the award chain extends past k81**. DIBS currently only syncs k81 → may be missing data in k83–k86 (probably contract delivery / shipping detail).
+- `DELETE k15_tab` (5) — daemon tidies up temp data
+
+Worth a follow-up to probe k83–k86 schema and decide if DIBS should sync them.
+
+### COOKIE-side write picture (Abe's interactive use)
+
+- `INSERT k20_tab` (64) — logged audit on every UI action
+- `INSERT kch_tab` (44) — TBD (per-action history?)
+- `UPDATE kc4_tab` (44) — Abe is processing/marking awards via LL UI
+- `UPDATE d04_tab` (42) — d-prefix possibly drawing/document table
+
+### t_stat_k33='sent' transitions (the actual transmit marker)
+
+**Zero seen in 5000-event sample.** Means Abe drafted bids today but hasn't clicked Post yet — he's accumulating them. The transmit pattern only fires when LL's HTTP call to Sally completes. Trace will catch it when he Posts.
+
+### Slow queries to avoid hot-pathing
+
+- `clin_basic_2_view` — 2+ seconds per call. Cache or precompute.
+- `our_quote_line_5_view` — 600–900ms. OK for ad-hoc, paginate for bulk.
+
