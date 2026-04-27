@@ -169,7 +169,7 @@ export function OpsLamlinks() {
       </div>
 
       <div className="mt-4 text-[11px] text-muted leading-snug">
-        Worker on NYEVRVSQL001 polls <span className="font-mono">lamlinks_rescue_actions</span> every ~10 s.
+        Worker on the daemon host polls <span className="font-mono">lamlinks_rescue_actions</span> every ~10 s.
         After the worker lands the <span className="font-mono">rescue</span> handler, actions will pick up and complete here with a result blob.
         Until then, continue using the <span className="font-mono">scripts/ll-*</span> CLI tools directly — same SQL, just terminal instead of buttons.
       </div>

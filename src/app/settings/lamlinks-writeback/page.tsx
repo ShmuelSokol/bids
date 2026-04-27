@@ -47,8 +47,8 @@ export default async function LamLinksWritebackSettingsPage() {
             </div>
             <div className="text-xs text-muted leading-relaxed">
               When LIVE, clicking Submit on a Quoted row enqueues a write to the LamLinks <code className="font-mono">k33/k34/k35</code>{" "}
-              chain. A Windows worker on <code className="font-mono">NYEVRVSQL001</code> processes the queue (Railway can&apos;t run{" "}
-              <code className="font-mono">msnodesqlv8</code>, so the work has to happen on the LamLinks host).
+              chain. A Windows worker on <code className="font-mono">{health.host || "the daemon host"}</code> processes the queue (Railway can&apos;t run{" "}
+              <code className="font-mono">msnodesqlv8</code>, so the work has to happen on a box that can reach LamLinks SQL).
               <br />
               When SIMULATED, Submit only flips <code className="font-mono">bid_decisions.status</code> in Supabase — nothing reaches LamLinks or DLA.
             </div>
@@ -71,7 +71,7 @@ export default async function LamLinksWritebackSettingsPage() {
         </div>
         {!health.online && (
           <div className="text-xs mt-2 text-red-700">
-            Fix: on NYEVRVSQL001, run <code className="font-mono">schtasks /run /tn &quot;DIBS - Recurring Daemon&quot;</code>, or sign out and back in to fire the auto-start trigger.
+            Fix: on <code className="font-mono">{health.host || "the daemon host"}</code>, run <code className="font-mono">schtasks /run /tn &quot;DIBS - Recurring Daemon&quot;</code>, or sign out and back in to fire the auto-start trigger.
           </div>
         )}
       </div>
@@ -145,7 +145,7 @@ export default async function LamLinksWritebackSettingsPage() {
         <ul className="space-y-1 text-xs text-muted">
           <li>✅ Write-back pattern proven end-to-end (2 bids transmitted to DLA on 2026-04-21).</li>
           <li>✅ Status reconciler (<code className="font-mono">scripts/sync-dibs-status.ts</code>) available for manual runs.</li>
-          <li>⏳ Windows worker (<code className="font-mono">scripts/lamlinks-writeback-worker.ts</code>) needs to be running on <code className="font-mono">NYEVRVSQL001</code> before queued rows will drain. Until it&apos;s registered as a scheduled task, queued rows sit as <em>pending</em>.</li>
+          <li>⏳ Windows worker (<code className="font-mono">scripts/lamlinks-writeback-worker.ts</code>) needs to be running on a domain box that can reach LamLinks SQL. Currently <code className="font-mono">{health.host || "(no heartbeat yet — worker hasn't run)"}</code>. Until it&apos;s registered as a scheduled task, queued rows sit as <em>pending</em>.</li>
           <li>✅ Seed-bid NOT required — worker auto-creates a fresh k33 envelope if none is staged. Abe can start his day with DIBS-prepared bids already in LamLinks.</li>
           <li>⚠ Toggling OFF mid-flight is safe — pending rows stay in the queue and resume when toggled back ON.</li>
         </ul>

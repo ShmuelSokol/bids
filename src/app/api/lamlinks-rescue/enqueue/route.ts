@@ -4,10 +4,11 @@ import { createServiceClient, getCurrentUser } from "@/lib/supabase-server";
 /**
  * POST /api/lamlinks-rescue/enqueue
  *
- * Superadmin-only. Enqueues a rescue action for the Windows worker on
- * NYEVRVSQL001 to execute against LamLinks. Railway can't reach the
- * LL DB directly (no msnodesqlv8 driver), so UI actions round-trip via
- * the rescue queue. Worker polls, executes, writes result back.
+ * Superadmin-only. Enqueues a rescue action for the Windows worker
+ * (running on the daemon host — see system_settings.lamlinks_worker_host)
+ * to execute against LamLinks. Railway can't reach the LL DB directly
+ * (no msnodesqlv8 driver), so UI actions round-trip via the rescue
+ * queue. Worker polls, executes, writes result back.
  *
  * Body: {
  *   action: "inspect" | "list_staging" | "mark_sent" | "retire"

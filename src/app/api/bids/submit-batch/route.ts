@@ -116,8 +116,9 @@ export async function POST(req: NextRequest) {
   }
 
   // If LamLinks write-back is LIVE, enqueue each successfully-updated bid
-  // for the Windows worker to transmit. Worker lives on NYEVRVSQL001 (the
-  // only host with msnodesqlv8 available) and polls lamlinks_write_queue.
+  // for the Windows worker to transmit. Worker lives on a domain box that
+  // can reach LamLinks SQL (currently GLOVE; check system_settings.lamlinks_worker_host
+  // or the dashboard for the live answer) and polls lamlinks_write_queue.
   let enqueuedCount = 0;
   const writebackLive = await isLamlinksWritebackLive();
   if (writebackLive && updatedCount > 0) {

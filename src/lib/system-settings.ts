@@ -16,22 +16,35 @@ export async function isLamlinksWritebackLive(): Promise<boolean> {
 }
 
 /**
- * Returns { online: bool, lastHeartbeat: ISO|null, ageSeconds: number|null }.
- * The worker updates lamlinks_worker_last_heartbeat on every poll (~30s).
- * If it's older than ~2 min the worker is effectively offline and any
- * LIVE-toggled writes will queue forever without transmission.
+ * Returns { online, lastHeartbeat, ageSeconds, host }.
+ * The worker updates lamlinks_worker_last_heartbeat + lamlinks_worker_host
+ * on every poll (~30s). If the heartbeat is older than ~2 min the worker
+ * is effectively offline and any LIVE-toggled writes will queue forever
+ * without transmission.
+ *
+ * `host` is whatever box currently runs the daemon (read from a setting
+ * the worker writes itself, so the UI always points operators at the
+ * right box even if the task is moved).
  */
 export async function getLamlinksWorkerHealth(): Promise<{
   online: boolean;
   lastHeartbeat: string | null;
   ageSeconds: number | null;
+  host: string | null;
 }> {
-  const v = await getSystemSetting("lamlinks_worker_last_heartbeat");
-  if (!v) return { online: false, lastHeartbeat: null, ageSeconds: null };
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("system_settings")
+    .select("key, value")
+    .in("key", ["lamlinks_worker_last_heartbeat", "lamlinks_worker_host"]);
+  const rows = (data || []) as Array<{ key: string; value: string }>;
+  const v = rows.find((r) => r.key === "lamlinks_worker_last_heartbeat")?.value ?? null;
+  const host = rows.find((r) => r.key === "lamlinks_worker_host")?.value ?? null;
+  if (!v) return { online: false, lastHeartbeat: null, ageSeconds: null, host };
   const lastMs = new Date(v).getTime();
-  if (!Number.isFinite(lastMs)) return { online: false, lastHeartbeat: v, ageSeconds: null };
+  if (!Number.isFinite(lastMs)) return { online: false, lastHeartbeat: v, ageSeconds: null, host };
   const ageSeconds = Math.round((Date.now() - lastMs) / 1000);
-  return { online: ageSeconds < 120, lastHeartbeat: v, ageSeconds };
+  return { online: ageSeconds < 120, lastHeartbeat: v, ageSeconds, host };
 }
 
 export async function setSystemSetting(

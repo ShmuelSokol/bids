@@ -174,7 +174,7 @@ export default async function SolicitationsPage({
             <div className="text-red-700 mt-1 text-xs">
               Worker last heartbeat: {workerHealth.lastHeartbeat ? new Date(workerHealth.lastHeartbeat).toLocaleString() : "never"}
               {workerHealth.ageSeconds !== null && ` (${Math.floor(workerHealth.ageSeconds / 60)} min ago)`}.
-              {" "}Start it on NYEVRVSQL001 — <code className="font-mono">schtasks /run /tn &quot;DIBS - Recurring Daemon&quot;</code> — or log into that box to fire the auto-start trigger.
+              {" "}Start it on <code className="font-mono">{workerHealth.host || "the daemon host"}</code> — <code className="font-mono">schtasks /run /tn &quot;DIBS - Recurring Daemon&quot;</code> — or log into that box to fire the auto-start trigger.
               Until fixed, don&apos;t use the Submit button on Quoted bids; copy to LamLinks manually.
             </div>
           </div>

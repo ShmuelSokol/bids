@@ -10,7 +10,7 @@ import { createServiceClient } from "@/lib/supabase-server";
  * GET with ?id= or re-reads the modal after a few seconds.
  *
  * Why async? Railway can't reach llk_db1 directly (no msnodesqlv8 on
- * linux). The worker on NYEVRVSQL001 handles the LL-side query and
+ * linux). The worker on the daemon host handles the LL-side query and
  * writes results back to Supabase awards + abe_bids.
  */
 export async function POST(req: NextRequest) {

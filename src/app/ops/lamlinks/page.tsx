@@ -16,7 +16,7 @@ export default async function OpsLamlinksPage() {
           <h1 className="text-2xl font-bold">LamLinks Ops</h1>
           <p className="text-muted text-sm mt-1">
             Incident-response console for stuck quote envelopes. All actions
-            round-trip through the Windows worker on NYEVRVSQL001 (Railway
+            round-trip through the Windows worker on the daemon host (Railway
             can&apos;t reach the LL DB directly). Superadmin only.
           </p>
         </div>

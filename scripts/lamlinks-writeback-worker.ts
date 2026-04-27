@@ -239,8 +239,16 @@ async function writeOneBid(
 async function writeHeartbeat(supabase: any) {
   // Update the worker heartbeat on every poll (whether toggle is on or off).
   // UI reads this to decide whether to show "LamLinks worker is offline" warning.
+  // We also publish the worker's hostname so the UI can show operators
+  // which box to RDP into when the daemon needs a manual restart — the
+  // task can be moved between boxes without code changes.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const host = require("os").hostname();
   await supabase.from("system_settings").upsert(
-    { key: "lamlinks_worker_last_heartbeat", value: new Date().toISOString(), description: "ISO timestamp from the LamLinks worker's last poll — UI uses this to detect stale workers" },
+    [
+      { key: "lamlinks_worker_last_heartbeat", value: new Date().toISOString(), description: "ISO timestamp from the LamLinks worker's last poll — UI uses this to detect stale workers" },
+      { key: "lamlinks_worker_host", value: host, description: "Hostname of the box currently running the LamLinks recurring daemon. Updated on every heartbeat." },
+    ],
     { onConflict: "key" },
   );
 }
