@@ -19,11 +19,20 @@ went through), and DLA ack's it.
 
 **If transmit DID succeed and local DB is still broken**, use `scripts/ll-reinsert-orphan-bid.ts` to re-create the k33/k34/k35 shell with `qotref_k33` matching the original, preserving the DLA link.
 
-**Hypothesized fix (patched, unverified)** at the worker side: after the worker
-inserts k34/k35 and finalizes the envelope, it bumps `k07_tab SOL_FORM_PREFERENCES`
-for ajoseph — the same UPDATE LL's own Post flow does per our XE trace of the
-11:24 native Post (envelope 46895). We think the k07 uptime is how LL's local
-VFP invalidates its cursor cache. Needs an end-to-end test once writeback is re-enabled.
+**Hypothesized fix (now CONFIRMED via 2026-04-27 live trace)** at the worker side:
+after the worker inserts k34/k35 and finalizes the envelope, it bumps
+`k07_tab SOL_FORM_PREFERENCES` for ajoseph — the same UPDATE LL's own Post flow
+does per the XE trace.
+
+**Confirmation from 2026-04-27 monitoring:** native LL fires the k07 UPDATE
+**12+ times per bid Post** during a typical 6-min interactive bid burst.
+Both ajoseph (on COOKIE) and yschapiro (on NYEVRVTC001) bump their respective
+k07 rows on every interaction. This is the universal session-state heartbeat
+LL's VFP local cursor uses for cache invalidation. Our worker now matches the
+pattern. End-to-end test still pending but the trace evidence is strong.
+
+See `docs/flows/ll-post-sequence.md` for the full bid-Post SQL sequence
+captured live.
 
 **The 2026-04-24 dead-end trace**: XE sessions `dibs_ll_trace` + `dibs_ll_trace_server` captured the native LL Post pattern. Key SQL that DIBS wasn't mimicking:
 ```

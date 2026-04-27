@@ -231,3 +231,50 @@ export function credentialsFromEnv(): LamLinksRestCredentials {
   }
   return { sallyLogin, apiKey, apiSecret, eCode, hostname };
 }
+
+/**
+ * Pull sally_login + sally_password fresh from kah_tab — same query LL's
+ * native client fires at the start of every Post (confirmed via 2026-04-27
+ * XE trace). Auto-rotates if anyone changes the user's password without
+ * needing an .env update.
+ *
+ * Caller must still provide api_key + api_secret separately (they live in
+ * LLPro.ini on disk, not in the DB). This helper is useful when those two
+ * are sourced from .env but you want fresh sally_login on every call.
+ *
+ * Requires msnodesqlv8 + Windows Auth on a host with reach to NYEVRVSQL001.
+ * Won't run on Railway. Use this in worker context only.
+ */
+export async function credentialsFromKahTab(
+  idnk14: number,
+  apiKey: string,
+  apiSecret: string,
+  eCode: string = "0AG09",
+): Promise<LamLinksRestCredentials> {
+  // Lazy import so Railway-side code that imports lamlinks-rest doesn't blow up
+  // on the missing native msnodesqlv8 module. Use require() to dodge the
+  // type-resolution warning since msnodesqlv8 ships no .d.ts.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sql: any = require("mssql/msnodesqlv8");
+  const pool = await (sql.default || sql).connect({
+    connectionString:
+      "Driver={SQL Server};Server=NYEVRVSQL001;Database=llk_db1;Trusted_Connection=yes;",
+  });
+  try {
+    const r = await pool.request().query(`
+      SELECT a_note_kah
+      FROM dbo.kah_tab
+      WHERE anutyp_kah LIKE 'Sally Credentials'
+        AND anutbl_kah LIKE 'k14'
+        AND idnanu_kah = ${Number(idnk14)}
+    `);
+    if (r.recordset.length === 0) throw new Error(`No Sally Credentials row for idnk14=${idnk14}`);
+    const xml = String(r.recordset[0].a_note_kah || "");
+    const sallyLogin =
+      (/<sally_login>([^<]*)<\/sally_login>/i.exec(xml) || [])[1] ?? "";
+    if (!sallyLogin) throw new Error(`kah_tab row for idnk14=${idnk14} missing <sally_login>`);
+    return { sallyLogin, apiKey, apiSecret, eCode };
+  } finally {
+    await pool.close();
+  }
+}
