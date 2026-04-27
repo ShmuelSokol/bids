@@ -2,15 +2,31 @@
 
 ## Why this exists
 
-`api.lamlinks.com` IP-whitelists. NYEVRVTC001 is in; GLOVE/Railway are not. Calling Sally REST directly from Railway returns 401 even with valid creds (confirmed 2026-04-27). The fix: run a small Node worker on a whitelisted box that pulls work from a Supabase queue and forwards calls to Sally on DIBS's behalf.
+`api.lamlinks.com` IP-whitelists. Confirmed 2026-04-27: same creds return 200 OK from any LL workstation in the office, but 401 from GLOVE/Railway. The fix: run a small Node worker on a whitelisted box that pulls work from a Supabase queue and forwards calls to Sally on DIBS's behalf.
 
 This is the same pattern as `lamlinks_rescue_actions` (already in production for SQL-writeback recovery) — just pointed at the REST API instead of the LL SQL DB.
+
+## Scope: what this unlocks
+
+The worker handles **any `lis_function` call**, not just bid writeback. The same queue + worker can drive:
+
+| `lis_function` | Purpose | Replaces |
+|---|---|---|
+| `put_client_quote` | Submit a bid to DLA | SQL writeback into k33/k34/k35 + Abe's manual Post click |
+| `put_client_invoice` *(name TBC with Yosef)* | Submit an invoice | SQL writeback + manual Post in LL |
+| `are_you_listening` | Heartbeat | n/a (new — used for liveness checks) |
+| `get_sent_quotes_by_timeframe` | Read recently-transmitted bids | Polling LL's SQL DB |
+| `sol_no_to_quote_info` | Pull a quote by sol number | Reads k34/k35 directly |
+| `get_awards_by_contract_url` | Pull awards by contract | Reads k81 directly |
+| `e_code_to_entity_info` | Lookup entity info | Reads k14 directly |
+
+**Per-function ACL:** the server gates each function independently. ERG is confirmed authorized for `get_sent_quotes_by_timeframe` (200) and forbidden on `get_quotes_by_timeframe` (`API Access Forbidden - 84662`). Whether `put_client_quote` and `put_client_invoice` are in our grant — open question for Yosef / first real test.
 
 ## Flow
 
 ```
-DIBS (Railway)                Supabase                 NYEVRVTC001 worker            api.lamlinks.com
-─────────                     ────────                 ──────────────────            ─────────────────
+DIBS (Railway)                Supabase                 Whitelisted-box worker         api.lamlinks.com
+─────────                     ────────                 ──────────────────────         ─────────────────
 INSERT lamlinks_rest_queue ─► [pending row]
                                    │
                                    │ ◄─── poll(30s) ─── ll-rest-worker.ts
@@ -59,9 +75,34 @@ CREATE INDEX idx_rest_queue_pending
   WHERE state IN ('pending','running');
 ```
 
+## Where the worker should run
+
+Any LL-installed Windows box in the office is almost certainly whitelisted (the office likely NATs all egress through one external IP, and LL itself reaches Sally from these boxes). The trade-offs are about operational fit, not whitelist eligibility.
+
+| Candidate | Pros | Cons |
+|---|---|---|
+| **NYEVRVTC001** (server-class Windows box that hosts LL files) | Already runs 24/7. Already has LL's curl bundled. Server-class — never sleeps, never logs out. No user impact if Node is added. | Production server — anything installed there has higher review bar. Less casual to RDP into for debugging. |
+| **NYEVRVSQL001** (LL SQL Server) | Already runs 24/7, already has Node + tsx + this repo (it hosts the SQL writeback worker today). Easy to deploy alongside existing worker. | Whitelist status not yet verified — needs a one-time test. If not whitelisted, ask Yosef to add. |
+| **Yosef's PC** | Yosef has admin and would maintain it. Easy debug access. | Sleeps when he's offline / on PTO. Worker dies when he reboots. |
+| **Abe's COOKIE box** | Already running during bid hours. | Abe doesn't do dev work; Yosef would still have to set it up. Sleeps off-hours. |
+| **Dedicated VM in the office** | Clean isolation. Yosef can manage independently. | Yosef has to spin one up. Most setup cost. |
+
+**Recommendation:** NYEVRVSQL001 if it's whitelisted (single deployment alongside existing worker, single host to maintain). NYEVRVTC001 as fallback. Avoid user PCs unless we're confident they don't sleep.
+
+**Whitelist verification one-liner** (run from candidate box):
+
+```powershell
+& "G:\PROGRAMS\LAMLINKS\Control\Lamlinkp\LLPservr\code\curl.exe" --digest `
+  --data "wait=15&function=are_you_listening&data=%3CRequest%3E%3Clis_function%3Eare_you_listening%3C%2Flis_function%3E%3Ce_code%3E0AG09%3C%2Fe_code%3E%3Creq_data%3E%3C%2Freq_data%3E%3C%2FRequest%3E" `
+  -u"<login>#<key>:<secret>" -c $env:TEMP\jar.txt `
+  "http://api.lamlinks.com/api/llsm/create" -o $env:TEMP\heartbeat.xml; gc $env:TEMP\heartbeat.xml
+```
+
+A response containing `<completion_code>1</completion_code>` (or any well-formed `<api_req>` envelope, even an "invalid" one) confirms the box is whitelisted. A 401 confirms it isn't.
+
 ## Worker (`scripts/ll-rest-worker.ts`)
 
-Runs on NYEVRVTC001 under PM2 or a Windows service wrapper. Single process, single concurrency (LL's API isn't built for parallelism — Abe sees ~1 call per 30 min from native LL).
+Single process, single concurrency (LL's API isn't built for parallelism — Abe sees ~1 call per 30 min from native LL). Wrap as a Windows service via NSSM, run under PM2, or just leave a minimized PowerShell window open during business hours.
 
 ```
 loop:
