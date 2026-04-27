@@ -188,6 +188,17 @@ When Abe clicks Post, LamLinks flips the four status strings on `k33_tab` from s
 
 `k08_tab.niin_k08` stores NIINs **with dashes**: `"01-578-7887"`, not `"015787887"`. DIBS stores NSN as `"6509-01-578-7887"` (FSC-NIIN with dashes in NIIN). Every lookup must use the dashed form. We burned 10 minutes on this the first test.
 
+## Sally REST status (updated 2026-04-27)
+
+The SQL writeback path documented above is the only confirmed-working transmission path today. We've also been investigating the alternative — calling Sally's REST API directly with `lis_function=put_client_quote` — and as of 2026-04-27 we know:
+
+- **Creds work.** `api_key` + `api_secret` recovered from `\\NYEVRVTC001\c$\LamlinkP\data\log\*.txt` are byte-perfect and survive 3+ days without rotation.
+- **IP whitelist on `api.lamlinks.com` is real.** Same creds: 200 OK from NYEVRVTC001, 401 from GLOVE/Railway. Any REST-mode writeback must run from a whitelisted box.
+- **`/api/llsm/create` accepts our auth** — confirmed via a malformed-body test that still returned a `<ApiResponseEnvelope>` with `<status>invalid</status>`. Authentication and authorization both pass for that endpoint.
+- **Per-function ACL** — same creds returned 200 on `get_sent_quotes_by_timeframe` but `API Access Forbidden - 84662` on `get_quotes_by_timeframe`. Whether ERG is licensed for `put_client_quote` specifically is the open question.
+
+The architecture for closing this loop — a worker on NYEVRVTC001 that drains a Supabase queue and forwards Sally REST calls — is documented at [sally-rest-worker](./sally-rest-worker.md). Until that worker is deployed and `put_client_quote` is proven, **SQL writeback (this document) is the only path that moves bids to DLA.**
+
 ## Why we don't just mint a new envelope from scratch
 
 We could. It's what "pure" DIBS write-back would look like — Abe doesn't need to save a dummy line first. But until we've transmitted ~5-10 bids via the piggyback path and know every field in `k34_tab` is safe to own, fresh-envelope mode carries these risks:

@@ -31,6 +31,11 @@ export const WIKI_PAGES = [
     subtitle: "How DIBS transmits bids to DLA via LamLinks",
   },
   {
+    slug: "sally-rest-worker",
+    title: "Sally REST Worker (NYEVRVTC001)",
+    subtitle: "Why REST writeback runs on a whitelisted box, not Railway",
+  },
+  {
     slug: "lamlinks-collision-2026-04-21",
     title: "LamLinks Counter Collision (2026-04-21)",
     subtitle: "Incident retrospective + plan forward",
