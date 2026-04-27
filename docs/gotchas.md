@@ -42,23 +42,26 @@ COMMIT TRAN
 set implicit_transactions off
 ```
 
-## LamLinks Sally REST: creds are in LL's own curl logs
+## LamLinks Sally REST: IP whitelist is real (CONFIRMED 2026-04-27)
 
 > Discovery (2026-04-24): `api_key` + `api_secret` weren't in LLPro.ini, registry, binaries, or `kah_tab`. They were sitting in cleartext in every line of LL's own curl verbose output on NYEVRVTC001 at `\\NYEVRVTC001\c$\LamlinkP\data\log\*.txt` — every line with `-u "<sally_login>#<api_key>:<api_secret>"`.
 
-**Why this matters:** we no longer need Yosef to surface the creds. Also
-**IP whitelist is suspected** — the creds extracted byte-for-byte return HTTP 401
-from GLOVE via both our Sally client and raw `curl --digest`, but they succeed
-from NYEVRVTC001 per LL's own logs.
+**Confirmed 2026-04-27:** the creds work, the IP whitelist is real.
+- From NYEVRVTC001 (whitelisted): curl `--digest` against `/api/llsm/create` returns 200 OK with a real envelope. ERG IS authorized for `lis_function` calls.
+- From GLOVE/Railway (not whitelisted): same creds, same digest, returns 401 every time.
+- The earlier 401-from-NYEVRVTC001 result was a red herring caused by an empty `--data ""` body. Any non-empty body authenticates correctly. Likely the server's auth path requires `Content-Length > 0`.
+
+**Creds are byte-perfect** — verified against today's LL logs. `^,` special chars survive PowerShell + curl arg-passing fine. No mangling, no rotation since 2026-04-24.
+
+**Architecture decision:** REST writeback runs from a whitelisted box, NOT from GLOVE/Railway. See `docs/architecture/sally-rest-worker.md` for the queue + worker design. Whitelist coverage of NYEVRVSQL001 is unconfirmed — assume only NYEVRVTC001 until tested.
+
+**Per-function ACL:** same creds returned 200 on `get_sent_quotes_by_timeframe` but `API Access Forbidden - 84662` on `get_quotes_by_timeframe`. Each `lis_function` is independently gated. Whether `put_client_quote` (the one we need for bid writeback) is in our grant — unknown until we send a real one. SQL writeback remains the only confirmed-working path until the worker proves REST end-to-end.
+
+**RDP em-dash autocorrect** (`--` → `–`) silently breaks curl when pasting via Remote Desktop. Symptom: `failed to convert -data to ACE; no mapping for unicode char`, or curl falls through to a GET with no body. Fix: save the command to a `.ps1` file via Notepad first (Notepad doesn't autocorrect), then `powershell -File <path>`.
 
 Test script at `https://jzgvdfzboknpcrhymjob.supabase.co/storage/v1/object/public/briefings/ll-api-test.ps1` — downloads + runs from any Windows box, writes HTTP result back to Supabase Storage. On older Windows, must force TLS 1.2 first: `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12`.
 
-**Creds live in `.env` on GLOVE now** (`LL_SALLY_LOGIN`, `LL_API_KEY`, `LL_API_SECRET`, `LL_E_CODE`). Never commit `.env`.
-
-**Before enabling REST writeback:** verify the running host is whitelisted by
-running the test script from it. If writeback runs on NYEVRVSQL001 and that
-host is NOT whitelisted, the REST path won't work from there — we'd need to
-route the Sally call through NYEVRVTC001 or get Yosef to whitelist NYEVRVSQL001.
+**Creds live in `.env` on GLOVE** (`LL_SALLY_LOGIN`, `LL_API_KEY`, `LL_API_SECRET`, `LL_E_CODE`). Never commit `.env`. Will be duplicated to NYEVRVTC001 once the worker is built.
 
 ## LL imports only 1 CLIN of multi-CLIN DIBBS sols
 

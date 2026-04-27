@@ -1,5 +1,25 @@
 # ProcMon capture guide — recovering LL Sally api_key/api_secret
 
+> **STATUS (2026-04-27): NOT NEEDED RIGHT NOW.** We already have working
+> `api_key` + `api_secret` values, recovered from `\\NYEVRVTC001\c$\LamlinkP\data\log\*.txt`
+> (LL's own curl verbose logs leak them on every call). Values are in `.env` on
+> GLOVE. The current blocker is **IP whitelist** at `api.lamlinks.com`, not
+> missing creds — see `docs/sessions/2026-04-24-writeback-live-test.md` and the
+> `LAMLINKS WRITEBACK RULES` section of `CLAUDE.md`.
+>
+> **Use this runbook when:**
+> 1. The api_key rotates and the .env values stop working from a host where
+>    they previously worked. (Check by re-reading the curl logs first; LL itself
+>    will print the new values on its next API call.)
+> 2. You need to onboard a new LL workstation that doesn't yet have a config
+>    file with the keys.
+> 3. The IP-whitelist test confirms the values are wrong (HTTP 401 even from
+>    NYEVRVTC001, the box LL's own logs show as succeeding).
+>
+> Otherwise skip — the keys aren't the problem.
+
+---
+
 **Goal:** capture the file or registry read that loads `api_key` + `api_secret`
 into LL's process memory at startup. The `api_key` (27-char `7Lx`-prefix) and
 `api_secret` (14-char mixed) live on disk somewhere on a working LL workstation

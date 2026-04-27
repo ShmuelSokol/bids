@@ -52,7 +52,9 @@ When you learn something new that future sessions would benefit from, add it to 
 - **DO NOT panic-nuke envelopes on cursor errors.** Wait for DLA ack email or check `k33_tab.t_stat_k33='sent'` before touching. If the envelope's k33/k34 are gone but DLA has the bid, use `scripts/ll-reinsert-orphan-bid.ts` to restore the shell with original `qotref_k33`.
 - **`lamlinks_writeback_enabled=false`** in `system_settings` right now. Pending: test the k07 cursor-fix patch (in worker) end-to-end before re-enabling.
 - **LL Sally REST creds recovered from `\\NYEVRVTC001\c$\LamlinkP\data\log\*.txt`** — cleartext in every curl invocation. Stored in `.env` on GLOVE as `LL_SALLY_LOGIN`/`LL_API_KEY`/`LL_API_SECRET`/`LL_E_CODE`. NEVER commit `.env`.
-- **IP whitelist on api.lamlinks.com is suspected but unconfirmed.** Valid creds 401 from GLOVE. Test script at `https://jzgvdfzboknpcrhymjob.supabase.co/storage/v1/object/public/briefings/ll-api-test.ps1` — run on a whitelisted host (NYEVRVTC001, COOKIE, or NYEVRVSQL001 TBD) to verify.
+- **IP whitelist on api.lamlinks.com is REAL (confirmed 2026-04-27).** Same creds 200 from NYEVRVTC001, 401 from GLOVE. REST writeback must run from a whitelisted box — see `docs/architecture/sally-rest-worker.md` for the queue+worker design.
+- **Per-function ACL on Sally** — same creds returned 200 on `get_sent_quotes_by_timeframe` but "API Access Forbidden" on `get_quotes_by_timeframe`. Each `lis_function` is independently gated. Whether ERG is authorized for `put_client_quote` is still unconfirmed — SQL writeback remains the only working path until the worker tests it.
+- **RDP paste mangles `--` to em-dash `–`** in PowerShell. When sharing curl one-liners, save them to a `.ps1` file via Notepad (Notepad doesn't autocorrect) and run with `powershell -File`.
 - **Pipeline observability** at `/ops/dibs-pipeline` — watches write queue + latest LL-side snapshot (table `ll_pipeline_snapshots`, populated every 5min by `scripts/snapshot-ll-pipeline.ts` on NYEVRVSQL001).
 
 ## SUPABASE QUERY RULES (learned the hard way)
