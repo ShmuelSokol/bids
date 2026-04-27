@@ -45,25 +45,26 @@ async function main() {
     ORDER BY k81.addtme_k81 DESC
   `);
 
-  // Pull Abe's bids on this NSN (k34/k35 via k11/k08/k10)
+  // Pull Abe's bids via our_quote_line_5_view (single denormalized join,
+  // includes t_stat_k33 + kc4 award linkage for free).
+  // Discovered 2026-04-27 via XE trace mining; replaces hand-rolled k34/k35/k11/k08/k10 join.
   const bids = await pool.request().query(`
     SELECT
-      k34.uptime_k34 AS bid_time,
-      k10.sol_no_k10 AS solicitation_number,
-      k35.qty_k35 AS bid_qty,
-      k35.up_k35 AS bid_price,
-      k35.daro_k35 AS lead_days,
-      k34.pn_k34 AS part_number
-    FROM k34_tab k34
-    INNER JOIN k35_tab k35 ON k35.idnk34_k35 = k34.idnk34_k34
-    INNER JOIN k11_tab k11 ON k11.idnk11_k11 = k34.idnk11_k34
-    INNER JOIN k08_tab k08 ON k08.idnk08_k08 = k11.idnk08_k11
-    INNER JOIN k10_tab k10 ON k10.idnk10_k10 = k11.idnk10_k11
-    WHERE k08.niin_k08 = '${niin.replace(/'/g, "''")}'
-      AND k08.fsc_k08 = '${fsc.replace(/'/g, "''")}'
-      AND UPPER(LTRIM(RTRIM(k34.upname_k34))) = 'AJOSEPH'
-      AND k34.uptime_k34 >= DATEADD(YEAR, -5, GETDATE())
-    ORDER BY k34.uptime_k34 DESC
+      uptime_k34 AS bid_time,
+      sol_no_k10 AS solicitation_number,
+      qty_k35 AS bid_qty,
+      up_k35 AS bid_price,
+      daro_k35 AS lead_days,
+      pn_k34 AS part_number,
+      mcage_k34 AS mfr_cage,
+      t_stat_k33 AS transmit_status,
+      idnkc4_kc4 AS award_kc4
+    FROM our_quote_line_5_view
+    WHERE niin_k08 = '${niin.replace(/'/g, "''")}'
+      AND fsc_k08 = '${fsc.replace(/'/g, "''")}'
+      AND UPPER(LTRIM(RTRIM(upname_k34))) = 'AJOSEPH'
+      AND uptime_k34 >= DATEADD(YEAR, -5, GETDATE())
+    ORDER BY uptime_k34 DESC
   `);
 
   console.log(`LL: ${awards.recordset.length} awards, ${bids.recordset.length} Abe bids for NSN ${nsn}`);

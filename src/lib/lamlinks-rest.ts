@@ -233,17 +233,27 @@ export function credentialsFromEnv(): LamLinksRestCredentials {
 }
 
 /**
- * Pull sally_login + sally_password fresh from kah_tab — same query LL's
- * native client fires at the start of every Post (confirmed via 2026-04-27
- * XE trace). Auto-rotates if anyone changes the user's password without
- * needing an .env update.
+ * Pull sally_login fresh from kah_tab — same query LL's native client fires
+ * at the start of every Post (confirmed via 2026-04-27 XE trace).
+ * Auto-rotates if anyone changes the user's email without a .env update.
  *
- * Caller must still provide api_key + api_secret separately (they live in
- * LLPro.ini on disk, not in the DB). This helper is useful when those two
- * are sourced from .env but you want fresh sally_login on every call.
+ * IMPORTANT: kah_tab's sally_password is a 4-digit PIN for LL DESKTOP login,
+ * NOT the api_secret needed for Sally REST. The REST api_secret is a 14-char
+ * mixed-case+symbols string that lives only in LLPro.ini on disk. This
+ * helper takes apiKey + apiSecret as separate args because they're sourced
+ * from .env / filesystem capture, not from the DB.
+ *
+ * Use this in writeback-worker context once we migrate from SQL writeback
+ * to REST writeback (via put_client_quote). For ajoseph, idnk14=3.
  *
  * Requires msnodesqlv8 + Windows Auth on a host with reach to NYEVRVSQL001.
- * Won't run on Railway. Use this in worker context only.
+ * Won't run on Railway. Worker-side only.
+ *
+ * Common idnk14 values (from sally_credential_1_view):
+ *   sgansburg=1, ashipping=2, ajoseph=3, bjones=4, dovid=5,
+ *   mrutner=6, shippingii=7, rhott=8, lberkowitz=9, wmaldonado=10,
+ *   jmogitz=11, yschapiro=12, dbatalion=13, Collin=14, sshwerd=15,
+ *   rpozo=16, testW=17, swagshul=19
  */
 export async function credentialsFromKahTab(
   idnk14: number,

@@ -203,10 +203,40 @@ Heavy hitters from the daemon:
 - `UPDATE kc4_tab` (133 hits) — incoming awards being updated
 - `INSERT k20_tab` (78) — log/audit of operations
 - `UPDATE k81_tab` (7), `INSERT k81_tab` (2) — actual award rows being added/updated
-- `INSERT k83_tab/k84_tab/k85_tab/k86_tab` — **the award chain extends past k81**. DIBS currently only syncs k81 → may be missing data in k83–k86 (probably contract delivery / shipping detail).
+- `INSERT k83_tab/k84_tab/k85_tab/k86_tab` — the award chain extends past k81 (see below)
 - `DELETE k15_tab` (5) — daemon tidies up temp data
 
-Worth a follow-up to probe k83–k86 schema and decide if DIBS should sync them.
+### k83–k86: the contract-fulfillment chain (probed 2026-04-27)
+
+The award chain after k81 covers DLA's delivery/receiving tracking:
+
+```
+k79_tab (contract header)
+  ├── k83_tab — contract status events (smedes_k83="EDI contract received", etc.)
+  │             links: idnk79_k83, idnk82_k83
+  │
+  └── k84_tab — per-contract-line shipping subtotals
+                links: idnk79_k84, idnk71_k84
+                fields: sop_um_k84, qfactr_k84, plus quantity counters
+                  (cnq, mkq, rnq, roq, snq, slq, srq, soq)_01_k84
+        │
+        └── k85_tab — CLIN delivery commitment per line
+                      links: idnk81_k85 (the awarded CLIN), idnk84_k85
+                      fields: dlydte_k85 (delivery date), rsvqty_k85, rsoqty_k85,
+                              + same quantity counter family
+              │
+              └── k86_tab — actual receipt events
+                            links: idnk85_k86, idnk87_k86, idnk83_k86
+                            fields: cnq_01_k86 (received qty), dlydte_k86
+```
+
+**DIBS does NOT currently sync these.** We get receiving signals through other paths
+(`ll_edi_transmissions`, AX `CustTransactions`). Marginal value to add a full sync.
+
+**When this chain matters**: if a DLA award arrives but we can't tell from existing
+DIBS data whether DLA has actually received the shipment, the answer is in k86.
+Probe via `clin_basic_2_view` (which joins this chain) or write targeted JOIN
+queries against k81 → k85 → k86 by award ID.
 
 ### COOKIE-side write picture (Abe's interactive use)
 

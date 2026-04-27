@@ -40,6 +40,21 @@ type Snapshot = {
   orphan_awards_samples: any[] | null;
   recent_envelopes: Envelope[] | null;
   snapshot_error: string | null;
+  stuck_imports_count?: number;
+  stuck_imports_samples?: Kc5Import[] | null;
+  latest_import_status?: string | null;
+};
+
+type Kc5Import = {
+  idnkc5_kc5: number | string;
+  addtme_kc5: string;
+  addnme_kc5: string;
+  i_stat_kc5: string;
+  dnltyp_kc5: string;
+  ref_no_kc5: string;
+  dnldes_kc5: string;
+  itmcnt_kc5: number;
+  age_min: number;
 };
 
 type Props = {
@@ -218,6 +233,13 @@ export function DibsPipelineDashboard(props: Props) {
         ageField
       />
 
+      {/* Panel 3b: LL DIBBS importer health (kc5_tab) */}
+      <Kc5HealthPanel
+        count={props.latestSnapshot?.stuck_imports_count ?? 0}
+        samples={props.latestSnapshot?.stuck_imports_samples ?? []}
+        latestStatus={props.latestSnapshot?.latest_import_status ?? null}
+      />
+
       {/* Panel 4: Recent envelope activity (last 24h) */}
       <div className="rounded-xl border border-card-border bg-card-bg overflow-hidden">
         <div className="px-4 py-2 border-b border-card-border bg-gray-50 flex items-center justify-between">
@@ -327,6 +349,77 @@ function EnvelopePanel({
                   {ageField && <td className="px-3 py-1.5 text-right font-mono text-[11px]">{e.age_min != null ? `${e.age_min}m` : "—"}</td>}
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Kc5HealthPanel({
+  count, samples, latestStatus,
+}: {
+  count: number;
+  samples: Kc5Import[];
+  latestStatus: string | null;
+}) {
+  const ok = count === 0;
+  return (
+    <div className="rounded-xl border border-card-border bg-card-bg overflow-hidden">
+      <div className="px-4 py-2 border-b border-card-border bg-gray-50 flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold">LL DIBBS Importer (kc5_tab)</div>
+          <div className="text-[11px] text-muted mt-0.5">
+            NYEVRVTC001 runs LL&apos;s overnight DLA file pull. Stuck or failed imports here mean DIBS
+            data goes stale silently (we mirror LL, not DIBBS directly).
+          </div>
+          {latestStatus && (
+            <div className="text-[11px] text-muted mt-1">
+              <span className="font-medium">Last run:</span> {latestStatus}
+            </div>
+          )}
+        </div>
+        <div className={`rounded-lg px-4 py-2 font-mono text-2xl font-bold ${ok ? "bg-green-50 text-green-700" : "bg-amber-50 border border-amber-300 text-amber-900"}`}>
+          {count}
+        </div>
+      </div>
+      {samples.length > 0 && (
+        <div className="max-h-[260px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-muted sticky top-0">
+              <tr>
+                <th className="px-3 py-1.5 text-left font-medium">When</th>
+                <th className="px-3 py-1.5 text-left font-medium">User</th>
+                <th className="px-3 py-1.5 text-left font-medium">Type</th>
+                <th className="px-3 py-1.5 text-left font-medium">Status</th>
+                <th className="px-3 py-1.5 text-left font-medium">Description</th>
+                <th className="px-3 py-1.5 text-right font-medium">Items</th>
+                <th className="px-3 py-1.5 text-right font-medium">Age</th>
+              </tr>
+            </thead>
+            <tbody>
+              {samples.map((e) => {
+                const status = String(e.i_stat_kc5 || "").trim();
+                const failed = status.includes("Not OK");
+                const stuck = status === "Importing File";
+                const hue = failed ? "bg-red-100 text-red-800" : stuck ? "bg-amber-100 text-amber-800" : "bg-gray-100 text-gray-700";
+                const ageH = e.age_min ? Math.floor(e.age_min / 60) : 0;
+                const ageMin = e.age_min ? e.age_min % 60 : 0;
+                return (
+                  <tr key={String(e.idnkc5_kc5)} className="border-t border-card-border/60">
+                    <td className="px-3 py-1.5 font-mono text-[10px] text-muted">{e.addtme_kc5 ? new Date(e.addtme_kc5).toLocaleString() : "?"}</td>
+                    <td className="px-3 py-1.5 text-[11px]">{String(e.addnme_kc5 || "").trim()}</td>
+                    <td className="px-3 py-1.5 text-[11px] font-mono">{String(e.dnltyp_kc5 || "").trim()}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${hue}`}>{status}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-[11px] truncate max-w-[260px]" title={e.dnldes_kc5}>{String(e.dnldes_kc5 || "").trim()}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{e.itmcnt_kc5 || "—"}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-[11px]">{ageH > 0 ? `${ageH}h ` : ""}{ageMin}m</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

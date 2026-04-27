@@ -64,6 +64,34 @@ async function main() {
       ORDER BY idnk33_k33 DESC
     `);
 
+    // 4. Stuck DLA imports — kc5_tab tracks LL's overnight DIBBS file imports.
+    // Rows stuck at i_stat='Importing File' for >2h indicate the importer
+    // crashed mid-job; rows with 'Not OK' status mean the import failed.
+    // Both are LL-side outages that staleness DIBS data without anyone noticing.
+    const stuckImports = await pool.request().query(`
+      SELECT TOP 20
+        idnkc5_kc5, addtme_kc5, addnme_kc5, i_stat_kc5, dnltyp_kc5,
+        ref_no_kc5, dnldes_kc5, itmcnt_kc5,
+        DATEDIFF(MINUTE, addtme_kc5, GETDATE()) AS age_min
+      FROM kc5_tab
+      WHERE addtme_kc5 >= DATEADD(DAY, -7, GETDATE())
+        AND (
+          (LTRIM(RTRIM(i_stat_kc5)) = 'Importing File' AND DATEDIFF(MINUTE, addtme_kc5, GETDATE()) > 120)
+          OR LTRIM(RTRIM(i_stat_kc5)) LIKE 'Import Completed Not OK%'
+        )
+      ORDER BY addtme_kc5 DESC
+    `);
+
+    // Latest import status (any row, just to show "last sync ran X hours ago, status Y")
+    const latestImport = await pool.request().query(`
+      SELECT TOP 1 addtme_kc5, i_stat_kc5, dnltyp_kc5, itmcnt_kc5
+      FROM kc5_tab
+      ORDER BY addtme_kc5 DESC
+    `);
+    const latestStatusLine = latestImport.recordset[0]
+      ? `${latestImport.recordset[0].addtme_kc5?.toISOString?.() || latestImport.recordset[0].addtme_kc5} — ${String(latestImport.recordset[0].i_stat_kc5 || "").trim()} (${latestImport.recordset[0].dnltyp_kc5 || ""}, ${latestImport.recordset[0].itmcnt_kc5} items)`
+      : "(no import history)";
+
     await sb.from("ll_pipeline_snapshots").insert({
       snapshot_time: startedAt,
       stuck_staged_count: stuck.recordset.length,
@@ -73,6 +101,9 @@ async function main() {
       orphan_awards_count: 0,
       orphan_awards_samples: null,
       recent_envelopes: recent.recordset,
+      stuck_imports_count: stuckImports.recordset.length,
+      stuck_imports_samples: stuckImports.recordset,
+      latest_import_status: latestStatusLine,
     });
 
     // Keep only the most recent 200 snapshots (housekeeping)
@@ -86,7 +117,7 @@ async function main() {
       await sb.from("ll_pipeline_snapshots").delete().in("id", ids);
     }
 
-    console.log(`[${startedAt}] snapshot ok — stuck=${stuck.recordset.length} unshipped=${unshipped.recordset.length} recent=${recent.recordset.length}`);
+    console.log(`[${startedAt}] snapshot ok — stuck=${stuck.recordset.length} unshipped=${unshipped.recordset.length} recent=${recent.recordset.length} stuckImports=${stuckImports.recordset.length}`);
   } catch (e: any) {
     console.error(`[${startedAt}] snapshot error:`, e.message);
     await sb.from("ll_pipeline_snapshots").insert({
