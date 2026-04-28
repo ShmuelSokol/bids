@@ -968,6 +968,34 @@ async function writeOneInvoice(
       idnkbrIds.push(kbrRes.recordset[0].newId);
     }
 
+    // 6. Write k20 log entries for the WAWF transmissions. LL UI parses
+    // these to show the invoice number against the shipment row. Without
+    // k20 entries, the shipment screen's "Invoice #" field reads blank
+    // even though kad+kbr are correctly populated.
+    //
+    // Observed format (from 2026-04-28 manual trace):
+    //   810: "WAWF 810 for <contract>, invoice '<cinnum>, shipment <shpnum> has been uploaded to the Lamlinks Corp Server"
+    //   856: "WAWF 856 for , invoice ', shipment  has been uploaded to the Lamlinks Corp Server"
+    //   (the 856 has empty fields by LL's own design — match it)
+    const shpnumQ = await req.query(`SELECT shpnum_kaj FROM kaj_tab WHERE idnkaj_kaj = ${idnkaj}`);
+    const shpnum = String(shpnumQ.recordset[0]?.shpnum_kaj || "").trim();
+    const log810 = `WAWF 810 for ${contractNo}, invoice '${cinnum}, shipment ${shpnum} has been uploaded to the Lamlinks Corp Server`;
+    const log856 = `WAWF 856 for , invoice ', shipment  has been uploaded to the Lamlinks Corp Server`;
+    for (const msg of [log810, log856]) {
+      const safeMsg80 = msg.slice(0, 80).replace(/'/g, "''");
+      const safeFull = msg.replace(/'/g, "''");
+      await req.query(`
+        INSERT INTO k20_tab (
+          uptime_k20, upname_k20, susnam_k20, msgtno_k20, msgcls_k20,
+          logmsg_k20, llptyp_k20, idnllp_k20, logtxt_k20
+        )
+        VALUES (
+          GETDATE(), 'ajoseph   ', 'WAWF_edi_upload', 102, 'routine',
+          '${safeMsg80}', '', 0, '${safeFull}'
+        )
+      `);
+    }
+
     await tx.commit();
     return { idnkad, idnkaeIds, idnkbrIds, cinNo };
   } catch (e) {
