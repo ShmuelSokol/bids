@@ -872,12 +872,12 @@ async function writeOneInvoice(
       const ui = String(L.uom || "EA").slice(0, 2);
       const kaeRes = await req.query(`
         INSERT INTO kae_tab (
-          idnkad_kae, cilcls_kae, cil_no_kae, cildes_kae,
+          uptime_kae, upname_kae, idnkad_kae, cilcls_kae, cil_no_kae, cildes_kae,
           cilqty_kae, cil_up_kae, cil_ui_kae, cilext_kae, pinval_kae, xinval_kae
         )
         OUTPUT inserted.idnkae_kae AS newId
         VALUES (
-          ${idnkad}, 'Material  ', ${i + 1}, '${desc}',
+          GETDATE(), 'ajoseph   ', ${idnkad}, 'Material  ', ${i + 1}, '${desc}',
           ${qty}, ${up}, '${ui}', ${ext}, 0, 0
         )
       `);
