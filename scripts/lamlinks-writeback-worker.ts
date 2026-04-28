@@ -765,16 +765,22 @@ async function writeOneInvoice(
   const total = Number(row.ax_total_amount) || 0;
   if (total <= 0) throw new Error("missing ax_total_amount");
 
+  // Match either Shipped (already past Abe's manual "click Shipped") or
+  // Packing (warehouse-fresh; we'll flip to Shipped inside the transaction
+  // below, mimicking Abe's manual flow). Packed=T is the real "warehouse
+  // is done" signal — anything still in Packing without packed=T is in
+  // motion and shouldn't be invoiced yet.
   const kajLookup = await pool.request().query(`
     SELECT TOP 5
-      kaj.idnkaj_kaj, kaj.shpnum_kaj, kaj.shpsta_kaj,
+      kaj.idnkaj_kaj, kaj.shpnum_kaj, kaj.shpsta_kaj, kaj.packed_kaj,
       k80.idnk80_k80, k80.relext_k80, k80.rlssta_k80
     FROM k79_tab k79
     JOIN k80_tab k80 ON k80.idnk79_k80 = k79.idnk79_k79
     JOIN kaj_tab kaj ON kaj.idnk80_kaj = k80.idnk80_k80
     WHERE LTRIM(RTRIM(k79.cntrct_k79)) = '${contractNo.replace(/'/g, "''")}'
       AND ABS(k80.relext_k80 - ${total}) < 0.01
-      AND LTRIM(RTRIM(kaj.shpsta_kaj)) = 'Shipped'
+      AND LTRIM(RTRIM(kaj.shpsta_kaj)) IN ('Shipped', 'Packing')
+      AND LTRIM(RTRIM(ISNULL(kaj.packed_kaj, ''))) = 'T'
     ORDER BY kaj.uptime_kaj DESC
   `);
   if (kajLookup.recordset.length === 0) {
@@ -878,7 +884,17 @@ async function writeOneInvoice(
       idnkaeIds.push(kaeRes.recordset[0].newId);
     }
 
-    // 4. UPDATE k80: release date + status='Closed' (matches Abe's flow)
+    // 4a. Flip kaj.shpsta from 'Packing' to 'Shipped' (idempotent if already
+    // Shipped). Mirrors Abe's manual "click Shipped" UI step. Packing-state
+    // shipments wouldn't transmit otherwise.
+    await req.query(`
+      UPDATE kaj_tab
+      SET shpsta_kaj = 'Shipped', uptime_kaj = GETDATE()
+      WHERE idnkaj_kaj = ${idnkaj}
+        AND LTRIM(RTRIM(shpsta_kaj)) <> 'Shipped'
+    `);
+
+    // 4b. UPDATE k80: release date + status='Closed' (matches Abe's flow)
     await req.query(`
       UPDATE k80_tab
       SET rlsdte_k80 = GETDATE(), rlssta_k80 = 'Closed', uptime_k80 = GETDATE()
