@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 interface QueueRow {
   id: number;
@@ -35,6 +35,8 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [postStatus, setPostStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Cancel signal for the import poll loop. Set true to break the poll early.
+  const cancelImportRef = useRef(false);
 
   const counts = rows.reduce<Record<string, number>>((acc, r) => {
     acc[r.state] = (acc[r.state] || 0) + 1;
@@ -66,6 +68,7 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
   const onImport = () => {
     setError(null);
     setImportStatus("Queueing AX pull...");
+    cancelImportRef.current = false;
     startImport(async () => {
       try {
         const r = await fetch("/api/invoicing/import", {
@@ -75,10 +78,18 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
         });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-        setImportStatus(`Queued (rescue id ${j.id}). Polling...`);
+        const startTs = Date.now();
+        // Poll every 1.5s for up to 60s. Each iteration checks the cancel ref.
         for (let i = 0; i < 40; i++) {
-          await new Promise((res) => setTimeout(res, 3000));
+          if (cancelImportRef.current) {
+            setImportStatus(`Cancelled — rescue id ${j.id} may still complete in the background. Refresh in a few seconds to see if invoices arrived.`);
+            return;
+          }
+          await new Promise((res) => setTimeout(res, 1500));
+          const elapsed = Math.round((Date.now() - startTs) / 1000);
+          setImportStatus(`Queued (rescue id ${j.id}). Polling… ${elapsed}s`);
           const pr = await fetch(`/api/invoicing/import?id=${j.id}`);
+          if (!pr.ok) continue; // transient — keep polling
           const pd = await pr.json();
           if (pd.status === "done") {
             const result = pd.result || {};
@@ -87,14 +98,18 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
             if (refresh.ok) setRows(((await refresh.json()).rows) || []);
             return;
           }
-          if (pd.status === "error") throw new Error(pd.error_message || "import errored");
+          if (pd.status === "error") throw new Error(pd.error_message || pd.error || "import errored");
         }
-        setImportStatus("Timed out — check rescue actions log.");
+        setImportStatus(`Timed out after 60s. Daemon may be stalled — refresh in 30s to check, or click Import again.`);
       } catch (e: any) {
         setError(`Import: ${e.message}`);
         setImportStatus(null);
       }
     });
+  };
+
+  const onCancelImport = () => {
+    cancelImportRef.current = true;
   };
 
   const submitIds = async (ids: number[] | null, label: string) => {
@@ -143,6 +158,14 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
           >
             {importing ? "Importing..." : `⟳ Import DD219 invoices for ${date}`}
           </button>
+          {importing && (
+            <button
+              onClick={onCancelImport}
+              className="w-full rounded-lg border border-gray-400 bg-white hover:bg-gray-50 text-xs text-gray-700 py-1.5 mb-2"
+            >
+              ✕ Cancel poll (rescue may still finish in background)
+            </button>
+          )}
           {importStatus && <div className="text-[11px] text-blue-800">{importStatus}</div>}
         </div>
 
