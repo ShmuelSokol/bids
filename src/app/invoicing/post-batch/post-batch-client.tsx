@@ -171,13 +171,21 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
 
         <div className="rounded-xl border-2 border-green-400 bg-green-50/30 p-4">
           <div className="text-xs font-bold text-green-900 mb-2">STEP 2: Post to LamLinks</div>
-          <button
-            onClick={onPostFirst}
-            disabled={posting || pending === 0}
-            className="w-full rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold py-2 mb-2 text-sm"
-          >
-            {posting ? "Posting..." : pending === 0 ? "(no pending)" : `🧪 Test-post 1st invoice only`}
-          </button>
+          {(() => {
+            const firstPending = rows.find((r) => r.state === "pending");
+            return (
+              <button
+                onClick={onPostFirst}
+                disabled={posting || pending === 0}
+                className="w-full rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold py-2 mb-2 text-sm"
+                title={firstPending ? `Will test: ${firstPending.ax_invoice_number} ($${firstPending.ax_total_amount}) — ${firstPending.ax_customer_order_reference || "no ref"}` : ""}
+              >
+                {posting ? "Posting..." : pending === 0 ? "(no pending)" :
+                  firstPending ? <>🧪 Test-post <span className="font-mono">{firstPending.ax_invoice_number}</span> (${Number(firstPending.ax_total_amount).toLocaleString()}) only</> :
+                  "🧪 Test-post 1st invoice only"}
+              </button>
+            );
+          })()}
           <button
             onClick={onPostAll}
             disabled={posting || pending === 0}
@@ -225,11 +233,14 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {(() => {
+                const firstPendingId = rows.find((x) => x.state === "pending")?.id;
+                return rows.map((r) => {
                 const lines = Array.isArray(r.ax_lines) ? r.ax_lines : [];
+                const isFirstPending = r.id === firstPendingId;
                 return (
-                  <tr key={r.id} className="border-b border-card-border/40">
-                    <td className="px-3 py-1.5 font-mono">{r.ax_invoice_number}</td>
+                  <tr key={r.id} className={`border-b border-card-border/40 ${isFirstPending ? "bg-amber-50 ring-2 ring-amber-300" : ""}`}>
+                    <td className="px-3 py-1.5 font-mono">{r.ax_invoice_number}{isFirstPending && <span className="ml-2 text-[10px] text-amber-800 font-semibold">← will test-post</span>}</td>
                     <td className="px-3 py-1.5">{r.ax_customer_order_reference || "—"}</td>
                     <td className="px-3 py-1.5 font-mono text-[10px]">{r.ax_sales_order || "—"}</td>
                     <td className="px-3 py-1.5 text-right">{lines.length}</td>
@@ -245,7 +256,8 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
                     </td>
                   </tr>
                 );
-              })}
+              });
+              })()}
             </tbody>
           </table>
         </div>
