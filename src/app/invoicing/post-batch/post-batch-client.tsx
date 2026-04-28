@@ -166,6 +166,38 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
               ✕ Cancel poll (rescue may still finish in background)
             </button>
           )}
+          <button
+            onClick={async () => {
+              const r = await fetch("/api/invoicing/refresh-from-ll", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ date }),
+              });
+              const j = await r.json();
+              if (!r.ok) { setError(`Refresh: ${j.error || r.status}`); return; }
+              setImportStatus("⟳ Syncing posted state from LL...");
+              for (let i = 0; i < 20; i++) {
+                await new Promise((res) => setTimeout(res, 1500));
+                const pr = await fetch(`/api/invoicing/refresh-from-ll?id=${j.id}`);
+                if (!pr.ok) continue;
+                const pd = await pr.json();
+                if (pd.status === "done") {
+                  const result = pd.result || {};
+                  setImportStatus(`✓ LL has ${result.ll_posted_today ?? "?"} posted today; ${result.updated ?? 0} synced.`);
+                  const refresh = await fetch(`/api/invoicing/queue-rows?date=${date}`);
+                  if (refresh.ok) setRows(((await refresh.json()).rows) || []);
+                  return;
+                }
+                if (pd.status === "error") { setError(`Refresh: ${pd.error_message || pd.error}`); return; }
+              }
+              setError("Refresh timed out.");
+            }}
+            disabled={importing}
+            className="w-full rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 text-xs text-blue-700 border border-blue-300 py-1.5 mb-2"
+            title="Sync posted-state from LamLinks (after Abe posts manually). Doesn't re-pull AX."
+          >
+            ↻ Refresh posted state from LL
+          </button>
           {importStatus && <div className="text-[11px] text-blue-800">{importStatus}</div>}
         </div>
 

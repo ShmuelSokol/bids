@@ -603,6 +603,32 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       const awardsMatch = out.match(/(\d+) newly inserted/g);
       return { nsn, output_tail: out.slice(-500), awards_inserted: awardsMatch?.[0], bids_inserted: awardsMatch?.[1] };
     }
+    case "refresh_invoice_queue_from_ll": {
+      // Scan LL kad_tab for today's posted DD219 invoices and sync state into
+      // lamlinks_invoice_queue. Used after Abe posts manually and we want DIBS
+      // to reflect that without re-pulling AX.
+      const date = String(a.params?.date || new Date().toISOString().slice(0, 10));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid date: ${date}`);
+      if (dry) return { would_refresh: date };
+      const { spawnSync } = require("child_process");
+      const proc = spawnSync("npx", ["tsx", "scripts/_premark-already-invoiced.ts", `--date=${date}`], {
+        cwd: "C:\\tmp\\dibs-init\\dibs",
+        encoding: "utf8",
+        shell: true,
+        timeout: 60_000,
+      });
+      const out = `${proc.stdout || ""}\n${proc.stderr || ""}`;
+      if (proc.status !== 0) throw new Error(`refresh failed: ${out.slice(-400)}`);
+      const llCountMatch = out.match(/LL has (\d+) posted DD219 invoices/);
+      const updatedMatch = out.match(/(\d+) inserted, (\d+) updated/);
+      return {
+        date,
+        ll_posted_today: llCountMatch ? parseInt(llCountMatch[1], 10) : null,
+        inserted: updatedMatch ? parseInt(updatedMatch[1], 10) : null,
+        updated: updatedMatch ? parseInt(updatedMatch[2], 10) : null,
+        output_tail: out.slice(-400),
+      };
+    }
     case "import_dd219_invoices": {
       // Pull today's DD219 invoices from AX and enqueue them in
       // lamlinks_invoice_queue. The post-batch UI's "Import" button calls
