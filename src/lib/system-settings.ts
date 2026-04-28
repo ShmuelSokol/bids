@@ -15,6 +15,15 @@ export async function isLamlinksWritebackLive(): Promise<boolean> {
   return v === "true";
 }
 
+export async function isFreshEnvelopeEnabled(): Promise<boolean> {
+  // Default ON — fresh-envelope mode works (validated 2026-04-28) but
+  // produces cosmetic VFP cursor error 9977720 when Abe Posts. Flip OFF
+  // to suppress the error at the cost of requiring Abe to seed each
+  // batch by saving one bid in LL first.
+  const v = await getSystemSetting("lamlinks_fresh_envelope_enabled");
+  return v !== "false"; // null/missing → default true
+}
+
 /**
  * Returns { online, lastHeartbeat, ageSeconds, host }.
  * The worker updates lamlinks_worker_last_heartbeat + lamlinks_worker_host

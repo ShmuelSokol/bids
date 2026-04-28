@@ -1,4 +1,4 @@
-import { isLamlinksWritebackLive, getLamlinksWorkerHealth } from "@/lib/system-settings";
+import { isLamlinksWritebackLive, getLamlinksWorkerHealth, isFreshEnvelopeEnabled } from "@/lib/system-settings";
 import { createServiceClient } from "@/lib/supabase-server";
 import { Toggle } from "./toggle";
 
@@ -20,6 +20,7 @@ async function getQueueStats() {
 export default async function LamLinksWritebackSettingsPage() {
   const live = await isLamlinksWritebackLive();
   const health = await getLamlinksWorkerHealth();
+  const freshEnvelopeEnabled = await isFreshEnvelopeEnabled();
   const { byStatus, recent } = await getQueueStats();
 
   return (
@@ -74,6 +75,27 @@ export default async function LamLinksWritebackSettingsPage() {
             Fix: on <code className="font-mono">{health.host || "the daemon host"}</code>, run <code className="font-mono">schtasks /run /tn &quot;DIBS - Recurring Daemon&quot;</code>, or sign out and back in to fire the auto-start trigger.
           </div>
         )}
+      </div>
+
+      <div className="rounded-xl border border-card-border bg-card-bg p-6 mb-6">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <h2 className="text-lg font-semibold mb-1">Fresh-envelope mode</h2>
+            <div className="text-xs text-muted leading-relaxed">
+              When ON, the worker mints a brand-new k33 envelope if Abe doesn&apos;t have one staged in LL. Bids transmit to DLA either way.
+              When OFF, queued rows wait until Abe saves a bid in LL first (piggyback only). <strong>Cosmetic VFP cursor error <code className="font-mono">9977720</code></strong> appears in LL when fresh-envelope mode is used (validated 2026-04-28 — bid still ships, error is harmless).
+              Flip OFF to suppress the error at the cost of requiring Abe to seed each batch manually.
+            </div>
+          </div>
+          <Toggle
+            initialValue={freshEnvelopeEnabled}
+            endpoint="/api/settings/lamlinks-fresh-envelope"
+            onLabel="ON"
+            offLabel="OFF"
+            confirmOn=""
+            confirmOff="Turning OFF means DIBS bids will queue forever if Abe doesn't seed an envelope first. Continue?"
+          />
+        </div>
       </div>
 
       <div className="rounded-xl border border-card-border bg-card-bg p-6 mb-6">

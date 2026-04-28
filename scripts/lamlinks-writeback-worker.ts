@@ -40,6 +40,20 @@ async function getWritebackEnabled(supabase: any): Promise<boolean> {
   return data?.value === "true";
 }
 
+async function getFreshEnvelopeEnabled(supabase: any): Promise<boolean> {
+  // Default true — fresh-envelope mode works (validated 2026-04-28) but
+  // produces cosmetic VFP cursor error 9977720 in LL's UI when Abe Posts.
+  // Flip false to suppress that error at the cost of requiring Abe to
+  // seed each DIBS batch by saving one bid in LL first (piggyback).
+  const { data } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", "lamlinks_fresh_envelope_enabled")
+    .maybeSingle();
+  if (data == null) return true; // default ON if row missing
+  return data?.value !== "false";
+}
+
 async function findStagedEnvelope(pool: sql.ConnectionPool): Promise<{ idnk33: number; templateK34: number } | null> {
   // Most recent envelope in 'adding quotes' state with at least one existing k34 line
   // (we need a template to clone from).
@@ -291,9 +305,17 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
     // himself started in LL, we leave the state alone (he'll Post it).
     let weCreatedEnvelope = false;
     if (!envelope) {
-      // No staged envelope. Mint a fresh one so DIBS doesn't have to wait
-      // for Abe to save a seed bid first. Uses kdy_tab for the idnk33 and
-      // clones k34 metadata from Abe's most recent k34 row (posted or not).
+      // No staged envelope.
+      const freshEnabled = await getFreshEnvelopeEnabled(supabase);
+      if (!freshEnabled) {
+        console.log(`  no staged envelope and fresh-envelope mode disabled — leaving ${queue.length} rows pending until Abe seeds`);
+        waiting = queue.length;
+        return { processed, failed, waiting };
+      }
+      // Mint a fresh one so DIBS doesn't have to wait for Abe to save a seed
+      // bid first. Uses kdy_tab for the idnk33 and clones k34 metadata from
+      // Abe's most recent k34 row (posted or not). Note: produces cosmetic
+      // VFP cursor error 9977720 in LL UI on Post — bid still transmits.
       console.log(`  no staged envelope — minting a fresh one...`);
       const templateK34 = await findLatestPostedTemplateK34(pool);
       if (!templateK34) {

@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase-server";
 import { isSourceableOpen, buildFilterContext } from "@/lib/solicitation-filters";
-import { isLamlinksWritebackLive, getLamlinksWorkerHealth } from "@/lib/system-settings";
+import { isLamlinksWritebackLive, getLamlinksWorkerHealth, isFreshEnvelopeEnabled } from "@/lib/system-settings";
 import { SolicitationsList } from "./solicitations-list";
 import Link from "next/link";
 
@@ -159,6 +159,7 @@ export default async function SolicitationsPage({
   const { solicitations, counts, lastSync } = await getData();
   const writebackLive = await isLamlinksWritebackLive();
   const workerHealth = await getLamlinksWorkerHealth();
+  const freshEnvelopeEnabled = await isFreshEnvelopeEnabled();
   const params = await searchParams;
 
   // If toggle is ON but worker hasn't checked in within 2 min, submits will queue forever.
@@ -191,6 +192,15 @@ export default async function SolicitationsPage({
             )}
           </div>
           <Link href="/settings/lamlinks-writeback" className="text-xs text-green-800 underline">manage</Link>
+        </div>
+      )}
+      {writebackLive && !writebackStalled && freshEnvelopeEnabled && (
+        <div className="mb-4 rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+          <span className="font-semibold">⚠ Fresh-envelope mode is ON.</span>{" "}
+          If Abe doesn&apos;t have a saved-but-not-posted bid in LamLinks when you Submit, DIBS will mint a fresh envelope automatically.
+          That works (bid still transmits to DLA), but Abe will see cosmetic VFP cursor error <code className="font-mono">9977720</code> when he Posts.
+          For zero cursor errors, have Abe save one bid in LL first (piggyback mode), or flip the flag in{" "}
+          <Link href="/settings/lamlinks-writeback" className="underline">Write-Back settings</Link>.
         </div>
       )}
       <div className="mb-4">

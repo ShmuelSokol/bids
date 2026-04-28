@@ -2,7 +2,23 @@
 
 import { useState, useTransition } from "react";
 
-export function Toggle({ initialValue }: { initialValue: boolean }) {
+interface ToggleProps {
+  initialValue: boolean;
+  endpoint?: string;
+  confirmOn?: string;
+  confirmOff?: string;
+  onLabel?: string;
+  offLabel?: string;
+}
+
+export function Toggle({
+  initialValue,
+  endpoint = "/api/settings/lamlinks-writeback",
+  confirmOn = "Going LIVE will transmit future Submitted bids to LamLinks for DLA. Continue?",
+  confirmOff,
+  onLabel = "LIVE",
+  offLabel = "SIMULATED",
+}: ToggleProps) {
   const [live, setLive] = useState(initialValue);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -10,12 +26,14 @@ export function Toggle({ initialValue }: { initialValue: boolean }) {
   const clickToggle = () => {
     setError(null);
     const next = !live;
-    // Confirm flipping to LIVE — it's a real state change with downstream effects
-    if (next) {
-      if (!confirm("Going LIVE will transmit future Submitted bids to LamLinks for DLA. Continue?")) return;
+    if (next && confirmOn) {
+      if (!confirm(confirmOn)) return;
+    }
+    if (!next && confirmOff) {
+      if (!confirm(confirmOff)) return;
     }
     start(async () => {
-      const r = await fetch("/api/settings/lamlinks-writeback", {
+      const r = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: next }),
@@ -45,7 +63,7 @@ export function Toggle({ initialValue }: { initialValue: boolean }) {
           }`}
         />
       </button>
-      <div className="text-[10px] text-muted">{pending ? "Saving…" : live ? "LIVE" : "SIMULATED"}</div>
+      <div className="text-[10px] text-muted">{pending ? "Saving…" : live ? onLabel : offLabel}</div>
       {error && <div className="text-[10px] text-red-700">{error}</div>}
     </div>
   );
