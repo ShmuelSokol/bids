@@ -12,6 +12,8 @@
  */
 import "./env";
 import { createClient } from "@supabase/supabase-js";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const sql = require("mssql/msnodesqlv8");
 
 const TENANT_ID = process.env.AX_TENANT_ID!;
 const CLIENT_ID = process.env.AX_CLIENT_ID!;
@@ -59,6 +61,57 @@ async function main() {
   if (headers.length === 0) return;
 
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+
+  // Pre-mark any AX invoices that Abe already posted manually in LL today —
+  // we don't want to re-process them (would duplicate the bid to DLA). Match
+  // is on cinnum_kad (LL) ↔ AX InvoiceNumber digits ("CIN" prefix stripped).
+  try {
+    const pool = await sql.connect({
+      connectionString: "Driver={SQL Server};Server=NYEVRVSQL001;Database=llk_db1;Trusted_Connection=yes;",
+    });
+    const llDone = await pool.request().query(`
+      SELECT idnkad_kad, cin_no_kad, cinnum_kad, mslval_kad
+      FROM kad_tab
+      WHERE idnk31_kad = 203
+        AND CAST(cisdte_kad AS DATE) = '${date}'
+        AND LTRIM(RTRIM(cinsta_kad)) = 'Posted'
+    `);
+    let preMarked = 0;
+    for (const k of llDone.recordset) {
+      const axInvoice = `CIN${String(k.cinnum_kad).trim()}`;
+      const { data: existing } = await sb
+        .from("lamlinks_invoice_queue")
+        .select("id, state")
+        .eq("ax_invoice_number", axInvoice)
+        .maybeSingle();
+      if (existing && existing.state === "posted") continue;
+      const updates: any = {
+        state: "posted",
+        ll_idnkad: k.idnkad_kad,
+        ll_cin_no: String(k.cin_no_kad).trim(),
+        posted_at: new Date().toISOString(),
+        error_message: null,
+      };
+      if (existing) {
+        await sb.from("lamlinks_invoice_queue").update(updates).eq("id", existing.id);
+      } else {
+        await sb.from("lamlinks_invoice_queue").insert({
+          ax_invoice_number: axInvoice,
+          ax_customer: "DD219",
+          ax_invoice_date: date,
+          ax_total_amount: Number(k.mslval_kad) || 0,
+          ax_lines: [],
+          enqueued_by: "premark-already-invoiced",
+          ...updates,
+        });
+      }
+      preMarked++;
+    }
+    if (preMarked > 0) console.log(`  pre-marked ${preMarked} already-done LL invoices as state=posted (won't be re-processed)`);
+    await pool.close();
+  } catch (e: any) {
+    console.warn(`  warn: pre-mark step failed (${e.message?.slice(0,100)}) — proceeding without dedup`);
+  }
 
   // Skip ones already in the queue
   const invoiceNumbers = headers.map((h: any) => h.InvoiceNumber);
