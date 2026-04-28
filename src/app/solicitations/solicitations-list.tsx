@@ -1337,6 +1337,12 @@ export function SolicitationsList({
               )}
               {(s.ship_to_locations?.length ?? 0) > 0 && (
                 <div className="text-xs">
+                  {s.ship_to_locations!.length > 25 && (
+                    <div className="mb-2 rounded-lg border-2 border-red-500 bg-red-50 px-3 py-2 text-[11px] text-red-900">
+                      <div className="font-bold">⛔ {s.ship_to_locations!.length} CLINs — exceeds LamLinks&apos; 25-CLIN limit</div>
+                      <div className="mt-0.5">LL will reject the batch upload. Quote this sol directly on DIBBS — do not use DIBS Submit for this one.</div>
+                    </div>
+                  )}
                   <div className="text-[10px] font-bold text-muted mb-1">
                     Ship-to ({s.ship_to_locations!.length}) — LamLinks k32
                   </div>

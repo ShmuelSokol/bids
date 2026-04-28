@@ -129,6 +129,17 @@ async function main() {
     // "has no destinations").
     const ship = shipToByK11.get(r.idnk11) || [];
 
+    // True solicitation quantity: when k32 (ship-to/CLIN) rows exist, sum
+    // qty_k32 across all destinations — that's the multi-CLIN total. Fall
+    // back to solqty_k11 when no k32 rows (single-CLIN sols, or LL hasn't
+    // imported destinations yet).
+    //
+    // Example: SPE2DS-26-T-021R has 6 CLINs in k32 with qty 2/9/12/18/77/200
+    // = 318 total, but solqty_k11 on the FIRST k11 row was 18 (CLIN 3 only).
+    // Without this aggregation DIBS undercounted by 17x. (2026-04-28)
+    const k32QtySum = ship.reduce((s: number, x: any) => s + (Number(x.qty) || 0), 0);
+    const aggregatedQty = ship.length > 0 && k32QtySum > 0 ? k32QtySum : (r.quantity || 1);
+
     // Required delivery days: minimum delivery date across destinations,
     // measured from solicitation issue date. Per-destination dates differ
     // (some military sites want rush; others have 90-day windows), so we
@@ -153,7 +164,7 @@ async function main() {
       nsn,
       nomenclature: r.nomenclature?.trim() || "",
       fsc: r.fsc.trim(),
-      quantity: r.quantity || 1,
+      quantity: aggregatedQty,
       issue_date: fmtDate(r.issue_date) || "",
       return_by_date: fmtDate(r.return_by_date) || fmtDate(r.line_close_date) || "",
       set_aside: r.set_aside?.trim() || "None",
