@@ -920,6 +920,26 @@ async function writeOneInvoice(
         AND LTRIM(RTRIM(shpsta_kaj)) <> 'Shipped'
     `);
 
+    // 4a.1. Link each ka9 (shipped-item job line) back to its matching kae
+    // (invoice line) and flip ka9.jlnsta from 'Shipping' to 'Shipped'. THIS
+    // is what drives the LL UI's "Shipped" label and "Invoice #" display
+    // on the shipment screen — without this update, the row appears as
+    // 'Shipping' with a blank invoice number even though kad+kae+kbr exist.
+    //
+    // Mapping: ka9.jln_no_ka9 ↔ kae.cil_no_kae (1-based line number).
+    // For our 1-line-per-invoice case (all observed DD219 invoices today),
+    // this is a simple UPDATE on the matching row.
+    for (let i = 0; i < lines.length; i++) {
+      await req.query(`
+        UPDATE ka9_tab
+        SET idnkae_ka9 = ${idnkaeIds[i]},
+            jlnsta_ka9 = 'Shipped',
+            uptime_ka9 = GETDATE()
+        WHERE idnkaj_ka9 = ${idnkaj}
+          AND jln_no_ka9 = ${i + 1}
+      `);
+    }
+
     // 4b. UPDATE k80: release date + status='Closed' (matches Abe's flow).
     // k80_tab has no uptime_k80 — rlsdte_k80 IS the touched-time signal.
     await req.query(`
