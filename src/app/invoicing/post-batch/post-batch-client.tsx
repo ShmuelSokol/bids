@@ -97,24 +97,38 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
     });
   };
 
-  const onPostAll = () => {
+  const submitIds = async (ids: number[] | null, label: string) => {
     setError(null);
+    setPostStatus(`Approving ${ids ? ids.length : "all pending"} invoice(s) for the worker...`);
+    try {
+      const r = await fetch("/api/invoicing/post-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ids ? { ids } : {}),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setPostStatus(`✓ ${label}: ${j.approved} approved. Worker processes in ~30s. Watch below.`);
+      const refresh = await fetch(`/api/invoicing/queue-rows?date=${date}`);
+      if (refresh.ok) setRows(((await refresh.json()).rows) || []);
+    } catch (e: any) {
+      setError(`${label}: ${e.message}`);
+      setPostStatus(null);
+    }
+  };
+
+  const onPostFirst = () => {
+    if (pending === 0) { setError("No pending invoices."); return; }
+    const firstPending = rows.find((r) => r.state === "pending");
+    if (!firstPending) return;
+    if (!confirm(`Test-post invoice ${firstPending.ax_invoice_number} ($${firstPending.ax_total_amount}) to LamLinks?\n\nThis fires WAWF 810 + 856 to DLA — real bid money. Use this first to verify the writeback shape matches Abe's manual flow.`)) return;
+    startPost(async () => { await submitIds([firstPending.id], `Test-post ${firstPending.ax_invoice_number}`); });
+  };
+
+  const onPostAll = () => {
     if (pending === 0) { setError("No pending invoices to post."); return; }
-    if (!confirm(`Post all ${pending} pending invoices to LamLinks? This fires WAWF 810 + 856 to DLA. Cannot be un-done.`)) return;
-    setPostStatus(`Approving ${pending} invoices for the worker...`);
-    startPost(async () => {
-      try {
-        const r = await fetch("/api/invoicing/post-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-        setPostStatus(`✓ ${j.approved} approved. Worker will process within 30 seconds. Watch the table below.`);
-        const refresh = await fetch(`/api/invoicing/queue-rows?date=${date}`);
-        if (refresh.ok) setRows(((await refresh.json()).rows) || []);
-      } catch (e: any) {
-        setError(`Post All: ${e.message}`);
-        setPostStatus(null);
-      }
-    });
+    if (!confirm(`Post ALL ${pending} pending invoices to LamLinks? This fires WAWF 810 + 856 to DLA per invoice. Cannot be un-done. Verify the test invoice landed correctly first.`)) return;
+    startPost(async () => { await submitIds(null, "Post all"); });
   };
 
   return (
@@ -133,13 +147,20 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
         </div>
 
         <div className="rounded-xl border-2 border-green-400 bg-green-50/30 p-4">
-          <div className="text-xs font-bold text-green-900 mb-2">STEP 2: Post All to LamLinks</div>
+          <div className="text-xs font-bold text-green-900 mb-2">STEP 2: Post to LamLinks</div>
+          <button
+            onClick={onPostFirst}
+            disabled={posting || pending === 0}
+            className="w-full rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold py-2 mb-2 text-sm"
+          >
+            {posting ? "Posting..." : pending === 0 ? "(no pending)" : `🧪 Test-post 1st invoice only`}
+          </button>
           <button
             onClick={onPostAll}
             disabled={posting || pending === 0}
-            className="w-full rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-3 mb-2"
+            className="w-full rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-2 mb-2"
           >
-            {posting ? "Posting..." : pending === 0 ? "(no pending invoices)" : `▶ Post all ${pending} to LamLinks`}
+            {posting ? "Posting..." : pending === 0 ? "(no pending)" : `▶ Post all ${pending} to LamLinks`}
           </button>
           {postStatus && <div className="text-[11px] text-green-800">{postStatus}</div>}
         </div>
