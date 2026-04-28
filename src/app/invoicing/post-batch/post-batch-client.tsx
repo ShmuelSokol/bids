@@ -230,6 +230,7 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
                 <th className="px-3 py-2 text-left">State</th>
                 <th className="px-3 py-2 text-left">LL kad / cin_no</th>
                 <th className="px-3 py-2 text-left">Note</th>
+                <th className="px-3 py-2 text-left">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -253,6 +254,39 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
                     </td>
                     <td className="px-3 py-1.5 text-[10px] text-red-700 max-w-[300px] truncate" title={r.error_message || ""}>
                       {r.error_message || (r.worker_host ? `via ${r.worker_host}` : "")}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {r.state === "pending" && (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              if (!confirm(`Test-post just THIS invoice (${r.ax_invoice_number}, $${r.ax_total_amount})? Fires WAWF 810+856 to DLA.`)) return;
+                              startPost(async () => { await submitIds([r.id], `Test-post ${r.ax_invoice_number}`); });
+                            }}
+                            disabled={posting}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 font-semibold"
+                            title="Approve only this row for the worker"
+                          >
+                            🧪 Test this
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Skip ${r.ax_invoice_number} from this batch?`)) return;
+                              await fetch(`/api/invoicing/skip-row`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: r.id }),
+                              });
+                              const refresh = await fetch(`/api/invoicing/queue-rows?date=${date}`);
+                              if (refresh.ok) setRows(((await refresh.json()).rows) || []);
+                            }}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300"
+                            title="Remove this row from the queue"
+                          >
+                            ✕ Skip
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
