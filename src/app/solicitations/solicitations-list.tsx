@@ -1119,52 +1119,66 @@ export function SolicitationsList({
             >
               ⟳ Refresh from LL
             </button>
-            <button
-              onClick={async (e) => {
-                e.stopPropagation();
-                const btn = e.currentTarget;
-                const orig = btn.textContent;
-                btn.textContent = "Scraping...";
-                btn.disabled = true;
-                try {
-                  const r = await fetch(`/api/dibbs/refresh-clins`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ sol: s.solicitation_number }),
-                  });
-                  const j = await r.json();
-                  if (!r.ok) throw new Error(j.error || "queue failed");
-                  btn.textContent = "Queued — polling...";
-                  for (let i = 0; i < 30; i++) {
-                    await new Promise((res) => setTimeout(res, 3000));
-                    const pr = await fetch(`/api/dibbs/refresh-clins?id=${j.id}`);
-                    const pd = await pr.json();
-                    if (pd.status === "done") {
-                      const total = pd.result?.total_qty;
-                      const count = pd.result?.clins_written;
-                      btn.textContent = `✓ ${count} CLINs, qty ${total} — reload`;
-                      btn.className = "text-xs px-2 py-1 rounded bg-green-50 text-green-700 border border-green-300 font-medium";
-                      // Re-fetch the CLINs so the panel below populates without a full reload
-                      setClinsCache((prev) => { const next = new Map(prev); next.delete(s.solicitation_number); return next; });
-                      loadClins(s.solicitation_number);
-                      return;
+            {/* Scrape DIBBS CLINs — only surface when LL data looks suspicious.
+                With the 2026-04-28 import fix that aggregates qty_k32 across
+                k32_tab, LL is now the primary source. The DIBBS scraper is a
+                fallback for sols where LL's import is incomplete (zero or one
+                CLIN AND a value gap >3x against suggested_price × quantity). */}
+            {(() => {
+              const clinCount = s.ship_to_locations?.length ?? 0;
+              const estVal = Number(s.lamlinks_estimated_value || 0);
+              const ourVal = Number(s.suggested_price || 0) * Number(s.quantity || 1);
+              const valueGap = estVal > 0 && ourVal > 0 ? estVal / ourVal : 1;
+              const suspicious = clinCount === 0 || (clinCount === 1 && valueGap > 3);
+              if (!suspicious) return null;
+              return (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const btn = e.currentTarget;
+                    const orig = btn.textContent;
+                    btn.textContent = "Scraping...";
+                    btn.disabled = true;
+                    try {
+                      const r = await fetch(`/api/dibbs/refresh-clins`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ sol: s.solicitation_number }),
+                      });
+                      const j = await r.json();
+                      if (!r.ok) throw new Error(j.error || "queue failed");
+                      btn.textContent = "Queued — polling...";
+                      for (let i = 0; i < 30; i++) {
+                        await new Promise((res) => setTimeout(res, 3000));
+                        const pr = await fetch(`/api/dibbs/refresh-clins?id=${j.id}`);
+                        const pd = await pr.json();
+                        if (pd.status === "done") {
+                          const total = pd.result?.total_qty;
+                          const count = pd.result?.clins_written;
+                          btn.textContent = `✓ ${count} CLINs, qty ${total} — reload`;
+                          btn.className = "text-xs px-2 py-1 rounded bg-green-50 text-green-700 border border-green-300 font-medium";
+                          setClinsCache((prev) => { const next = new Map(prev); next.delete(s.solicitation_number); return next; });
+                          loadClins(s.solicitation_number);
+                          return;
+                        }
+                        if (pd.status === "error") { throw new Error(pd.error_message || "scrape errored"); }
+                      }
+                      btn.textContent = "Timed out";
+                    } catch (err: any) {
+                      btn.textContent = "Failed";
+                      btn.title = err.message;
+                    } finally {
+                      btn.disabled = false;
+                      setTimeout(() => { if (btn) btn.textContent = orig; }, 12000);
                     }
-                    if (pd.status === "error") { throw new Error(pd.error_message || "scrape errored"); }
-                  }
-                  btn.textContent = "Timed out";
-                } catch (err: any) {
-                  btn.textContent = "Failed";
-                  btn.title = err.message;
-                } finally {
-                  btn.disabled = false;
-                  setTimeout(() => { if (btn) btn.textContent = orig; }, 12000);
-                }
-              }}
-              className="text-xs px-2 py-1 rounded bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 font-medium inline-flex items-center gap-1"
-              title="Scrape DIBBS Package View directly to get all CLINs + true total qty. Use when LL's import only captured 1 CLIN of a multi-CLIN sol."
-            >
-              ⟳ Scrape DIBBS CLINs
-            </button>
+                  }}
+                  className="text-xs px-2 py-1 rounded bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 font-medium inline-flex items-center gap-1"
+                  title="Audit/fallback: scrape DIBBS Package View directly. Surfaced because LL data looks suspicious (no CLINs imported, or CLIN count seems wrong vs the estimated value)."
+                >
+                  ⟳ Audit CLINs from DIBBS
+                </button>
+              );
+            })()}
             {!opts.hideInlineNext && filtered.indexOf(s) < filtered.length - 1 && (
               <button onClick={(e) => { e.stopPropagation(); setDetailId(filtered[filtered.indexOf(s) + 1].id); }}
                 className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium">
