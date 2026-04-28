@@ -202,6 +202,25 @@ export function SolicitationsList({
   const [historyCache, setHistoryCache] = useState<Map<string, { awards: AwardHistory[]; bids: AbeBid[]; itemSpec?: any; matches?: any[] }>>(new Map());
   const [loadingHistory, setLoadingHistory] = useState<string | null>(null);
 
+  // Lazy-load DIBBS-scraped per-CLIN data (separate from LL's k32). Used to
+  // detect multi-CLIN qty discrepancies — LL's scraper sometimes only captures
+  // CLIN 1 of N. dibbs_sol_clins is populated via /api/dibbs/refresh-clins.
+  const [clinsCache, setClinsCache] = useState<Map<string, { clins: any[]; total_qty: number; clin_count: number; last_scraped_at: string | null } | null>>(new Map());
+  async function loadClins(sol: string) {
+    if (clinsCache.has(sol)) return;
+    try {
+      const r = await fetch(`/api/dibbs/clins?sol=${encodeURIComponent(sol)}`);
+      if (!r.ok) {
+        setClinsCache((prev) => { const next = new Map(prev); next.set(sol, null); return next; });
+        return;
+      }
+      const j = await r.json();
+      setClinsCache((prev) => { const next = new Map(prev); next.set(sol, j); return next; });
+    } catch {
+      setClinsCache((prev) => { const next = new Map(prev); next.set(sol, null); return next; });
+    }
+  }
+
   // Also keep any server-provided data as fallback
   const historyByNsn = useMemo(() => {
     const map = new Map<string, AwardHistory[]>();
@@ -1100,6 +1119,52 @@ export function SolicitationsList({
             >
               ⟳ Refresh from LL
             </button>
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                const btn = e.currentTarget;
+                const orig = btn.textContent;
+                btn.textContent = "Scraping...";
+                btn.disabled = true;
+                try {
+                  const r = await fetch(`/api/dibbs/refresh-clins`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ sol: s.solicitation_number }),
+                  });
+                  const j = await r.json();
+                  if (!r.ok) throw new Error(j.error || "queue failed");
+                  btn.textContent = "Queued — polling...";
+                  for (let i = 0; i < 30; i++) {
+                    await new Promise((res) => setTimeout(res, 3000));
+                    const pr = await fetch(`/api/dibbs/refresh-clins?id=${j.id}`);
+                    const pd = await pr.json();
+                    if (pd.status === "done") {
+                      const total = pd.result?.total_qty;
+                      const count = pd.result?.clins_written;
+                      btn.textContent = `✓ ${count} CLINs, qty ${total} — reload`;
+                      btn.className = "text-xs px-2 py-1 rounded bg-green-50 text-green-700 border border-green-300 font-medium";
+                      // Re-fetch the CLINs so the panel below populates without a full reload
+                      setClinsCache((prev) => { const next = new Map(prev); next.delete(s.solicitation_number); return next; });
+                      loadClins(s.solicitation_number);
+                      return;
+                    }
+                    if (pd.status === "error") { throw new Error(pd.error_message || "scrape errored"); }
+                  }
+                  btn.textContent = "Timed out";
+                } catch (err: any) {
+                  btn.textContent = "Failed";
+                  btn.title = err.message;
+                } finally {
+                  btn.disabled = false;
+                  setTimeout(() => { if (btn) btn.textContent = orig; }, 12000);
+                }
+              }}
+              className="text-xs px-2 py-1 rounded bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 font-medium inline-flex items-center gap-1"
+              title="Scrape DIBBS Package View directly to get all CLINs + true total qty. Use when LL's import only captured 1 CLIN of a multi-CLIN sol."
+            >
+              ⟳ Scrape DIBBS CLINs
+            </button>
             {!opts.hideInlineNext && filtered.indexOf(s) < filtered.length - 1 && (
               <button onClick={(e) => { e.stopPropagation(); setDetailId(filtered[filtered.indexOf(s) + 1].id); }}
                 className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium">
@@ -1187,6 +1252,62 @@ export function SolicitationsList({
             </div>
           </div>
         </div>
+
+        {/* DIBBS-scraped CLINs vs LL — flags multi-CLIN qty discrepancy.
+            Triggered by the "⟳ Scrape DIBBS CLINs" button or auto-loaded
+            on row-open. Empty until a scrape has run for this sol. */}
+        {(() => {
+          const c = clinsCache.get(s.solicitation_number);
+          if (!c || c.clin_count === 0) return null;
+          const llQty = Number(s.quantity || 0);
+          const dibbsQty = Number(c.total_qty || 0);
+          const llClins = s.ship_to_locations?.length ?? 0;
+          const mismatch = dibbsQty > 0 && llQty > 0 && Math.abs(dibbsQty - llQty) / Math.max(dibbsQty, llQty) > 0.05;
+          const tone = mismatch ? "border-red-300 bg-red-50" : "border-green-300 bg-green-50";
+          const label = mismatch ? "🔴 DIBBS DISAGREES with LamLinks" : "✅ DIBBS matches LamLinks";
+          return (
+            <div className={`mb-3 rounded-lg border-2 ${tone} p-3 text-xs`}>
+              <div className="flex items-baseline justify-between mb-2">
+                <div className="font-bold">{label}</div>
+                <div className="text-[10px] text-muted">scraped {c.last_scraped_at ? new Date(c.last_scraped_at).toLocaleString() : "—"}</div>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3 mb-2">
+                <div>
+                  <div className="text-[10px] font-bold text-muted">LamLinks (k32)</div>
+                  <div>{llClins} CLIN{llClins !== 1 ? "s" : ""} · qty <span className="font-mono">{llQty}</span></div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-muted">DIBBS Package View (scraped)</div>
+                  <div>{c.clin_count} CLIN{c.clin_count !== 1 ? "s" : ""} · qty <span className="font-mono">{dibbsQty}</span></div>
+                </div>
+              </div>
+              {mismatch && (
+                <div className="text-[11px] text-red-800 mb-2">
+                  Qty gap: <span className="font-mono">{dibbsQty - llQty}</span> units. DIBS may price wrong if this isn&apos;t corrected.
+                  Use the DIBBS qty when bidding, or have LamLinks re-scrape.
+                </div>
+              )}
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-left text-muted border-b border-card-border">
+                    <th className="py-1 pr-2">CLIN</th>
+                    <th className="py-1 pr-2">NSN</th>
+                    <th className="py-1 pr-2 text-right">Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {c.clins.map((row: any) => (
+                    <tr key={row.clin_no} className="border-b border-card-border/40">
+                      <td className="py-0.5 pr-2 font-mono">{row.clin_no}</td>
+                      <td className="py-0.5 pr-2 font-mono">{row.nsn || "—"}</td>
+                      <td className="py-0.5 pr-2 text-right font-mono">{row.qty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
 
         {/* Ship-to + buyer */}
         {((s.ship_to_locations?.length ?? 0) > 0 || s.buyer_name || s.priority_code) && (
@@ -1889,6 +2010,7 @@ export function SolicitationsList({
                         const newId = detailId === s.id ? null : s.id;
                         setDetailId(newId);
                         if (newId && !historyCache.has(s.nsn)) loadNsnHistory(s.nsn);
+                        if (newId && !clinsCache.has(s.solicitation_number)) loadClins(s.solicitation_number);
                       }}
                       className={`border-b border-card-border hover:bg-gray-50/50 cursor-pointer ${
                         detailId === s.id ? "bg-accent/5 ring-1 ring-accent/20" :

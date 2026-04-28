@@ -603,6 +603,31 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       const awardsMatch = out.match(/(\d+) newly inserted/g);
       return { nsn, output_tail: out.slice(-500), awards_inserted: awardsMatch?.[0], bids_inserted: awardsMatch?.[1] };
     }
+    case "refresh_dibbs_clins": {
+      // Scrape DIBBS Package View for a sol to populate dibbs_sol_clins.
+      // Used to fix the multi-CLIN qty gap: LL's own scraper only captures
+      // the first CLIN's qty, so DIBS shows wrong totals on multi-CLIN sols.
+      const sol = String(a.params?.sol || "").trim().toUpperCase();
+      if (!/^SPE\w{3}-\d{2}-[A-Z]-\w{4}$/.test(sol)) throw new Error(`invalid sol format: ${sol}`);
+      if (dry) return { would_scrape: sol };
+      const { spawnSync } = require("child_process");
+      const proc = spawnSync("npx", ["tsx", "scripts/scrape-dibbs-clins.ts", "--sol", sol], {
+        cwd: "C:\\tmp\\dibs-init\\dibs",
+        encoding: "utf8",
+        shell: true,
+        timeout: 120_000,
+      });
+      const out = `${proc.stdout || ""}\n${proc.stderr || ""}`;
+      if (proc.status !== 0) throw new Error(`scrape failed: ${out.slice(-400)}`);
+      const totalMatch = out.match(/Total qty across all CLINs: (\d+)/);
+      const wroteMatch = out.match(/wrote (\d+) CLIN rows/);
+      return {
+        sol,
+        clins_written: wroteMatch ? parseInt(wroteMatch[1], 10) : null,
+        total_qty: totalMatch ? parseInt(totalMatch[1], 10) : null,
+        output_tail: out.slice(-500),
+      };
+    }
     case "extract_to_temp":
     case "nuke": {
       // Keep UI shipping; these two are destructive enough that we route
