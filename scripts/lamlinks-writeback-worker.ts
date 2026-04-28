@@ -797,13 +797,6 @@ async function writeOneInvoice(
   const axInvoice = String(row.ax_invoice_number || "").trim();
   const cinnum = axInvoice.replace(/^CIN/i, "").replace(/[^0-9A-Z]/gi, "");
 
-  const cinMax = await pool.request().query(`
-    SELECT TOP 1 cin_no_kad FROM kad_tab WHERE cin_no_kad LIKE '[0-9]%'
-    ORDER BY TRY_CAST(cin_no_kad AS BIGINT) DESC
-  `);
-  const lastCin = cinMax.recordset[0]?.cin_no_kad ? Number(String(cinMax.recordset[0].cin_no_kad).trim()) : 254000;
-  const cinNo = lastCin + 1;
-
   const lines: any[] = Array.isArray(row.ax_lines) ? row.ax_lines : [];
   if (lines.length === 0) throw new Error("no ax_lines");
 
@@ -812,6 +805,26 @@ async function writeOneInvoice(
   await tx.begin();
   try {
     const req = new sql.Request(tx);
+
+    // Atomically allocate cin_no via k07 CIN_NO counter (Global). LL's UI
+    // does the same — without this, our cin_no would collide with LL's next
+    // manual invoice. Lock the row for the rest of the txn so no one else
+    // grabs the same number.
+    const cinAlloc = await req.query(`
+      UPDATE k07_tab WITH (UPDLOCK, ROWLOCK)
+      SET ss_val_k07 = CAST(TRY_CAST(LTRIM(RTRIM(ss_val_k07)) AS BIGINT) + 1 AS VARCHAR(32)),
+          uptime_k07 = GETDATE()
+      OUTPUT deleted.ss_val_k07 AS prev_val, inserted.ss_val_k07 AS next_val
+      WHERE LTRIM(RTRIM(ss_key_k07)) = 'CIN_NO' AND LTRIM(RTRIM(ss_tid_k07)) = 'G'
+    `);
+    if (cinAlloc.recordset.length === 0) {
+      throw new Error("k07 CIN_NO counter not found — invoice writeback aborted to avoid collision");
+    }
+    // The OUTPUT gives us the value that's now reserved (the new ss_val).
+    // Use that as our cin_no so we match LL's allocation pattern (it stores
+    // the LATEST allocated, not next-free).
+    const cinNo = Number(String(cinAlloc.recordset[0].next_val).trim());
+    if (!Number.isFinite(cinNo) || cinNo <= 0) throw new Error(`invalid cin_no allocated: ${cinNo}`);
 
     const kadRes = await req.query(`
       INSERT INTO kad_tab (
@@ -859,11 +872,32 @@ async function writeOneInvoice(
       WHERE idnk80_k80 = ${idnk80}
     `);
 
-    // 5. INSERT 2 kbr rows for WAWF 810 + 856
+    // 5. INSERT 2 kbr rows for WAWF 810 + 856.
+    // The 810 carries an EDI transaction control number (xtcscn_kbr) which
+    // LL allocates from the k07 TRN_ID_CK5 counter (Global). The 856 stores
+    // '0' for xtcscn (per observed LL behavior). Without atomic allocation
+    // here we'd risk duplicate xtcscn collisions with other simultaneous
+    // EDI transmissions on the box.
+    const trnAlloc = await req.query(`
+      UPDATE k07_tab WITH (UPDLOCK, ROWLOCK)
+      SET ss_val_k07 = CAST(TRY_CAST(LTRIM(RTRIM(ss_val_k07)) AS BIGINT) + 1 AS VARCHAR(32)),
+          uptime_k07 = GETDATE()
+      OUTPUT deleted.ss_val_k07 AS prev_val, inserted.ss_val_k07 AS next_val
+      WHERE LTRIM(RTRIM(ss_key_k07)) = 'TRN_ID_CK5' AND LTRIM(RTRIM(ss_tid_k07)) = 'G'
+    `);
+    if (trnAlloc.recordset.length === 0) {
+      throw new Error("k07 TRN_ID_CK5 counter not found — invoice writeback aborted to avoid xtcscn collision");
+    }
+    // Use prev_val so we line up with LL's pattern: LL stores the most-recently-
+    // allocated value in k07.ss_val (i.e. the value just used by the kbr we're
+    // about to INSERT). Wait — LL's actual behavior is k07 holds NEXT-FREE pre-bump,
+    // so we use prev_val for our xtcscn.
+    const xtcscnFor810 = String(trnAlloc.recordset[0].prev_val).trim();
+
     const idnkbrIds: number[] = [];
-    for (const kap of [24, 25]) { // 24 = WAWF 810 invoice, 25 = WAWF 856 shipment notice
+    for (const kap of [24, 25]) {
       const xtcsta = kap === 24 ? "WAWF 810 sent  " : "WAWF 856 sent  ";
-      const xtcscn = kap === 24 ? cinNo : 0;
+      const xtcscn = kap === 24 ? xtcscnFor810 : "0";
       const kbrRes = await req.query(`
         INSERT INTO kbr_tab (
           addtme_kbr, addnme_kbr, itttbl_kbr, idnitt_kbr, idnkap_kbr,
@@ -872,7 +906,7 @@ async function writeOneInvoice(
         OUTPUT inserted.idnkbr_kbr AS newId
         VALUES (
           GETDATE(), 'ajoseph   ', 'kaj', ${idnkaj}, ${kap},
-          ${xtcscn}, '${xtcsta}', GETDATE()
+          '${xtcscn}', '${xtcsta}', GETDATE()
         )
       `);
       idnkbrIds.push(kbrRes.recordset[0].newId);
