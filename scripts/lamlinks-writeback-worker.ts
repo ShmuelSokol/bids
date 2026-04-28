@@ -787,6 +787,19 @@ async function writeOneInvoice(
   const idnkaj: number = m.idnkaj_kaj;
   const idnk80: number = m.idnk80_k80;
 
+  // Guard against the kbr UNIQUE (itttbl, idnitt, idnkap) constraint: if this
+  // kaj already has a WAWF 810 or 856 row, someone (probably Abe manually)
+  // already transmitted it. Don't try to post a duplicate — DLA would dedup
+  // it server-side and our local kbr INSERT would error.
+  const existingTrans = await pool.request().query(`
+    SELECT idnkap_kbr, xtcsta_kbr FROM kbr_tab
+    WHERE itttbl_kbr = 'kaj' AND idnitt_kbr = ${idnkaj} AND idnkap_kbr IN (24, 25)
+  `);
+  if (existingTrans.recordset.length > 0) {
+    const types = existingTrans.recordset.map((r: any) => `${r.idnkap_kbr}:${String(r.xtcsta_kbr).trim()}`).join(", ");
+    throw new Error(`kaj=${idnkaj} already has WAWF transmissions [${types}] — likely posted manually. Skip.`);
+  }
+
   // 2. Resolve customer + cinnum + cinno
   const k31r = await pool.request().query(`
     SELECT TOP 1 idnk31_k31 FROM k31_tab
