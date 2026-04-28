@@ -894,10 +894,11 @@ async function writeOneInvoice(
         AND LTRIM(RTRIM(shpsta_kaj)) <> 'Shipped'
     `);
 
-    // 4b. UPDATE k80: release date + status='Closed' (matches Abe's flow)
+    // 4b. UPDATE k80: release date + status='Closed' (matches Abe's flow).
+    // k80_tab has no uptime_k80 — rlsdte_k80 IS the touched-time signal.
     await req.query(`
       UPDATE k80_tab
-      SET rlsdte_k80 = GETDATE(), rlssta_k80 = 'Closed', uptime_k80 = GETDATE()
+      SET rlsdte_k80 = GETDATE(), rlssta_k80 = 'Closed'
       WHERE idnk80_k80 = ${idnk80}
     `);
 
