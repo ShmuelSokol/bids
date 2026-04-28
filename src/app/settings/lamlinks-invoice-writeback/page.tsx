@@ -13,7 +13,7 @@ export default async function LamLinksInvoiceWritebackSettingsPage() {
         </div>
         <h1 className="text-2xl font-bold">LamLinks Invoice Write-Back</h1>
         <p className="text-muted mt-1 text-sm">
-          When LIVE, DIBS /invoicing posts draft invoices into LamLinks&apos; <code className="font-mono">kad_tab</code> + <code className="font-mono">kae_tab</code> so Yosef doesn&apos;t click through the LamLinks desktop app. Unlike the bid write-back, these tables use SQL Server <code className="font-mono">IDENTITY</code> columns — id allocation is DB-native.
+          When LIVE, DIBS /invoicing posts draft invoices into LamLinks&apos; <code className="font-mono">kad_tab</code> + <code className="font-mono">kae_tab</code> so Abe doesn&apos;t click through the LamLinks desktop app. Unlike the bid write-back, these tables use SQL Server <code className="font-mono">IDENTITY</code> columns — id allocation is DB-native.
         </p>
       </div>
 
@@ -28,7 +28,7 @@ export default async function LamLinksInvoiceWritebackSettingsPage() {
               )}
             </div>
             <div className="text-xs text-muted leading-relaxed">
-              When LIVE, clicking &quot;Post to LamLinks&quot; on <Link href="/invoicing" className="underline">/invoicing</Link> inserts a <code>kad_tab</code> header + one <code>kae_tab</code> line per ka9 row, then updates <code>ka9.idnkae_ka9</code> to link each job line to its invoice line. The invoice lands in LamLinks with <code>cinsta_kad=&apos;Not Posted&apos;</code> (draft) so Yosef still has the UI Post step as a final human checkpoint.
+              When LIVE, clicking &quot;Post to LamLinks&quot; on <Link href="/invoicing" className="underline">/invoicing</Link> inserts a <code>kad_tab</code> header + one <code>kae_tab</code> line per ka9 row, then updates <code>ka9.idnkae_ka9</code> to link each job line to its invoice line. The invoice lands in LamLinks with <code>cinsta_kad=&apos;Not Posted&apos;</code> (draft) so Abe still has the UI Post step as a final human checkpoint.
             </div>
           </div>
           <InvoiceToggle initialValue={live} />
@@ -48,15 +48,15 @@ export default async function LamLinksInvoiceWritebackSettingsPage() {
           </li>
           <li className="flex gap-2">
             <span className="shrink-0">✅</span>
-            <div><strong>Q6 resolved (Yosef):</strong> AX never reads from LamLinks. No downstream integration to worry about — only the EDI-to-DIBBS transmission that LamLinks already handles internally on Post.</div>
+            <div><strong>Q6 resolved (Abe):</strong> AX never reads from LamLinks. No downstream integration to worry about — only the EDI-to-DIBBS transmission that LamLinks already handles internally on Post.</div>
           </li>
           <li className="flex gap-2">
             <span className="shrink-0">⏳</span>
-            <div><strong>Q7 pending:</strong> watch LamLinks Post flow live via <code className="font-mono">scripts/tail-invoice-chain.ts</code> while Yosef clicks Post on a real invoice. Confirms exact UPDATE sequence (cinsta flip, any side effects). See the morning test protocol in <Link href="/wiki/invoicing" className="underline">wiki/invoicing</Link>.</div>
+            <div><strong>Q7 pending:</strong> watch LamLinks Post flow live via <code className="font-mono">scripts/tail-invoice-chain.ts</code> while Abe clicks Post on a real invoice. Confirms exact UPDATE sequence (cinsta flip, any side effects). See the morning test protocol in <Link href="/wiki/invoicing" className="underline">wiki/invoicing</Link>.</div>
           </li>
           <li className="flex gap-2">
             <span className="shrink-0">⏳</span>
-            <div><strong>First live write dry-run.</strong> Pick one real un-invoiced shipment, run <code className="font-mono">scripts/test-invoice-writeback.ts --award-id=X</code>, verify the draft appears in LamLinks identical to one Yosef would type. Then <code className="font-mono">--execute</code> with him watching.</div>
+            <div><strong>First live write dry-run.</strong> Pick one real un-invoiced shipment, run <code className="font-mono">scripts/test-invoice-writeback.ts --award-id=X</code>, verify the draft appears in LamLinks identical to one Abe would type. Then <code className="font-mono">--execute</code> with him watching.</div>
           </li>
           <li className="flex gap-2">
             <span className="shrink-0">⏳</span>
@@ -69,10 +69,10 @@ export default async function LamLinksInvoiceWritebackSettingsPage() {
         <h2 className="text-lg font-semibold mb-3">Morning test protocol (2026-04-22)</h2>
         <ol className="space-y-2 text-xs list-decimal list-inside">
           <li>On NYEVRVSQL001, run <code className="font-mono">npx tsx scripts/tail-invoice-chain.ts</code> in one terminal. It polls kad/ka9/kae every 1 sec and prints new rows + column-level diffs.</li>
-          <li>Have Yosef Post ONE real invoice in LamLinks. We observe the exact write sequence — what fields change, in what order.</li>
-          <li>Pick a different un-invoiced shipment. Run <code className="font-mono">scripts/test-invoice-writeback.ts --award-id=XXX</code> (dry run). Review the SQL with Yosef.</li>
-          <li>Run with <code className="font-mono">--execute</code>. Tail shows our writes. Yosef confirms the draft appears in LamLinks &quot;Not Posted&quot; list identical to his own.</li>
-          <li>Yosef clicks Post on our draft. Tail shows the state flip. Celebrate.</li>
+          <li>Have Abe Post ONE real invoice in LamLinks. We observe the exact write sequence — what fields change, in what order.</li>
+          <li>Pick a different un-invoiced shipment. Run <code className="font-mono">scripts/test-invoice-writeback.ts --award-id=XXX</code> (dry run). Review the SQL with Abe.</li>
+          <li>Run with <code className="font-mono">--execute</code>. Tail shows our writes. Abe confirms the draft appears in LamLinks &quot;Not Posted&quot; list identical to his own.</li>
+          <li>Abe clicks Post on our draft. Tail shows the state flip. Celebrate.</li>
           <li>Flip the toggle above to LIVE and wire the /invoicing UI.</li>
         </ol>
       </div>

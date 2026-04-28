@@ -1,18 +1,18 @@
-// Send the 2026-04-28 test plan PDF to Shmuel's WhatsApp.
+// Send the 2026-04-27 REST API brief to Shmuel's WhatsApp.
 import "./env";
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync, existsSync } from "fs";
 
-const PDF = "C:\\Users\\ssokol\\Desktop\\DIBS-Test-Status-2026-04-28.pdf";
-const PHONE = "5162367397";
-const MESSAGE = `DIBS test status — end of session. Answered: daemon health, whitelist scope (per-host), worker pipeline works end-to-end. Open: k07 patch (needs Abe), put_client_quote URL + ACL (vendor question, not Yosef). Net stance + next moves inside.`;
+const PDF = "C:\\Users\\ssokol\\Desktop\\Yosef-DIBS-REST-API-Brief-2026-04-27.pdf";
+const PHONE = "5162367397"; // Shmuel
+const MESSAGE = `DIBS REST API brief for Yosef (2026-04-27). Today's findings: Sally REST creds work, IP whitelist confirmed real, architecture for the worker is built but not deployed. Three questions for Yosef inside (whitelist scope, function ACL, hosting box). Forward when ready.`;
 
 async function main() {
   if (!existsSync(PDF)) { console.error(`PDF not found: ${PDF}`); process.exit(1); }
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   const pdfBuf = readFileSync(PDF);
-  const fileName = `dibs-test-plan-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.pdf`;
+  const fileName = `yosef-rest-brief-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.pdf`;
   await supabase.storage.createBucket("briefings", { public: true }).catch(() => {});
   const { error: upErr } = await supabase.storage.from("briefings").upload(fileName, pdfBuf, {
     contentType: "application/pdf",
@@ -20,7 +20,8 @@ async function main() {
   });
   if (upErr) { console.error("upload error:", upErr.message); process.exit(2); }
   const { data } = supabase.storage.from("briefings").getPublicUrl(fileName);
-  console.log(`PDF uploaded: ${data.publicUrl}`);
+  const pdfUrl = data.publicUrl;
+  console.log(`PDF uploaded: ${pdfUrl}`);
 
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM } = process.env;
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_FROM) {
@@ -32,7 +33,7 @@ async function main() {
   const whatsappFrom = TWILIO_WHATSAPP_FROM.startsWith("whatsapp:") ? TWILIO_WHATSAPP_FROM : `whatsapp:${TWILIO_WHATSAPP_FROM}`;
 
   const params = new URLSearchParams({ To: whatsappTo, From: whatsappFrom, Body: MESSAGE });
-  params.append("MediaUrl", data.publicUrl);
+  params.append("MediaUrl", pdfUrl);
 
   const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
     method: "POST",

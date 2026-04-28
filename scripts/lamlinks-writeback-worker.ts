@@ -603,6 +603,31 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       const awardsMatch = out.match(/(\d+) newly inserted/g);
       return { nsn, output_tail: out.slice(-500), awards_inserted: awardsMatch?.[0], bids_inserted: awardsMatch?.[1] };
     }
+    case "import_dd219_invoices": {
+      // Pull today's DD219 invoices from AX and enqueue them in
+      // lamlinks_invoice_queue. The post-batch UI's "Import" button calls
+      // /api/invoicing/import which enqueues this rescue action.
+      const date = String(a.params?.date || new Date().toISOString().slice(0, 10));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid date: ${date}`);
+      if (dry) return { would_import: date };
+      const { spawnSync } = require("child_process");
+      const proc = spawnSync("npx", ["tsx", "scripts/enqueue-ax-invoices-for-ll.ts", `--date=${date}`], {
+        cwd: "C:\\tmp\\dibs-init\\dibs",
+        encoding: "utf8",
+        shell: true,
+        timeout: 120_000,
+      });
+      const out = `${proc.stdout || ""}\n${proc.stderr || ""}`;
+      if (proc.status !== 0) throw new Error(`import failed: ${out.slice(-400)}`);
+      const enqueuedMatch = out.match(/Enqueued (\d+) invoices/);
+      const totalMatch = out.match(/AX returned (\d+) DD219/);
+      return {
+        date,
+        ax_total: totalMatch ? parseInt(totalMatch[1], 10) : null,
+        enqueued: enqueuedMatch ? parseInt(enqueuedMatch[1], 10) : null,
+        output_tail: out.slice(-500),
+      };
+    }
     case "refresh_dibbs_clins": {
       // Scrape DIBBS Package View for a sol to populate dibbs_sol_clins.
       // Used to fix the multi-CLIN qty gap: LL's own scraper only captures
@@ -640,6 +665,227 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
   }
 }
 
+async function getInvoiceWritebackEnabled(supabase: any): Promise<boolean> {
+  const { data } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", "lamlinks_invoice_writeback_enabled")
+    .maybeSingle();
+  return data?.value === "true";
+}
+
+/**
+ * Drain lamlinks_invoice_queue: for each row in `approved` state, replicate
+ * Abe's manual invoicing flow as a single SQL transaction:
+ *
+ *   1. Resolve kaj_tab shipment via contract # + invoice total match:
+ *        AX CustomersOrderReference (e.g. SPE2DS-26-P-1489[SM3106])
+ *        → strip [suffix] → cntrct_k79
+ *        → k80_tab.idnk79_k80 = <idnk79> AND k80_tab.relext_k80 = <ax_total>
+ *        → kaj_tab.idnk80_kaj = <idnk80>
+ *   2. INSERT kad header (cinsta_kad='Posted' directly — no draft step).
+ *      cin_no_kad = LL counter MAX+1; cinnum_kad = AX invoice digits.
+ *   3. INSERT kae line(s) under the kad.
+ *   4. UPDATE k80 to release: rlsdte_k80=GETDATE(), rlssta_k80='Closed'.
+ *   5. INSERT 2 kbr rows: WAWF 810 (idnkap=24) + WAWF 856 (idnkap=25),
+ *      itttbl_kbr='kaj', idnitt_kbr=<kaj_id>, xtcsta_kbr='WAWF X sent'.
+ *
+ * Validated against the 2026-04-28 trace of CIN0066169 ($17,796 against
+ * SPE2DS-26-P-1489 → kaj=353326). Schema fields confirmed via direct
+ * inspection of the row Abe just created.
+ *
+ * Lifecycle:
+ *   Abe imports → state='pending' (review-only, worker ignores)
+ *   Abe clicks "Post All" → bulk update pending→approved → worker drains
+ *   Worker writes → state='posted' (terminal)
+ *   Errors → state='error' with error_message
+ */
+async function processInvoiceQueue(): Promise<void> {
+  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  if (!(await getInvoiceWritebackEnabled(supabase))) return;
+
+  const { data: approved } = await supabase
+    .from("lamlinks_invoice_queue")
+    .select("*")
+    .eq("state", "approved")
+    .order("enqueued_at", { ascending: true })
+    .limit(25);
+  if (!approved || approved.length === 0) return;
+  console.log(`[${new Date().toISOString()}] processing ${approved.length} approved invoices`);
+
+  const pool = await sql.connect({
+    connectionString: "Driver={SQL Server};Server=NYEVRVSQL001;Database=llk_db1;Trusted_Connection=yes;",
+  });
+  try {
+    for (const row of approved) {
+      const { data: claimed } = await supabase
+        .from("lamlinks_invoice_queue")
+        .update({ state: "processing", picked_up_at: new Date().toISOString(), worker_host: require("os").hostname() })
+        .eq("id", row.id)
+        .eq("state", "approved")
+        .select("id");
+      if (!claimed || claimed.length === 0) continue;
+
+      try {
+        const result = await writeOneInvoice(pool, row);
+        await supabase.from("lamlinks_invoice_queue").update({
+          state: "posted",
+          posted_at: new Date().toISOString(),
+          ll_idnkad: result.idnkad,
+          ll_cin_no: String(result.cinNo),
+          ll_kae_ids: result.idnkaeIds,
+          error_message: null,
+        }).eq("id", row.id);
+        console.log(`  ✓ ${row.ax_invoice_number} → kad=${result.idnkad} kae=[${result.idnkaeIds.join(",")}] kbr=[${result.idnkbrIds.join(",")}]`);
+      } catch (e: any) {
+        await supabase.from("lamlinks_invoice_queue").update({
+          state: "error",
+          error_message: (e.message || String(e)).slice(0, 500),
+        }).eq("id", row.id);
+        console.log(`  ✗ ${row.ax_invoice_number}: ${e.message}`);
+      }
+    }
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Single-invoice writeback (kad+kae+k80+kbr) in one SQL transaction.
+ * Returns the new LL ids on success. Throws on any mismatch or DB error.
+ */
+async function writeOneInvoice(
+  pool: sql.ConnectionPool,
+  row: any,
+): Promise<{ idnkad: number; idnkaeIds: number[]; idnkbrIds: number[]; cinNo: number }> {
+  // 1. Resolve kaj via contract # + invoice total.
+  const orderRef = String(row.ax_customer_order_reference || "").trim();
+  const contractNo = orderRef.split("[")[0].trim();
+  if (!contractNo) throw new Error("missing ax_customer_order_reference");
+  const total = Number(row.ax_total_amount) || 0;
+  if (total <= 0) throw new Error("missing ax_total_amount");
+
+  const kajLookup = await pool.request().query(`
+    SELECT TOP 5
+      kaj.idnkaj_kaj, kaj.shpnum_kaj, kaj.shpsta_kaj,
+      k80.idnk80_k80, k80.relext_k80, k80.rlssta_k80
+    FROM k79_tab k79
+    JOIN k80_tab k80 ON k80.idnk79_k80 = k79.idnk79_k79
+    JOIN kaj_tab kaj ON kaj.idnk80_kaj = k80.idnk80_k80
+    WHERE LTRIM(RTRIM(k79.cntrct_k79)) = '${contractNo.replace(/'/g, "''")}'
+      AND ABS(k80.relext_k80 - ${total}) < 0.01
+      AND LTRIM(RTRIM(kaj.shpsta_kaj)) = 'Shipped'
+    ORDER BY kaj.uptime_kaj DESC
+  `);
+  if (kajLookup.recordset.length === 0) {
+    throw new Error(`no shipped kaj found for contract '${contractNo}' total $${total}`);
+  }
+  if (kajLookup.recordset.length > 1) {
+    throw new Error(`ambiguous: ${kajLookup.recordset.length} shipped kaj rows for contract '${contractNo}' total $${total} — need additional disambiguation field`);
+  }
+  const m = kajLookup.recordset[0];
+  const idnkaj: number = m.idnkaj_kaj;
+  const idnk80: number = m.idnk80_k80;
+
+  // 2. Resolve customer + cinnum + cinno
+  const k31r = await pool.request().query(`
+    SELECT TOP 1 idnk31_k31 FROM k31_tab
+    WHERE LTRIM(RTRIM(a_code_k31)) = 'DD219' OR LTRIM(RTRIM(c_name_k31)) LIKE '%DD219%'
+  `);
+  const idnk31 = k31r.recordset[0]?.idnk31_k31 || 203;
+
+  const axInvoice = String(row.ax_invoice_number || "").trim();
+  const cinnum = axInvoice.replace(/^CIN/i, "").replace(/[^0-9A-Z]/gi, "");
+
+  const cinMax = await pool.request().query(`
+    SELECT TOP 1 cin_no_kad FROM kad_tab WHERE cin_no_kad LIKE '[0-9]%'
+    ORDER BY TRY_CAST(cin_no_kad AS BIGINT) DESC
+  `);
+  const lastCin = cinMax.recordset[0]?.cin_no_kad ? Number(String(cinMax.recordset[0].cin_no_kad).trim()) : 254000;
+  const cinNo = lastCin + 1;
+
+  const lines: any[] = Array.isArray(row.ax_lines) ? row.ax_lines : [];
+  if (lines.length === 0) throw new Error("no ax_lines");
+
+  // 3. Multi-table transaction
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const req = new sql.Request(tx);
+
+    const kadRes = await req.query(`
+      INSERT INTO kad_tab (
+        cinsta_kad, cinnum_kad, cin_no_kad, cindte_kad, cisdte_kad,
+        upname_kad, uptime_kad, idnk31_kad, idnk06_kad,
+        pinval_kad, xinval_kad, mslval_kad, nmsval_kad, ppcval_kad,
+        cshval_kad, crmval_kad, otcval_kad, ar_val_kad, cinact_kad
+      )
+      OUTPUT inserted.idnkad_kad AS newId
+      VALUES (
+        'Posted         ', '${cinnum}', '${cinNo}', GETDATE(), GETDATE(),
+        'ajoseph   ', GETDATE(), ${idnk31}, 1,
+        0, 0, ${total}, 0, 0,
+        0, 0, 0, ${total}, 1
+      )
+    `);
+    const idnkad: number = kadRes.recordset[0].newId;
+
+    const idnkaeIds: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const L = lines[i];
+      const desc = String(L.productDescription || L.productNumber || "").replace(/'/g, "''").slice(0, 40);
+      const qty = Number(L.invoicedQuantity) || 0;
+      const up = Number(L.salesPrice) || 0;
+      const ext = Number(L.lineAmount) || (qty * up);
+      const ui = String(L.uom || "EA").slice(0, 2);
+      const kaeRes = await req.query(`
+        INSERT INTO kae_tab (
+          idnkad_kae, cilcls_kae, cil_no_kae, cildes_kae,
+          cilqty_kae, cil_up_kae, cil_ui_kae, cilext_kae, pinval_kae, xinval_kae
+        )
+        OUTPUT inserted.idnkae_kae AS newId
+        VALUES (
+          ${idnkad}, 'Material  ', ${i + 1}, '${desc}',
+          ${qty}, ${up}, '${ui}', ${ext}, 0, 0
+        )
+      `);
+      idnkaeIds.push(kaeRes.recordset[0].newId);
+    }
+
+    // 4. UPDATE k80: release date + status='Closed' (matches Abe's flow)
+    await req.query(`
+      UPDATE k80_tab
+      SET rlsdte_k80 = GETDATE(), rlssta_k80 = 'Closed', uptime_k80 = GETDATE()
+      WHERE idnk80_k80 = ${idnk80}
+    `);
+
+    // 5. INSERT 2 kbr rows for WAWF 810 + 856
+    const idnkbrIds: number[] = [];
+    for (const kap of [24, 25]) { // 24 = WAWF 810 invoice, 25 = WAWF 856 shipment notice
+      const xtcsta = kap === 24 ? "WAWF 810 sent  " : "WAWF 856 sent  ";
+      const xtcscn = kap === 24 ? cinNo : 0;
+      const kbrRes = await req.query(`
+        INSERT INTO kbr_tab (
+          addtme_kbr, addnme_kbr, itttbl_kbr, idnitt_kbr, idnkap_kbr,
+          xtcscn_kbr, xtcsta_kbr, xtctme_kbr
+        )
+        OUTPUT inserted.idnkbr_kbr AS newId
+        VALUES (
+          GETDATE(), 'ajoseph   ', 'kaj', ${idnkaj}, ${kap},
+          ${xtcscn}, '${xtcsta}', GETDATE()
+        )
+      `);
+      idnkbrIds.push(kbrRes.recordset[0].newId);
+    }
+
+    await tx.commit();
+    return { idnkad, idnkaeIds, idnkbrIds, cinNo };
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
 async function main() {
   const loop = process.argv.includes("--loop");
   if (!loop) {
@@ -662,6 +908,7 @@ async function main() {
       await processRescueActions(pool, supabase);
       await pool.close();
     } catch (e: any) { console.error(`rescue pass error: ${e.message}`); }
+    try { await processInvoiceQueue(); } catch (e: any) { console.error(`invoice pass error: ${e.message}`); }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
 }
