@@ -19,17 +19,19 @@ went through), and DLA ack's it.
 
 **If transmit DID succeed and local DB is still broken**, use `scripts/ll-reinsert-orphan-bid.ts` to re-create the k33/k34/k35 shell with `qotref_k33` matching the original, preserving the DLA link.
 
-**Hypothesized fix (now CONFIRMED via 2026-04-27 live trace)** at the worker side:
-after the worker inserts k34/k35 and finalizes the envelope, it bumps
-`k07_tab SOL_FORM_PREFERENCES` for ajoseph — the same UPDATE LL's own Post flow
-does per the XE trace.
+**The k07 cursor-fix patch — VALIDATED 2026-04-28 via live test:**
+Worker bumps `k07_tab SOL_FORM_PREFERENCES` for ajoseph after envelope
+finalization, matching what LL's own Post flow does (12+ times per bid burst
+per the XE trace). End-to-end test:
 
-**Confirmation from 2026-04-27 monitoring:** native LL fires the k07 UPDATE
-**12+ times per bid Post** during a typical 6-min interactive bid burst.
-Both ajoseph (on COOKIE) and yschapiro (on NYEVRVTC001) bump their respective
-k07 rows on every interaction. This is the universal session-state heartbeat
-LL's VFP local cursor uses for cache invalidation. Our worker now matches the
-pattern. End-to-end test still pending but the trace evidence is strong.
+- Abe saved 2 bids in LL (creating staging envelope), kept the form open
+- DIBS submitted 1 bid → worker piggybacked into the envelope
+- Abe Posted the combined 3-line envelope
+- **No cursor error 9999806 OR 9999607.** Patch silenced both. All 3 lines transmitted to DLA per ack email.
+
+So **piggyback mode** (DIBS appends to Abe's staged envelope) is now production-clean. Use it as the default operational pattern.
+
+**Fresh-envelope mode (DIBS mints from scratch) — partial:** Same 2026-04-28 test, second envelope: DIBS minted a fresh k33, Abe added a line on top in LL (which LL routed to its OWN new envelope, not ours — meaning each envelope ends up standalone). On Post, DIBS's fresh envelope produced cursor error **9977720** (different from 9999806/9999607). Bid still transmitted to DLA per ack email — error is cosmetic, same as the others. The `lamlinks_fresh_envelope_enabled` flag (default true) gates this mode; flip false to require Abe-seeded envelopes only. UI on `/solicitations` shows an amber warning when fresh-envelope mode is enabled.
 
 See `docs/flows/ll-post-sequence.md` for the full bid-Post SQL sequence
 captured live.
@@ -63,6 +65,19 @@ Test script at `https://jzgvdfzboknpcrhymjob.supabase.co/storage/v1/object/publi
 
 **Creds live in `.env` on GLOVE** (`LL_SALLY_LOGIN`, `LL_API_KEY`, `LL_API_SECRET`, `LL_E_CODE`). Never commit `.env`. Will be duplicated to NYEVRVTC001 once the worker is built.
 
+## UoM B-prefix codes (B25, B10, etc.) are sellable units, not multipliers
+
+> Symptom (2026-04-28): `SPE2DS-26-T-021J` had AX UoM `B25` (pack of 25). DIBS suggested $110.99 (~5× the LL estimated $20.40). DIBS appeared to be multiplying by 25 as a case-of-25 factor when `B25` is itself the sold unit.
+
+**Cause:** DIBS's pricing logic treats certain UoM codes as multipliers (e.g. `BX` of N units = price-per-unit × N), but DLA convention is that `B<NN>` codes (B25, B10, B100, etc.) are the *sellable unit* — one B25 = one pack of 25, sold as a single line-item.
+
+**Fix needed (not yet shipped):** UoM mapping in pricing logic should treat B-prefix codes as `unit_qty=1`, not as multipliers. Audit `src/lib/pricing/` and the cost-waterfall code that reads AX `unitId`. Likely needs a small lookup table:
+- `EA`, `PR`, `PG`, `BG` etc. → multiplier 1 (sold individually)
+- `BX`, `CN`, `PK` → may need pack count from another field
+- `B<NN>` → multiplier 1 (the bundle IS the unit)
+
+**For now:** when Abe sees a B-prefix UoM in the modal, he should override the suggested price manually before submitting. Don't bid B-prefix sols via DIBS without checking.
+
 ## LL imports only 1 CLIN of multi-CLIN DIBBS sols
 
 > Symptom (2026-04-24): `SPE2DH-26-T-3287` showed 4 CLINs on DIBBS web UI but only 1 in LL's k11_tab. DIBS (which mirrors LL) showed qty 1 when the real sol was qty 4 across 4 destinations. Abe's bid would have covered only one CLIN.
@@ -71,7 +86,13 @@ Test script at `https://jzgvdfzboknpcrhymjob.supabase.co/storage/v1/object/publi
 
 **Partial fix shipped:** solicitations modal header now shows CLIN count + a red warning badge when single-CLIN but `lamlinks_estimated_value` >> `suggested_price × quantity` (3× threshold). Plus a "↗ View on DIBBS" button that opens the sol's RfqRecs page in a new tab so Abe can visually cross-check.
 
-**Real fix (deferred):** a Playwright-driven scraper that navigates DIBBS "Package View" doPostBack and parses the actual CLIN breakdown. Caches per-sol in a new `dibbs_sol_clins` table. Shows a diff on the modal when LL disagrees.
+**Real fix shipped 2026-04-28:** `scripts/scrape-dibbs-clins.ts` uses Playwright to load the DIBBS Package View directly (`https://www.dibbs.bsm.dla.mil/rfq/rfqrec.aspx?sn=<sol-no-dashes>`) and extract the CLIN table (the third `<table>` on the page; columns `# / NSN/Part No. / Nomenclature / Technical Documents / Purchase Request QTY`; the qty cell looks like `<10-digit PR number> Qty: <integer>`). Per-CLIN rows go into `dibbs_sol_clins` (unique on `(sol_no, clin_no)`).
+
+UI: solicitations modal has a "⟳ Scrape DIBBS CLINs" button (purple) that enqueues `refresh_dibbs_clins` rescue action; daemon worker spawns the scraper. When dibbs_sol_clins data exists for a sol, the modal shows a panel comparing LL (k32) qty vs DIBBS scraped qty with a per-CLIN breakdown — flags discrepancy >5% with a red "DIBBS DISAGREES" header.
+
+**Validated against SPE2DS-26-T-021R**: LL showed qty 18 (CLIN 0003 only); DIBBS Package View has 6 CLINs totaling 318 (qty 2 + 9 + 77 + 12 + 18 + 200). Scraper correctly captured all 6.
+
+**Future:** auto-scrape CLINs nightly for any new multi-CLIN-suspect sol so Abe sees fresh data on first open. Pricing override (use scraped qty for the suggested-price calc when LL disagrees) is a separate refinement — for now Abe sees the discrepancy and can override manually.
 
 ## NSN history gap: DIBS `awards`/`abe_bids` miss international FSCs
 
