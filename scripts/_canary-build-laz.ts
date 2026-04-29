@@ -101,6 +101,47 @@ if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
   console.log(`NSN: ${nsnStr}`);
   console.log(`PIDTXT: ${pidtxtStr.length} chars`);
 
+  // Pull all 7 party blocks via ka6→ka7
+  const partiesQ = await pool.request().query(`
+    SELECT LTRIM(RTRIM(ka7.gduset_ka7)) AS qual,
+           LTRIM(RTRIM(ka7.d_code_ka7)) AS code,
+           LTRIM(RTRIM(ka7.d_name_ka7)) AS name,
+           LTRIM(RTRIM(ka7.d_nam2_ka7)) AS nam2,
+           LTRIM(RTRIM(ka7.d_nam3_ka7)) AS nam3,
+           LTRIM(RTRIM(ka7.d_adr1_ka7)) AS adr1,
+           LTRIM(RTRIM(ka7.d_adr2_ka7)) AS adr2,
+           LTRIM(RTRIM(ka7.d_adr3_ka7)) AS adr3,
+           LTRIM(RTRIM(ka7.d_adr4_ka7)) AS adr4,
+           LTRIM(RTRIM(ka7.d_city_ka7)) AS city,
+           LTRIM(RTRIM(ka7.d_stte_ka7)) AS stte,
+           LTRIM(RTRIM(ka7.d_zipc_ka7)) AS zipc,
+           LTRIM(RTRIM(ka7.d_cntr_ka7)) AS cntr,
+           LTRIM(RTRIM(ka7.d_attn_ka7)) AS attn,
+           LTRIM(RTRIM(ka7.d_phon_ka7)) AS phon,
+           LTRIM(RTRIM(ka7.d_faxn_ka7)) AS faxn,
+           LTRIM(RTRIM(ka7.d_emal_ka7)) AS emal
+    FROM ka6_tab ka6
+    INNER JOIN ka7_tab ka7 ON ka7.idnka7_ka7 = ka6.idnka7_ka6
+    WHERE LTRIM(RTRIM(ka6.gdutbl_ka6)) = 'kaj' AND ka6.idngdu_ka6 = 353349
+  `);
+  const parties: Record<string, any> = {};
+  const mirrToLetter: Array<[RegExp, string]> = [
+    [/Block 9\b/i,  "B"], [/Block 10\b/i, "C"], [/Block 11\b/i, "H"],
+    [/Block 12\b/i, "J"], [/Block 13\b/i, "K"], [/Block 14\b/i, "M"],
+    [/Block 21\b/i, "N"],
+  ];
+  for (const row of partiesQ.recordset) {
+    const letter = mirrToLetter.find(([rx]) => rx.test(row.qual))?.[1];
+    if (!letter) continue;
+    parties[letter] = {
+      code: row.code, name: row.name, nam2: row.nam2, nam3: row.nam3,
+      adr1: row.adr1, adr2: row.adr2, adr3: row.adr3, adr4: row.adr4,
+      city: row.city, stte: row.stte, zipc: row.zipc, cntr: row.cntr,
+      attn: row.attn, phon: row.phon, faxn: row.faxn, emal: row.emal,
+    };
+  }
+  console.log(`Parties from ka7: ${Object.keys(parties).join(", ")}`);
+
   await pool.close();
 
   // Build the DBF/FPT
@@ -135,6 +176,7 @@ if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
     cinval: parseFloat(src.cinval),
     insdte: src.insdte ? new Date(src.insdte) : new Date(),
     trn_id,
+    parties,
   }, TEMPLATE_DIR);
 
   console.log(`Generated DBF: ${dbf.length} bytes, FPT: ${fpt.length} bytes`);

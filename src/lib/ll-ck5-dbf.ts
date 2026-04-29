@@ -106,16 +106,17 @@ export interface Ck5InvoiceData {
   cinval: number;       // total invoice value
   insdte: Date;         // issue date (date-only)
   trn_id: number;       // EDI transaction control number (k07.TRN_ID_CK5)
-  // Per-shipment destination party (the only party that varies invoice-to-invoice
-  // for DD219 — DLA TROOP SUPPORT, DEF FIN, ERG self are constant)
-  consignee?: PartyOverride;
-  shipto?: PartyOverride;
+  // 7 party blocks (B/C/H/J/K/M/N) — pulled per-invoice from ka7_tab via the
+  // ka6 link. Any block not provided keeps template values. See PartyLetter
+  // for the MIRR-block→letter mapping.
+  parties?: Partial<Record<PartyLetter, PartyOverride>>;
 }
 
 export interface PartyOverride {
   code?: string;        // 10-char CAGE
   name?: string;        // 80-char
   nam2?: string;
+  nam3?: string;
   adr1?: string;
   adr2?: string;
   adr3?: string;
@@ -124,7 +125,41 @@ export interface PartyOverride {
   stte?: string;        // 2-char
   zipc?: string;        // 10-char
   cntr?: string;
+  attn?: string;
+  phon?: string;        // 20-char
+  faxn?: string;
+  emal?: string;
 }
+
+/**
+ * 7 party blocks (B/C/H/J/K/M/N). Maps to ka7_tab.gduset_ka7 MIRR qualifiers:
+ *   B → MIRR 9 Prime Contractor (ERG self)
+ *   C → MIRR 10 Administered By (DLA contracting office)
+ *   H → MIRR 11 Shipped From (ERG self)
+ *   J → MIRR 12 Payment (DEF FIN AND ACCOUNTING)
+ *   K → MIRR 13 Shipped To (consignee)
+ *   M → MIRR 14 Marked For
+ *   N → MIRR 21 Quality Assurance
+ */
+export type PartyLetter = "B" | "C" | "H" | "J" | "K" | "M" | "N";
+
+const PARTY_BLOCK_OFFSETS: Record<PartyLetter, number> = {
+  B: 1233, C: 2195, H: 3157, J: 4119, K: 5081, M: 6043, N: 7005,
+};
+
+const PARTY_FIELD_OFFSETS = {
+  CODE: 12,  NAME: 22,  NAM2: 102, NAM3: 182,
+  ADR1: 262, ADR2: 342, ADR3: 422, ADR4: 502,
+  CITY: 582, STTE: 662, ZIPC: 664, CNTR: 674,
+  ATTN: 754, PHON: 834, FAXN: 854, EMAL: 874,
+} as const;
+
+const PARTY_FIELD_LENGTHS: Record<keyof typeof PARTY_FIELD_OFFSETS, number> = {
+  CODE: 10, NAME: 80, NAM2: 80, NAM3: 80,
+  ADR1: 80, ADR2: 80, ADR3: 80, ADR4: 80,
+  CITY: 80, STTE: 2,  ZIPC: 10, CNTR: 80,
+  ATTN: 80, PHON: 20, FAXN: 20, EMAL: 80,
+};
 
 // ─── Field encoders ─────────────────────────────────────────────────────
 
@@ -303,21 +338,39 @@ export function buildCk5Dbf(invoice: Ck5InvoiceData, templatePath: string): { db
   setField("A_CODE_CK5", padChar(invoice.a_code, 32));
   setField("CNTRCT_CK5", padChar(invoice.cntrct, 60));
 
-  // C_CODE_CK5 (DLA contracting office CAGE) — first 6 chars of contract.
-  // Template may have a different prefix (e.g. SPE2DP) than our invoice
-  // (e.g. SPE2DS); overwrite to the correct prefix. char(10) at offset 2207.
-  const cContractingCage = (invoice.cntrct || "").slice(0, 6).padEnd(10, " ");
-  Buffer.from(cContractingCage, "latin1").copy(dbf, recordStart + 2207);
+  // Helper to write a single field within a party block
+  function writePartyField(
+    party: PartyLetter,
+    fieldName: keyof typeof PARTY_FIELD_OFFSETS,
+    value: string | undefined,
+  ) {
+    if (value === undefined) return; // leave template value
+    const len = PARTY_FIELD_LENGTHS[fieldName];
+    const off = recordStart + PARTY_BLOCK_OFFSETS[party] + PARTY_FIELD_OFFSETS[fieldName];
+    padChar(value, len).copy(dbf, off);
+  }
 
-  // K_CODE_CK5 / M_CODE_CK5 (consignee / mark-for) — first 6 chars of order#.
-  // Order numbers like "N2999C6092ZP91" (Navy) or "W34GMT60430147" (Army)
-  // start with the consignee's 6-char CAGE. Updating these so the EDI routes
-  // correctly even if address text fields stay from template (informational).
-  // K_CODE at 5093, M_CODE at 6055 (both char(10)).
-  const consigneeCage = (invoice.ordrno || "").slice(0, 6).padEnd(10, " ");
-  if (consigneeCage.trim()) {
-    Buffer.from(consigneeCage, "latin1").copy(dbf, recordStart + 5093); // K
-    Buffer.from(consigneeCage, "latin1").copy(dbf, recordStart + 6055); // M
+  // Apply per-invoice party overrides
+  if (invoice.parties) {
+    for (const [letter, p] of Object.entries(invoice.parties) as [PartyLetter, PartyOverride][]) {
+      if (!p) continue;
+      writePartyField(letter, "CODE", p.code);
+      writePartyField(letter, "NAME", p.name);
+      writePartyField(letter, "NAM2", p.nam2);
+      writePartyField(letter, "NAM3", p.nam3);
+      writePartyField(letter, "ADR1", p.adr1);
+      writePartyField(letter, "ADR2", p.adr2);
+      writePartyField(letter, "ADR3", p.adr3);
+      writePartyField(letter, "ADR4", p.adr4);
+      writePartyField(letter, "CITY", p.city);
+      writePartyField(letter, "STTE", p.stte);
+      writePartyField(letter, "ZIPC", p.zipc);
+      writePartyField(letter, "CNTR", p.cntr);
+      writePartyField(letter, "ATTN", p.attn);
+      writePartyField(letter, "PHON", p.phon);
+      writePartyField(letter, "FAXN", p.faxn);
+      writePartyField(letter, "EMAL", p.emal);
+    }
   }
 
   setField("PIIDNO_CK5", padChar(invoice.piidno, 22));
