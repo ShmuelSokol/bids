@@ -78,6 +78,14 @@ export function AwardsList({
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(purchaseOrdersProp);
   const [tab, setTab] = useState<"awards" | "pos" | "review">("awards");
 
+  // Lookup: award.po_id → PO row. Used to show AX status badges on the
+  // Awards tab without forcing a tab-switch to /POs.
+  const poById = useMemo(() => {
+    const m = new Map<number, PurchaseOrder>();
+    for (const p of purchaseOrders) m.set(p.id, p);
+    return m;
+  }, [purchaseOrders]);
+
   // Count lines flagged for review so the tab badge tells Abe how much work
   // is waiting. Computed client-side from the same data the panel will load;
   // exact count comes from the API, but this keeps the tab honest without a
@@ -767,9 +775,47 @@ export function AwardsList({
                         >
                           {a.ship_status || "—"}
                         </span>
-                        {a.po_generated && (
-                          <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 ml-1">
-                            PO
+                        {a.po_generated && (() => {
+                          const po = a.po_id ? poById.get(a.po_id) : null;
+                          if (po?.ax_po_number) {
+                            // Confirmed in AX — show green pill with AX PO #
+                            return (
+                              <span
+                                className="text-[9px] px-1 rounded bg-green-100 text-green-700 ml-1 font-mono"
+                                title={`AX PO ${po.ax_po_number} — confirmed via poll-ax`}
+                              >
+                                AX {po.ax_po_number}
+                              </span>
+                            );
+                          }
+                          if (po?.dmf_state && po.dmf_state !== "drafted" && po.dmf_state !== "awaiting_po_number") {
+                            // In flight — submitted to AX but no number back yet
+                            return (
+                              <span
+                                className="text-[9px] px-1 rounded bg-yellow-100 text-yellow-700 ml-1"
+                                title={`DIBS PO ${po.po_number} submitted to AX (state: ${po.dmf_state}) — waiting for AX confirmation`}
+                              >
+                                AX ⏳
+                              </span>
+                            );
+                          }
+                          // DIBS-only PO, not yet sent to AX
+                          return (
+                            <span
+                              className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 ml-1"
+                              title={po ? `DIBS PO ${po.po_number} (draft) — not yet submitted to AX` : "DIBS PO (draft) — not yet submitted to AX"}
+                            >
+                              PO
+                            </span>
+                          );
+                        })()}
+                        {!a.po_generated && a.linked_to_ax_po && (
+                          // No DIBS PO but heuristic linker matched it to an AX-side PO
+                          <span
+                            className="text-[9px] px-1 rounded bg-blue-100 text-blue-700 ml-1"
+                            title="Linked to AX PO via heuristic (NSN + qty + date) — DIBS didn't create this PO"
+                          >
+                            AX*
                           </span>
                         )}
                         </SourceTip>
