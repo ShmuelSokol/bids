@@ -54,3 +54,16 @@ next-env.d.ts
 
 # reverse-engineering strings dumps (~32 MB; regenerate via rev-eng/README.md)
 /rev-eng/strings/*.txt
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json
+
+# LL .laz templates (reference DBF/FPT for invoice + bid generation) —
+# code in src/lib/ll-{ck5,qtb}-dbf.ts depends on these at runtime, so they
+# must travel with the repo. Carve-out from the broad /data/ ignore above.
+# (gitignore quirk: re-include the parent dir before sub-paths can negate.)
+!/data
+/data/*
+!/data/ll-templates
+!/data/ll-templates/**

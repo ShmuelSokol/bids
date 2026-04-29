@@ -30,8 +30,10 @@ import { createClient } from "@supabase/supabase-js";
 import { join } from "path";
 import { buildCk5Dbf } from "../src/lib/ll-ck5-dbf";
 import { uploadLaz, buildLazFilename } from "../src/lib/ll-laz";
+import { transmitBidEnvelope, QtbBidLineData } from "../src/lib/ll-bid-laz";
 
 const WAWF_TEMPLATE_DIR = join(__dirname, "..", "data", "ll-templates");
+const BID_TEMPLATE_DIR = join(__dirname, "..", "data", "ll-templates", "bid");
 
 const POLL_INTERVAL_MS = 30_000;   // 30s between polls in --loop mode
 const MAX_ROWS_PER_PASS = 10;      // avoid monopolising Abe's LamLinks session
@@ -176,7 +178,11 @@ async function resolveTarget(pool: sql.ConnectionPool, sol: string, nsn: string)
   // NSN stored with dashes in LamLinks (01-578-7887 not 015787887), take everything after the FSC
   const niin = nsn.replace(/^\d{4}-/, "");
   const r = await pool.request().query(`
-    SELECT k11.idnk11_k11, k11.solqty_k11, k11.sol_um_k11, k08.partno_k08, k08.p_cage_k08
+    SELECT k11.idnk11_k11, k11.lam_id_k11, k11.solqty_k11, k11.sol_um_k11,
+           k11.fobcod_k11, k11.our_pn_k11, k11.pr_num_k11, k11.itemno_k11,
+           k10.sol_no_k10, k10.b_code_k10, k10.b_name_k10, k10.b_fax_k10,
+           k10.closes_k10, k10.bq_sta_k10, k10.sol_ti_k10,
+           k08.partno_k08, k08.p_cage_k08, k08.p_desc_k08, k08.fsc_k08, k08.niin_k08, k08.p_um_k08
     FROM k11_tab k11
     INNER JOIN k10_tab k10 ON k11.idnk10_k11 = k10.idnk10_k10
     INNER JOIN k08_tab k08 ON k11.idnk08_k11 = k08.idnk08_k08
@@ -184,12 +190,66 @@ async function resolveTarget(pool: sql.ConnectionPool, sol: string, nsn: string)
   `);
   if (r.recordset.length === 0) return null;
   const row = r.recordset[0];
+  const fsc = String(row.fsc_k08 || "").trim();
+  const niinStr = String(row.niin_k08 || "").trim();
   return {
     idnk11: row.idnk11_k11 as number,
+    lam_id: row.lam_id_k11 as number,
+    itemno: row.itemno_k11 as number,
     solqty: row.solqty_k11 as number,
     uom: String(row.sol_um_k11 || "").trim() || "EA",
     mfrPn: String(row.partno_k08 || "").trim(),
     mfrCage: String(row.p_cage_k08 || "").trim(),
+    desc: String(row.p_desc_k08 || "").trim(),
+    nsn: `${fsc}-${niinStr}`,
+    fobcod: (String(row.fobcod_k11 || "D").trim() === "O" ? "O" : "D") as "D" | "O",
+    sol_no: String(row.sol_no_k10 || "").trim(),
+    buycod: String(row.b_code_k10 || "").trim(),
+    buynam: String(row.b_name_k10 || "").trim(),
+    buyfax: String(row.b_fax_k10 || "").trim(),
+    yp_no: String(row.pr_num_k11 || "").trim(),
+    closes: row.closes_k10 as Date,
+    bq_sta: String(row.bq_sta_k10 || "included").trim(),
+    sol_ti: String(row.sol_ti_k10 || "F").trim(),
+    our_pn: String(row.our_pn_k11 || "").trim(),
+  };
+}
+
+type ResolvedTarget = NonNullable<Awaited<ReturnType<typeof resolveTarget>>>;
+
+/**
+ * Build a QtbBidLineData from a resolved target + bid params.
+ * Used to accumulate lines for the per-envelope .laz upload.
+ */
+function buildQtbLine(target: ResolvedTarget, bidPrice: number, bidQty: number, deliveryDays: number, idnk34: number): QtbBidLineData {
+  // LAMREF: cosmetic 15-char field. LL UI puts an FSC-NIIN-style abbreviation
+  // (often shared across an envelope from session state). Safe default: the
+  // sol_no truncated — Sally accepts any short string.
+  const lamref = target.sol_no.slice(0, 15);
+  return {
+    idnqtb: idnk34,           // qtb wire format reuses k34's id
+    lam_id: target.lam_id,
+    lamref,
+    lamitm: target.itemno,
+    duedte: target.closes,
+    buycod: target.buycod,
+    buynam: target.buynam,
+    buyfax: target.buyfax || undefined,
+    yp_no: target.yp_no,
+    sol_no: target.sol_no,
+    vpn: target.our_pn || undefined,
+    pn: target.mfrPn,
+    mcage: target.mfrCage,
+    desc: target.desc.slice(0, 20),
+    nsn: target.nsn,
+    fobcod: target.fobcod,
+    qty_ui: target.uom,
+    solqty: target.solqty,
+    qty1: bidQty,
+    up1: bidPrice,
+    aro1: deliveryDays,
+    bq_sta: target.bq_sta,
+    sol_ti: target.sol_ti,
   };
 }
 
@@ -380,6 +440,14 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
       console.log(`  piggybacking into envelope ${envelope.idnk33}, template k34=${envelope.templateK34}`);
     }
 
+    // Accumulate qtb lines for the per-envelope .laz upload (parallel to the
+    // SQL writeback). LL UI's Post-bid action does BOTH: insert k33/k34/k35
+    // SQL rows AND upload a qtb_tab.laz to sftp.lamlinks.com:/incoming/. The
+    // SFTP drop is what actually transmits the bid to DLA via Sally; the
+    // SQL rows are LL-side audit trail. We mirror that.
+    const qtbLines: QtbBidLineData[] = [];
+    const qtbQueueIds: string[] = []; // for marking sftp_filename later
+
     for (const row of queue) {
       // Mark processing (claim)
       const { data: claimed } = await supabase
@@ -403,7 +471,10 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
           Number(row.bid_qty),
           Number(row.delivery_days),
         );
-        await supabase
+        // Stash the qtb line for the per-envelope .laz upload (after loop)
+        qtbLines.push(buildQtbLine(target, Number(row.bid_price), Number(row.bid_qty), Number(row.delivery_days), result.idnk34));
+        qtbQueueIds.push(row.id);
+        const { error: doneErr } = await supabase
           .from("lamlinks_write_queue")
           .update({
             status: "done",
@@ -413,6 +484,14 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
             price_idnk35: result.idnk35,
           })
           .eq("id", row.id);
+        // CHECK the error — Supabase silently returns errors via the
+        // `error` field rather than throwing. Without this check, unique
+        // constraint violations (e.g. (sol, nsn, status='done')) leave
+        // queue rows stuck in 'processing' indefinitely. Discovered
+        // 2026-04-29 when a duplicate-bid submission left row 10 stuck.
+        if (doneErr) {
+          throw new Error(`failed to mark queue row ${row.id} as done: ${doneErr.message}`);
+        }
         processed++;
         console.log(`  ✓ ${row.solicitation_number} — k34=${result.idnk34}, k35=${result.idnk35}`);
       } catch (e: any) {
@@ -429,21 +508,58 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
       }
     }
 
-    // Finalize the envelope: flip o_stat_k33 from 'adding quotes' to
-    // 'quotes added' so LL's transmit daemon actually picks it up and
-    // ships the bids to DLA. Without this, the envelope sat half-built
-    // forever (the 2026-04-24 shipping outage). Only flip envelopes we
-    // created in this pass — Abe's own in-progress envelopes are his to
-    // Post. Skip if zero bids landed (nothing worth shipping).
-    if (weCreatedEnvelope && processed > 0) {
+    // SFTP-upload the bid .laz to sftp.lamlinks.com:/incoming/ — the actual
+    // DLA transmission path. Only when WE created the envelope: piggybacking
+    // into Abe's in-progress envelope means Abe will Post (and upload) it.
+    // Run BEFORE the o_stat → 'quotes added' flip so an SFTP failure leaves
+    // the envelope in 'adding quotes' state for retry; flipping first risks
+    // LL believing the bid was shipped when it wasn't.
+    let bidLazUploaded = false;
+    if (weCreatedEnvelope && qtbLines.length > 0) {
+      try {
+        const result = await transmitBidEnvelope(
+          { idnk33: envelope.idnk33, lines: qtbLines },
+          { templateDir: BID_TEMPLATE_DIR }
+        );
+        bidLazUploaded = true;
+        console.log(`  ✓ uploaded bid .laz ${result.filename} (${result.bytes} bytes${result.dryRun ? ", DRY RUN" : ""})`);
+        // Stamp the filename on each contributing queue row
+        for (const qid of qtbQueueIds) {
+          await supabase
+            .from("lamlinks_write_queue")
+            .update({ ll_bid_laz_filename: result.filename, ll_bid_dry_run: result.dryRun })
+            .eq("id", qid);
+        }
+      } catch (e: any) {
+        console.error(`  ⚠ bid SFTP upload failed for envelope ${envelope.idnk33}: ${e.message}`);
+        // Don't flip o_stat → 'quotes added': leave envelope in 'adding quotes'
+        // so a future pass can retry the SFTP drop. SQL rows are intact and
+        // marked done; the qtbLines can be rebuilt from k34_tab on retry.
+      }
+    }
+
+    // Finalize the envelope: flip o_stat_k33 + s_stat_k33 to 'quotes added'
+    // (Post-equivalent) AND t_stat_k33='sent' + t_stme_k33=GETDATE()
+    // (Process-File-equivalent). Captured 2026-04-29 via procmon: LL UI's
+    // Process File click does (a) re-zip + SFTP and (b) UPDATE k33 to flip
+    // t_stat='sent'. Since our worker already SFTP'd directly, we only
+    // need the SQL flip — skipping LL UI's redundant SFTP. Without this
+    // t_stat flip, LL UI shows "Not Sent" even though DLA has the bid.
+    // Only run when WE created the envelope; piggyback envelopes are
+    // Abe's to Post + Process File. Skip if zero bids landed OR SFTP failed.
+    if (weCreatedEnvelope && processed > 0 && bidLazUploaded) {
       try {
         await pool.request().query(`
           UPDATE k33_tab
-          SET o_stat_k33 = 'quotes added', s_stat_k33 = 'quotes added', uptime_k33 = GETDATE()
+          SET o_stat_k33 = 'quotes added',
+              s_stat_k33 = 'quotes added',
+              t_stat_k33 = 'sent',
+              t_stme_k33 = GETDATE(),
+              uptime_k33 = GETDATE()
           WHERE idnk33_k33 = ${envelope.idnk33}
             AND LTRIM(RTRIM(o_stat_k33)) = 'adding quotes'
         `);
-        console.log(`  ✓ finalized envelope ${envelope.idnk33} → 'quotes added' (daemon will ship ${processed} bids)`);
+        console.log(`  ✓ finalized envelope ${envelope.idnk33} → 'quotes added' + t_stat='sent' (Post + Process File equivalents in one UPDATE)`);
       } catch (e: any) {
         console.error(`  ⚠ failed to finalize envelope ${envelope.idnk33}: ${e.message}`);
         // Don't fail the pass — bids are in k34, envelope just needs the

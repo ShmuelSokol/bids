@@ -47,6 +47,18 @@ When you learn something new that future sessions would benefit from, add it to 
 - **DD219 = `CustomerRequisitionNumber`** on PO lines (field `purchline.custreq`). Case variants exist — always use `toupper(CustomerRequisitionNumber) eq 'DD219'` or an OR filter.
 - See `docs/gotchas.md` for full details on discovery and the detection heuristic.
 
+## LL BID + INVOICE SFTP TRANSMISSION (2026-04-29)
+- **Bids and invoices both auto-transmit via SFTP** to `sftp.lamlinks.com:/incoming/` (Sally → DLA). Captured via procmon during Abe's UI clicks.
+- **Invoices**: `ck5_tab.dbf` + `ck5_tab.FPT` zipped as `.laz`, TWO uploads per CIN (810 then 856). See `src/lib/ll-ck5-dbf.ts`.
+- **Bids**: `qtb_tab.dbf` + `qtb_tab.FPT` zipped as `.laz`, ONE upload per envelope (multi-record, one record per CLIN). See `src/lib/ll-qtb-dbf.ts`.
+- **GENNTE_QTB is NOT a user note** — it's a 566-byte control XML LL UI emits per record (`<ver_no>1.902</ver_no>...<qtclas>process_normally</qtclas><qtctyp>validate</qtctyp>`). User-facing gennte/pkgnte text lives nested inside as XML tags.
+- **PKGNTE_QTB memo ref is always 4 binary zeros** (NOT 4 spaces). The package note is inline in the GENNTE XML wrapper.
+- **LAM_ID maps to k11.lam_id_k11**, NOT k11.idnk11_k11. They're different fields. Easy to miss.
+- **`LL_BID_DRY_RUN=1`** env flag — builds the .laz, logs filename + bytes, skips actual SFTP. Use for canary testing.
+- **SFTP works from GLOVE** (no IP whitelist on `sftp.lamlinks.com`, unlike `api.lamlinks.com`). Same `lamlinks_inp` creds for both bids and invoices.
+- **Order of operations**: SQL writeback (k33/k34/k35) → SFTP upload .laz → finalize k33 with **BOTH** `o_stat_k33='quotes added'` (Post-equivalent) AND `t_stat_k33='sent'` + `t_stme_k33=GETDATE()` (Process-File-equivalent). SFTP failure leaves envelope in `'adding quotes'` for retry — SQL rows intact.
+- **Process File ≡ another SFTP upload + `t_stat='sent'` flip.** Captured via procmon 2026-04-29: LL UI's Process File click runs Z*.bat (7zip the DBF/FPT into `a1-0AG09.laz`), renames to `a<seq>_everready_<rand>.laz`, fires `winscp.com` to SFTP-upload, and UPDATEs k33 to flip `t_stat='sent'`. Since our worker already SFTP'd at Post-time, we only need the SQL flip — skipping LL UI's redundant second upload. Without `t_stat` flip, LL UI shows "Not Sent" even though DLA has the bid (DIBBS confirms transmission).
+
 ## LAMLINKS WRITEBACK RULES (2026-04-24 session)
 - **DIBS→LL SQL writeback works but causes VFP cursor errors on LL client**. Errors 9999806/9999607 are cosmetic — the Sally HTTP transmit still succeeds.
 - **DO NOT panic-nuke envelopes on cursor errors.** Wait for DLA ack email or check `k33_tab.t_stat_k33='sent'` before touching. If the envelope's k33/k34 are gone but DLA has the bid, use `scripts/ll-reinsert-orphan-bid.ts` to restore the shell with original `qotref_k33`.

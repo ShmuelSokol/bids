@@ -12,23 +12,34 @@ import archiver from "archiver";
 import { createWriteStream } from "fs";
 import Sftp from "ssh2-sftp-client";
 
-export interface LazContent {
-  dbf: Buffer;
-  fpt: Buffer;
+/**
+ * Either an invoice-style DBF+FPT pair (legacy) OR a list of named entries
+ * (used for bids: qtb_tab.dbf + qtb_tab.FPT).
+ */
+export type LazContent =
+  | { dbf: Buffer; fpt: Buffer }
+  | { name: string; data: Buffer }[];
+
+function normalizeLazEntries(content: LazContent): { name: string; data: Buffer }[] {
+  if (Array.isArray(content)) return content;
+  return [
+    { name: "ck5_tab.dbf", data: content.dbf },
+    { name: "ck5_tab.FPT", data: content.fpt },
+  ];
 }
 
 /**
- * Package a DBF + FPT pair into a .laz (zip) buffer.
+ * Package one or more files into a .laz (zip) buffer.
  */
 export async function packageLaz(content: LazContent): Promise<Buffer> {
+  const entries = normalizeLazEntries(content);
   return new Promise<Buffer>((resolve, reject) => {
     const archive = archiver("zip", { zlib: { level: 6 } });
     const chunks: Buffer[] = [];
     archive.on("data", (c: Buffer) => chunks.push(c));
     archive.on("end", () => resolve(Buffer.concat(chunks)));
     archive.on("error", reject);
-    archive.append(content.dbf, { name: "ck5_tab.dbf" });
-    archive.append(content.fpt, { name: "ck5_tab.FPT" });
+    for (const e of entries) archive.append(e.data, { name: e.name });
     archive.finalize();
   });
 }
