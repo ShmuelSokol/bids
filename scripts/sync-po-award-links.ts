@@ -135,12 +135,25 @@ async function main() {
     const d: any = await r.json();
     return d.value || [];
   });
-  const poLines: any[] = chunkResults.flat();
-  console.log(`   Total DD219 lines found: ${poLines.length}`);
+  const poLinesAll: any[] = chunkResults.flat();
+  console.log(`   Total DD219 lines found: ${poLinesAll.length}`);
+
+  // Skip AX POs that DIBS itself created (we have authoritative award→PO link
+  // in po_lines.award_id; running the heuristic on them would either confirm
+  // (no-op) or, worse, pick a different award and silently corrupt the link).
+  const { data: dibsCreatedPos } = await sb
+    .from("purchase_orders")
+    .select("ax_po_number")
+    .not("ax_po_number", "is", null);
+  const dibsNativeSet = new Set((dibsCreatedPos || []).map((p: any) => p.ax_po_number));
+  const poLines = poLinesAll.filter((l: any) => !dibsNativeSet.has(l.PurchaseOrderNumber));
+  const skippedDibs = poLinesAll.length - poLines.length;
+  if (skippedDibs > 0) console.log(`   ${skippedDibs} lines skipped (DIBS-created PO; authoritative link in po_lines.award_id)`);
+
   if (poLines.length === 0) {
     // Still log the run so next incremental anchor moves forward
-    await sb.from("sync_log").insert({ action: "po_award_link_sync", details: { po_lines_pulled: 0, linked: 0, mode: FULL ? "full" : "incremental", since: sinceDate } });
-    console.log("Done (no lines to link).");
+    await sb.from("sync_log").insert({ action: "po_award_link_sync", details: { po_lines_pulled: poLinesAll.length, skipped_dibs_native: skippedDibs, linked: 0, mode: FULL ? "full" : "incremental", since: sinceDate } });
+    console.log("Done (no remaining lines to link).");
     return;
   }
 
@@ -311,7 +324,7 @@ async function main() {
 
   await sb.from("sync_log").insert({
     action: "po_award_link_sync",
-    details: { po_lines_pulled: poLines.length, linked: upserts.length, high: highCount, medium: medCount, low: lowCount, no_match: noMatch },
+    details: { po_lines_pulled: poLinesAll.length, skipped_dibs_native: skippedDibs, heuristic_processed: poLines.length, linked: upserts.length, high: highCount, medium: medCount, low: lowCount, no_match: noMatch, mode: FULL ? "full" : "incremental", since: sinceDate },
   });
 
   console.log("Done.");

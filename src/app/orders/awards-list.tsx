@@ -41,6 +41,7 @@ interface Award {
   fast_pay: string;
   po_generated: boolean;
   po_id: number | null;
+  linked_to_ax_po?: boolean;
   our_cost: number | null;
   assigned_vendor: string | null;
   margin_pct: number | null;
@@ -264,7 +265,10 @@ export function AwardsList({
     let items = awards;
 
     if (showOnlyNew) {
-      items = items.filter((a) => !a.po_generated);
+      // Hide both DIBS-created PO awards (po_generated) AND AX-side POs
+      // matched by the heuristic linker (linked_to_ax_po). Combined view
+      // surfaces only awards that genuinely still need a PO.
+      items = items.filter((a) => !a.po_generated && !a.linked_to_ax_po);
     }
 
     if (shipFilter) {
@@ -563,7 +567,30 @@ export function AwardsList({
                 className="rounded-lg border border-card-border px-3 py-1.5 text-sm"
               />
             </div>
-            <label className="flex items-center gap-2 text-sm">
+            <div className="flex gap-1">
+              {[7, 14, 30, 90].map((days) => (
+                <button
+                  key={days}
+                  onClick={() => {
+                    const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+                    setDateFrom(since);
+                    setDateTo("");
+                  }}
+                  className="px-2 py-1.5 rounded-lg text-xs border border-card-border bg-card-bg hover:bg-gray-50"
+                  title={`Awards from the last ${days} days`}
+                >
+                  {days}d
+                </button>
+              ))}
+              <button
+                onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="px-2 py-1.5 rounded-lg text-xs border border-card-border bg-card-bg hover:bg-gray-50"
+                title="Clear date filter"
+              >
+                clear
+              </button>
+            </div>
+            <label className="flex items-center gap-2 text-sm" title="Hides awards already on a DIBS-created PO OR linked to an AX-side PO via the heuristic linker">
               <input
                 type="checkbox"
                 checked={showOnlyNew}

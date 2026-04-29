@@ -120,7 +120,24 @@ async function getData() {
     }
   }
 
-  // Enrich awards with cost/margin
+  // Heuristic links: awards already linked to an AX-side PO (the nightly
+  // sync-po-award-links.ts populates po_award_links). DIBS-created POs
+  // already flip awards.po_generated=true; AX-side POs only land in
+  // po_award_links. Combine both signals so "Hide already on PO" hides
+  // BOTH sources.
+  const awardIdsLinkedToAxPo = new Set<number>();
+  for (let p = 0; p < 30; p++) {
+    const { data } = await supabase
+      .from("po_award_links")
+      .select("award_id, confidence")
+      .in("confidence", ["high", "medium"])
+      .range(p * 1000, (p + 1) * 1000 - 1);
+    if (!data || data.length === 0) break;
+    for (const r of data) if (r.award_id) awardIdsLinkedToAxPo.add(r.award_id);
+    if (data.length < 1000) break;
+  }
+
+  // Enrich awards with cost/margin + AX-PO link flag
   const enriched = awards.map((a: any) => {
     const nsn = `${a.fsc}-${a.niin}`;
     const cost = costMap.get(nsn);
@@ -131,6 +148,7 @@ async function getData() {
       our_cost: cost || null,
       margin_pct: computeMarginPct(a.unit_price, cost),
       assigned_vendor: vendor,
+      linked_to_ax_po: awardIdsLinkedToAxPo.has(a.id),
     };
   });
 
