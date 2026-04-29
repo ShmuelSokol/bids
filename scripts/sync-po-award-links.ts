@@ -53,57 +53,129 @@ async function fetchAll(token: string, url: string, max = 10000) {
   return rows;
 }
 
+// Run N async tasks with bounded concurrency. Returns results in input order.
+async function pMap<T, R>(items: T[], concurrency: number, fn: (item: T, idx: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIdx = 0;
+  async function worker() {
+    while (true) {
+      const i = nextIdx++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 async function main() {
-  console.log("=== DD219 PO → Award linker ===\n");
+  const FULL = process.argv.includes("--full");
+  const NO_INCREMENTAL = process.argv.includes("--no-incremental");
+  console.log(`=== DD219 PO → Award linker ${FULL ? "(--full)" : NO_INCREMENTAL ? "(no incremental)" : "(incremental default)"} ===\n`);
   const token = await getToken();
   const D = process.env.AX_D365_URL!;
+
+  // 0. Incremental cutoff: if previous sync_log entry exists, only fetch POs
+  // since then. First-ever run + --full bypass this and do all 24 months.
+  let monthsBack = 24;
+  let sinceDate: string | null = null;
+  if (!FULL && !NO_INCREMENTAL) {
+    const { data: lastRun } = await sb
+      .from("sync_log")
+      .select("created_at")
+      .eq("action", "po_award_link_sync")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastRun?.created_at) {
+      // Re-process from 7 days before last run for safety (PO dates can be backdated)
+      const since = new Date(new Date(lastRun.created_at).getTime() - 7 * 86_400_000);
+      sinceDate = since.toISOString().slice(0, 10);
+      const daysBack = Math.ceil((Date.now() - since.getTime()) / 86_400_000);
+      monthsBack = Math.max(1, Math.ceil(daysBack / 30));
+      console.log(`Incremental: last run ${lastRun.created_at.slice(0, 10)}, fetching POs since ${sinceDate} (~${daysBack}d, ${monthsBack}mo)`);
+    } else {
+      console.log("No prior sync_log entry — falling back to full 24-month pull");
+    }
+  }
 
   // 1. AX OData silently caps any single filter at 1000 rows (no
   //    nextLink beyond that). fetchAxByMonth auto-chunks by month so
   //    each request stays under the cap, and flags truncated=true if
   //    any single month exceeds 1000.
-  console.log("1. Pulling PO headers by month (24 months)...");
-  const { rows: headers, truncated: hdrTruncated } = await fetchAxByMonth(token, {
+  console.log(`\n1. Pulling PO headers by month (${monthsBack} months)...`);
+  const { rows: headersAll, truncated: hdrTruncated } = await fetchAxByMonth(token, {
     D365_URL: D,
     entity: "PurchaseOrderHeadersV2",
     dateField: "AccountingDate",
-    monthsBack: 24,
+    monthsBack,
     select: ["PurchaseOrderNumber", "OrderVendorAccountNumber", "AccountingDate"],
   });
   if (hdrTruncated) console.warn("   ⚠ One or more months exceeded 1000 headers — narrow chunk window.");
-  console.log(`   ${headers.length} headers pulled across 24 months`);
+  // Apply incremental cutoff (sinceDate); fetchAxByMonth gave us monthsBack months,
+  // but we want only the headers strictly >= sinceDate.
+  const headers = sinceDate
+    ? headersAll.filter((h: any) => h.AccountingDate && String(h.AccountingDate).slice(0, 10) >= sinceDate!)
+    : headersAll;
+  console.log(`   ${headersAll.length} headers pulled (${headers.length} after sinceDate filter)`);
 
-  // Walk chunks of 40 PO numbers, pull their DD219 lines
-  console.log("\n2. Pulling DD219 lines chunk by chunk...");
-  const poLinesRaw: any[] = [];
-  for (let i = 0; i < headers.length; i += 40) {
-    const chunk = headers.slice(i, i + 40);
+  // 2. Pull DD219 lines, parallel chunks of 40 PO numbers per request
+  console.log("\n2. Pulling DD219 lines (parallel, concurrency=5)...");
+  const headerChunks: any[][] = [];
+  for (let i = 0; i < headers.length; i += 40) headerChunks.push(headers.slice(i, i + 40));
+  let chunksDone = 0;
+  const chunkResults = await pMap(headerChunks, 5, async (chunk) => {
     const filter = chunk.map((h: any) => `PurchaseOrderNumber eq '${h.PurchaseOrderNumber}'`).join(" or ");
     const ddFilter = `(CustomerRequisitionNumber eq 'DD219' or CustomerRequisitionNumber eq 'dd219') and (${filter})`;
     const url = `${D}/data/PurchaseOrderLinesV2?cross-company=true&$filter=${encodeURIComponent(ddFilter)}&$select=PurchaseOrderNumber,LineNumber,ItemNumber,OrderedPurchaseQuantity,PurchasePrice,PurchaseOrderLineStatus,RequestedDeliveryDate&$top=500`;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (r.ok) {
-      const d: any = await r.json();
-      poLinesRaw.push(...(d.value || []));
-    }
-    if (i % 800 === 0 && i > 0) console.log(`   ...${i} headers scanned, ${poLinesRaw.length} DD219 lines so far`);
-  }
-  const poLines = poLinesRaw;
+    chunksDone++;
+    if (chunksDone % 20 === 0) console.log(`   ...${chunksDone}/${headerChunks.length} chunks done`);
+    if (!r.ok) return [];
+    const d: any = await r.json();
+    return d.value || [];
+  });
+  const poLines: any[] = chunkResults.flat();
   console.log(`   Total DD219 lines found: ${poLines.length}`);
-  if (poLines.length === 0) return;
+  if (poLines.length === 0) {
+    // Still log the run so next incremental anchor moves forward
+    await sb.from("sync_log").insert({ action: "po_award_link_sync", details: { po_lines_pulled: 0, linked: 0, mode: FULL ? "full" : "incremental", since: sinceDate } });
+    console.log("Done (no lines to link).");
+    return;
+  }
 
   const headerByPo = new Map<string, any>(headers.map((h: any) => [h.PurchaseOrderNumber, h]));
 
-  // 3. Resolve ItemNumber → NSN via ProductBarcodesV3
-  const itemNums = [...new Set(poLines.map((l: any) => l.ItemNumber).filter(Boolean))];
-  console.log(`\n3. Resolving ${itemNums.length} item numbers to NSNs...`);
+  // 3. Resolve ItemNumber → NSN. Try local nsn_catalog (Supabase) FIRST —
+  //    most items have already been mapped via the nightly catalog refresh.
+  //    Only items missing locally get the AX ProductBarcodesV3 round-trip.
+  const itemNums = Array.from(new Set(poLines.map((l: any) => l.ItemNumber).filter(Boolean))) as string[];
+  console.log(`\n3a. Resolving ${itemNums.length} item numbers via local nsn_catalog...`);
   const itemToNsn = new Map<string, string>();
-  for (let i = 0; i < itemNums.length; i += 40) {
-    const chunk = itemNums.slice(i, i + 40);
-    const filter = chunk.map((it) => `ItemNumber eq '${it}'`).join(" or ");
-    const url = `${D}/data/ProductBarcodesV3?cross-company=true&$filter=BarcodeSetupId eq 'NSN' and (${encodeURIComponent(filter)})&$select=ItemNumber,Barcode`;
-    const rows = await fetchAll(token, url);
-    for (const r of rows) {
+  // nsn_catalog stores `source` like "AX:HANHHTWBC". Pull all rows for items in our set.
+  const sourceKeys = itemNums.map((it) => `AX:${it}`);
+  for (let i = 0; i < sourceKeys.length; i += 500) {
+    const slice = sourceKeys.slice(i, i + 500);
+    const { data } = await sb.from("nsn_catalog").select("nsn, source").in("source", slice);
+    if (data) for (const r of data) {
+      const item = r.source?.replace("AX:", "") || null;
+      if (item && r.nsn) itemToNsn.set(item, r.nsn);
+    }
+  }
+  const localHits = itemToNsn.size;
+  console.log(`   ${localHits}/${itemNums.length} resolved locally`);
+
+  const missing = itemNums.filter((it) => !itemToNsn.has(it));
+  if (missing.length > 0) {
+    console.log(`\n3b. Falling back to AX ProductBarcodesV3 for ${missing.length} unresolved items (parallel, concurrency=5)...`);
+    const missingChunks: string[][] = [];
+    for (let i = 0; i < missing.length; i += 40) missingChunks.push(missing.slice(i, i + 40));
+    const axResults = await pMap(missingChunks, 5, async (chunk) => {
+      const filter = chunk.map((it) => `ItemNumber eq '${it}'`).join(" or ");
+      const url = `${D}/data/ProductBarcodesV3?cross-company=true&$filter=BarcodeSetupId eq 'NSN' and (${encodeURIComponent(filter)})&$select=ItemNumber,Barcode`;
+      return await fetchAll(token, url);
+    });
+    for (const rows of axResults) for (const r of rows) {
       if (r.ItemNumber && r.Barcode) {
         const digits = String(r.Barcode).replace(/-/g, "");
         if (digits.length === 13) {
