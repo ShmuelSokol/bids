@@ -174,11 +174,98 @@ function encodeDateTime(d: Date | undefined): Buffer {
   return b;
 }
 
+// ─── FPT (memo file) parsing + rebuilding ───────────────────────────────
+
+const FPT_BLOCK_SIZE = 64;
+
+interface FptBlock {
+  idx: number;        // 1-based block index in source FPT
+  type: number;       // 1 = memo (text), 0 = unused/picture
+  data: Buffer;       // raw memo bytes (no header, no padding)
+  blocksUsed: number; // 64-byte blocks this entry occupies
+}
+
+function parseFpt(fpt: Buffer): { blocks: FptBlock[]; blockSize: number } {
+  const blockSize = fpt.readUInt16BE(6);
+  if (blockSize !== FPT_BLOCK_SIZE) {
+    throw new Error(`Unexpected FPT block size ${blockSize}`);
+  }
+  const totalBlocks = Math.floor(fpt.length / blockSize);
+  const blocks: FptBlock[] = [];
+  let idx = 1;
+  while (idx < totalBlocks) {
+    const offset = idx * blockSize;
+    if (offset + 8 > fpt.length) break;
+    const type = fpt.readUInt32BE(offset);
+    const len = fpt.readUInt32BE(offset + 4);
+    if (type === 0 && len === 0) {
+      blocks.push({ idx, type: 0, data: Buffer.alloc(0), blocksUsed: 1 });
+      idx += 1;
+      continue;
+    }
+    if (type < 0 || type > 10 || len < 0 || len > 1_000_000) break;
+    const blocksUsed = Math.ceil((8 + len) / blockSize);
+    const data = fpt.slice(offset + 8, offset + 8 + len);
+    blocks.push({ idx, type, data, blocksUsed });
+    idx += blocksUsed;
+  }
+  return { blocks, blockSize };
+}
+
+/**
+ * Build FPT from a list of memo entries (in the order they should appear).
+ * Returns the FPT buffer + a map from each entry's source idx to its new idx
+ * so DBF memo pointers can be remapped.
+ */
+function serializeFpt(entries: FptBlock[]): { fpt: Buffer; idxMap: Map<number, number> } {
+  let blocksNeeded = 1; // header
+  for (const e of entries) {
+    blocksNeeded += e.type === 0 ? 1 : Math.ceil((8 + e.data.length) / FPT_BLOCK_SIZE);
+  }
+  const fpt = Buffer.alloc(blocksNeeded * FPT_BLOCK_SIZE);
+  const idxMap = new Map<number, number>();
+
+  fpt.writeUInt32BE(blocksNeeded, 0);
+  fpt.writeUInt16BE(FPT_BLOCK_SIZE, 6);
+
+  let curIdx = 1;
+  for (const e of entries) {
+    idxMap.set(e.idx, curIdx);
+    if (e.type === 0) {
+      curIdx += 1;
+    } else {
+      const offset = curIdx * FPT_BLOCK_SIZE;
+      fpt.writeUInt32BE(e.type, offset);
+      fpt.writeUInt32BE(e.data.length, offset + 4);
+      e.data.copy(fpt, offset + 8);
+      curIdx += Math.ceil((8 + e.data.length) / FPT_BLOCK_SIZE);
+    }
+  }
+  return { fpt, idxMap };
+}
+
 // ─── Main builder ──────────────────────────────────────────────────────
 
 const RECORD_LEN = 7976;
 const HEADER_LEN = 7880;
 const FILE_TYPE_BYTE = 0x32;
+
+// All memo fields' offsets in the DBF record body. Each is a 4-byte LE int
+// storing the FPT block index (0 = empty).
+const MEMO_FIELDS: Record<string, number> = {
+  PIDTXT_CK5: 372,
+  ADJDES_CK5: 658,
+  CLNDES_CK5: 675,
+  D25B23_CK5: 687,
+  B_NOTE_CK5: 2187, B_NADR_CK5: 2191,
+  C_NOTE_CK5: 3149, C_NADR_CK5: 3153,
+  H_NOTE_CK5: 4111, H_NADR_CK5: 4115,
+  J_NOTE_CK5: 5073, J_NADR_CK5: 5077,
+  K_NOTE_CK5: 6035, K_NADR_CK5: 6039,
+  M_NOTE_CK5: 6997, M_NADR_CK5: 7001,
+  N_NOTE_CK5: 7959, N_NADR_CK5: 7963,
+  EDIXML_CK5: 7967,
+};
 
 export function buildCk5Dbf(invoice: Ck5InvoiceData, templatePath: string): { dbf: Buffer; fpt: Buffer } {
   // 1. Read template files
@@ -215,6 +302,24 @@ export function buildCk5Dbf(invoice: Ck5InvoiceData, templatePath: string): { db
 
   setField("A_CODE_CK5", padChar(invoice.a_code, 32));
   setField("CNTRCT_CK5", padChar(invoice.cntrct, 60));
+
+  // C_CODE_CK5 (DLA contracting office CAGE) — first 6 chars of contract.
+  // Template may have a different prefix (e.g. SPE2DP) than our invoice
+  // (e.g. SPE2DS); overwrite to the correct prefix. char(10) at offset 2207.
+  const cContractingCage = (invoice.cntrct || "").slice(0, 6).padEnd(10, " ");
+  Buffer.from(cContractingCage, "latin1").copy(dbf, recordStart + 2207);
+
+  // K_CODE_CK5 / M_CODE_CK5 (consignee / mark-for) — first 6 chars of order#.
+  // Order numbers like "N2999C6092ZP91" (Navy) or "W34GMT60430147" (Army)
+  // start with the consignee's 6-char CAGE. Updating these so the EDI routes
+  // correctly even if address text fields stay from template (informational).
+  // K_CODE at 5093, M_CODE at 6055 (both char(10)).
+  const consigneeCage = (invoice.ordrno || "").slice(0, 6).padEnd(10, " ");
+  if (consigneeCage.trim()) {
+    Buffer.from(consigneeCage, "latin1").copy(dbf, recordStart + 5093); // K
+    Buffer.from(consigneeCage, "latin1").copy(dbf, recordStart + 6055); // M
+  }
+
   setField("PIIDNO_CK5", padChar(invoice.piidno, 22));
   setField("RELDTE_CK5", encodeDateTime(invoice.reldte));
   setField("ORDRNO_CK5", padChar(invoice.ordrno, 20));
@@ -242,18 +347,44 @@ export function buildCk5Dbf(invoice: Ck5InvoiceData, templatePath: string): { db
   setField("INSDTE_CK5", encodeDate(invoice.insdte));
   setField("TRN_ID_CK5", encodeInt32(invoice.trn_id));
 
-  // 6. Build new FPT with PIDTXT replaced. Other memos kept from template.
-  // FPT structure:
-  //   8-byte header: next-free-block (BE int32) + reserved (4 bytes — block size, BE int16, then 2 reserved)
-  //   Each block: 8-byte block header (block type BE int32 = 1 for memo, 0 for picture; data length BE int32)
-  //               + data (padded to block boundary, default 64 bytes)
-  // We'll keep all template memo blocks as-is but REWRITE the PIDTXT block.
-  const fpt = Buffer.from(templateFpt); // template's PIDTXT block is fine for canary
-  // For first canary, we keep PIDTXT identical to template (correct for the
-  // template's NSN; will diverge for new NSNs but Sally typically only
-  // validates structural fields — DLA terms are informational).
-  // Update the PIDTXT_CK5 field's block pointer to keep pointing to whatever
-  // the template had (no change needed since we're using the template).
+  // 6. Rebuild FPT: replace PIDTXT with our NSN's procurement description,
+  // keep all other memo blocks (party addresses etc.) verbatim from template.
+  // Then update the DBF's memo pointers so they point to the new block indices.
+  const { blocks: templateBlocks } = parseFpt(templateFpt);
+
+  // Find the largest type=1 block in template — that's PIDTXT.
+  let pidtxtSourceIdx = -1;
+  let pidtxtMaxLen = 0;
+  for (const b of templateBlocks) {
+    if (b.type === 1 && b.data.length > pidtxtMaxLen) {
+      pidtxtMaxLen = b.data.length;
+      pidtxtSourceIdx = b.idx;
+    }
+  }
+
+  // Build new entry list: replace pidtxt block's data; keep others as-is
+  const pidtxtBytes = Buffer.from(invoice.pidtxt || "", "latin1");
+  const newEntries: FptBlock[] = templateBlocks.map((b) => {
+    if (b.idx === pidtxtSourceIdx) {
+      return { ...b, data: pidtxtBytes };
+    }
+    return b;
+  });
+
+  const { fpt, idxMap } = serializeFpt(newEntries);
+
+  // 7. Walk all DBF memo fields and remap their pointers using idxMap
+  for (const [, off] of Object.entries(MEMO_FIELDS)) {
+    const oldIdx = dbf.readUInt32LE(recordStart + off);
+    if (oldIdx === 0) continue; // empty memo — leave pointer at 0
+    const newIdx = idxMap.get(oldIdx);
+    if (newIdx === undefined) {
+      // Pointer was stale or unmapped — zero it out to be safe
+      dbf.writeUInt32LE(0, recordStart + off);
+    } else {
+      dbf.writeUInt32LE(newIdx, recordStart + off);
+    }
+  }
 
   return { dbf, fpt };
 }

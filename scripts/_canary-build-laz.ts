@@ -84,13 +84,22 @@ if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
   const trn_id = parseInt(kbr.recordset[0]?.xtcscn || "0", 10);
   console.log(`TRN_ID (from existing kbr): ${trn_id}`);
 
-  // Pull NSN from k08
+  // Pull NSN + PIDTXT from k08
   let nsnStr = "";
+  let pidtxtStr = "";
   if (src.idnk08) {
-    const k08r = await pool.request().query(`SELECT LTRIM(RTRIM(fsc_k08)) AS fsc, LTRIM(RTRIM(niin_k08)) AS niin FROM k08_tab WHERE idnk08_k08 = ${src.idnk08}`);
-    if (k08r.recordset[0]) nsnStr = `${k08r.recordset[0].fsc}-${k08r.recordset[0].niin}`;
+    const k08r = await pool.request().query(`
+      SELECT LTRIM(RTRIM(fsc_k08)) AS fsc, LTRIM(RTRIM(niin_k08)) AS niin,
+             CAST(pidtxt_k08 AS VARCHAR(MAX)) AS pidtxt
+      FROM k08_tab WHERE idnk08_k08 = ${src.idnk08}
+    `);
+    if (k08r.recordset[0]) {
+      nsnStr = `${k08r.recordset[0].fsc}-${k08r.recordset[0].niin}`;
+      pidtxtStr = k08r.recordset[0].pidtxt || "";
+    }
   }
   console.log(`NSN: ${nsnStr}`);
+  console.log(`PIDTXT: ${pidtxtStr.length} chars`);
 
   await pool.close();
 
@@ -107,7 +116,7 @@ if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
     p_desc: src.p_desc || "",
     idnk71: src.idnk71 || 0,
     nsn: nsnStr,
-    pidtxt: "(template)", // For canary, keep template's PIDTXT
+    pidtxt: pidtxtStr || "(no PIDTXT)",
     idnkaj: src.idnkaj,
     idnk81: src.idnk81,
     cindte: src.cindte ? new Date(src.cindte) : new Date(),

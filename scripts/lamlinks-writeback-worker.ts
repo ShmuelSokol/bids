@@ -1147,11 +1147,19 @@ async function transmitWawfForKaj(
   if (r.recordset.length === 0) throw new Error(`transmitWawf: no source data for kaj=${kaj}`);
   const src = r.recordset[0];
 
-  // NSN from k08
+  // NSN + PIDTXT from k08 (procurement description text — varies per item)
   let nsnStr = "";
+  let pidtxtStr = "";
   if (src.idnk08) {
-    const k08r = await pool.request().query(`SELECT LTRIM(RTRIM(fsc_k08)) AS fsc, LTRIM(RTRIM(niin_k08)) AS niin FROM k08_tab WHERE idnk08_k08 = ${src.idnk08}`);
-    if (k08r.recordset[0]) nsnStr = `${k08r.recordset[0].fsc}-${k08r.recordset[0].niin}`;
+    const k08r = await pool.request().query(`
+      SELECT LTRIM(RTRIM(fsc_k08)) AS fsc, LTRIM(RTRIM(niin_k08)) AS niin,
+             CAST(pidtxt_k08 AS VARCHAR(MAX)) AS pidtxt
+      FROM k08_tab WHERE idnk08_k08 = ${src.idnk08}
+    `);
+    if (k08r.recordset[0]) {
+      nsnStr = `${k08r.recordset[0].fsc}-${k08r.recordset[0].niin}`;
+      pidtxtStr = k08r.recordset[0].pidtxt || "";
+    }
   }
 
   const invoiceData = {
@@ -1165,7 +1173,7 @@ async function transmitWawfForKaj(
     p_desc: src.p_desc || "",
     idnk71: src.idnk71 || 0,
     nsn: nsnStr,
-    pidtxt: "(template)",
+    pidtxt: pidtxtStr || "(no PIDTXT)",
     idnkaj: src.idnkaj,
     idnk81: src.idnk81,
     cindte: src.cindte ? new Date(src.cindte) : new Date(),
