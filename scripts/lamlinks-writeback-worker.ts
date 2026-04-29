@@ -111,6 +111,35 @@ async function bumpK07(pool: sql.ConnectionPool, label: string): Promise<void> {
   }
 }
 
+// Invoice-side cursor cache invalidation. The shipping/invoicing form in
+// LL UI caches kaj/k81/ka9/kae state via these k07 rows. When DIBS writes
+// an invoice, Abe's already-open shipping screen displays stale "Not Sent"
+// / blank Invoice # until something forces a re-read. Bumping these
+// uptime_k07 fields mimics what LL UI's own form interactions do as a
+// side effect — invalidating the cache so the next read pulls our writes.
+// Discovered 2026-04-29 live test (CIN0066250): Abe had to manually click
+// Shipped + enter Invoice # before the SQL state surfaced in his UI.
+async function bumpInvoiceK07(pool: sql.ConnectionPool): Promise<void> {
+  const keys = [
+    "PARTS_IN_BOXES_FORM_QUERY_VALUES_EXCEPTIONS",
+    "PARTS_IN_BOXES.RSZ",
+    "SALES_ORDERS.RSZ",
+    "SALES_ORDERS_PREFERENCES",
+    "SALES_ORDERS_FORM_OPEN_ONLY_OPTION",
+  ];
+  for (const key of keys) {
+    try {
+      await pool.request().query(`
+        UPDATE k07_tab SET uptime_k07 = GETDATE()
+        WHERE LTRIM(RTRIM(upname_k07)) = 'ajoseph'
+          AND LTRIM(RTRIM(ss_key_k07)) = '${key.replace(/'/g, "''")}'
+      `);
+    } catch (e: any) {
+      console.log(`  note: invoice k07 bump (${key}) skipped: ${e.message?.slice(0, 80)}`);
+    }
+  }
+}
+
 async function createFreshEnvelope(pool: sql.ConnectionPool, templateK34: number): Promise<number> {
   // Mint a brand-new k33 staging envelope. Uses kdy_tab to allocate idnk33,
   // then inserts a k33 row with the same status-string shape LamLinks' own
@@ -922,12 +951,26 @@ async function processInvoiceQueue(): Promise<void> {
       try {
         const result = await writeOneInvoice(pool, row);
 
+        // Invalidate Abe's LL UI cursor cache for the shipping form so it
+        // re-reads the kaj/k81/ka9/kae state we just wrote. Without this,
+        // his UI shows stale state — Invoice # column blank, Shipped
+        // checkbox unchecked — even though SQL is correct. (Discovered
+        // 2026-04-29 live test on CIN0066250: Abe had to manually click
+        // Shipped + enter Invoice # before LL UI displayed our writes.)
+        // Mirrors the bid path's bumpK07 SOL_FORM_PREFERENCES pattern,
+        // but for the shipping form's k07 keys.
+        await bumpInvoiceK07(pool);
+
         // SQL writeback succeeded — now do the WAWF SFTP upload (the step that
         // actually transmits EDI to gov side). Without this, kad/kae/kbr/k20
         // exist locally but DLA never receives the invoice. Discovered via
         // procmon trace 2026-04-29 — see project_wawf_sftp_mechanism.md.
         const wawfDryRun = process.env.LL_WAWF_DRY_RUN === "true";
         const wawfResult = await transmitWawfForKaj(pool, result.kaj, result, wawfDryRun);
+
+        // Bump again after SFTP so any UI element that reads kbr/SFTP
+        // state (e.g. the 810/856 sent indicators) refreshes too.
+        await bumpInvoiceK07(pool);
 
         await supabase.from("lamlinks_invoice_queue").update({
           state: "posted",
