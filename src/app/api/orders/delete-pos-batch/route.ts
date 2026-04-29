@@ -40,8 +40,12 @@ export async function POST(req: NextRequest) {
       skipped.push({ po_id: p.id, reason: `already has AX PO #${p.ax_po_number}` });
       continue;
     }
-    if (p.dmf_state && p.dmf_state !== "drafted") {
-      skipped.push({ po_id: p.id, reason: `state=${p.dmf_state}, not drafted` });
+    // Safe states for deletion: anything before AX has assigned a PO number.
+    // 'awaiting_po_number' is a common stuck state when an upstream AX sync
+    // failed; deleting locally is fine since AX never confirmed a number.
+    const state = p.dmf_state || "drafted";
+    if (state !== "drafted" && state !== "awaiting_po_number") {
+      skipped.push({ po_id: p.id, reason: `state=${state}, AX may have it — not safe to delete locally` });
       continue;
     }
     deletable.push(p);

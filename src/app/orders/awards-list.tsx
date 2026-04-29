@@ -864,7 +864,13 @@ export function AwardsList({
                           onClick={async () => {
                             const deletableIds = selectedIds.filter((id) => {
                               const p = purchaseOrders.find((pp: any) => pp.id === id);
-                              return p && !p.ax_po_number && (!p.dmf_state || p.dmf_state === "drafted");
+                              if (!p || p.ax_po_number) return false;
+                              // Safe to delete: any state up to and including awaiting_po_number
+                              // because no AX-side PO number has been assigned yet. Once AX
+                              // gives us an ax_po_number (lines_ready+), we'd need to also
+                              // cancel in AX — which this UI doesn't do — so block deletion.
+                              const state = p.dmf_state || "drafted";
+                              return state === "drafted" || state === "awaiting_po_number";
                             });
                             if (deletableIds.length === 0) {
                               setMessage("No selected POs are eligible to delete (already posted to AX)");
