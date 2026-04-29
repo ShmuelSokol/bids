@@ -1017,17 +1017,28 @@ async function writeOneInvoice(
   // below, mimicking Abe's manual flow). Packed=T is the real "warehouse
   // is done" signal — anything still in Packing without packed=T is in
   // motion and shouldn't be invoiced yet.
+  //
+  // Total match is against SUM(ka9.selval_ka9) — the kaj-level shipment
+  // value — NOT k80.relext_k80 (the full original order total). For
+  // partial shipments, k80.relext spans multiple kaj rows and won't
+  // equal a single shipment's invoice total. (Discovered 2026-04-29:
+  // SPE2DS-26-V-4327 had kaj=351633 ($34.72, shipped 4/6) + kaj=353359
+  // ($69.44, shipping now); k80.relext=$104.16 matched neither invoice.)
   const kajLookup = await pool.request().query(`
     SELECT TOP 5
       kaj.idnkaj_kaj, kaj.shpnum_kaj, kaj.shpsta_kaj, kaj.packed_kaj,
-      k80.idnk80_k80, k80.relext_k80, k80.rlssta_k80
+      k80.idnk80_k80, k80.relext_k80, k80.rlssta_k80,
+      SUM(ka9.selval_ka9) AS kaj_total
     FROM k79_tab k79
     JOIN k80_tab k80 ON k80.idnk79_k80 = k79.idnk79_k79
     JOIN kaj_tab kaj ON kaj.idnk80_kaj = k80.idnk80_k80
+    JOIN ka9_tab ka9 ON ka9.idnkaj_ka9 = kaj.idnkaj_kaj
     WHERE LTRIM(RTRIM(k79.cntrct_k79)) = '${contractNo.replace(/'/g, "''")}'
-      AND ABS(k80.relext_k80 - ${total}) < 0.01
       AND LTRIM(RTRIM(kaj.shpsta_kaj)) IN ('Shipped', 'Packing')
       AND LTRIM(RTRIM(ISNULL(kaj.packed_kaj, ''))) = 'T'
+    GROUP BY kaj.idnkaj_kaj, kaj.shpnum_kaj, kaj.shpsta_kaj, kaj.packed_kaj,
+             k80.idnk80_k80, k80.relext_k80, k80.rlssta_k80, kaj.uptime_kaj
+    HAVING ABS(SUM(ka9.selval_ka9) - ${total}) < 0.01
     ORDER BY kaj.uptime_kaj DESC
   `);
   if (kajLookup.recordset.length === 0) {
