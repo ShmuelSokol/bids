@@ -1073,6 +1073,44 @@ async function writeOneInvoice(
     HAVING ABS(SUM(ka9.selval_ka9) - ${total}) < 0.01
     ORDER BY kaj.uptime_kaj DESC
   `);
+  // If single-kaj lookup failed, try multi-kaj: maybe the AX invoice covers
+  // ALL unfinished shipments for this contract (sum of per-kaj totals =
+  // invoice total). Common when AX invoices the full PO at completion of
+  // the last partial. Discovered 2026-04-29: SPE2DP-26-P-0726 = $30.20 +
+  // $120.80 = $151 across 2 kajs.
+  let multiKajIds: number[] = [];
+  if (kajLookup.recordset.length === 0) {
+    const allKajs = await pool.request().query(`
+      SELECT kaj.idnkaj_kaj, k80.idnk80_k80, SUM(ka9.selval_ka9) AS kaj_total
+      FROM k79_tab k79
+      JOIN k80_tab k80 ON k80.idnk79_k80 = k79.idnk79_k79
+      JOIN kaj_tab kaj ON kaj.idnk80_kaj = k80.idnk80_k80
+      JOIN ka9_tab ka9 ON ka9.idnkaj_ka9 = kaj.idnkaj_kaj
+      WHERE LTRIM(RTRIM(k79.cntrct_k79)) = '${contractNo.replace(/'/g, "''")}'
+        AND LTRIM(RTRIM(kaj.shpsta_kaj)) IN ('Shipped', 'Packing')
+        AND LTRIM(RTRIM(ISNULL(kaj.packed_kaj, ''))) = 'T'
+      GROUP BY kaj.idnkaj_kaj, k80.idnk80_k80
+      ORDER BY kaj.idnkaj_kaj
+    `);
+    const sumAll = allKajs.recordset.reduce((s: number, r: any) => s + Number(r.kaj_total || 0), 0);
+    if (allKajs.recordset.length >= 2 && Math.abs(sumAll - total) < 0.01) {
+      multiKajIds = allKajs.recordset.map((r: any) => r.idnkaj_kaj as number);
+      const k80Set = new Set(allKajs.recordset.map((r: any) => r.idnk80_k80));
+      if (k80Set.size !== 1) {
+        throw new Error(`multi-kaj invoice spans multiple k80 (${[...k80Set].join(",")}) — not yet supported`);
+      }
+      console.log(`  multi-kaj: invoice $${total} matches sum of ${multiKajIds.length} kajs [${multiKajIds.join(",")}]`);
+      // Re-run the single-kaj-shaped lookup but for all of them
+      const detail = await pool.request().query(`
+        SELECT TOP 1 kaj.idnkaj_kaj, kaj.shpnum_kaj, kaj.shpsta_kaj, kaj.packed_kaj,
+               k80.idnk80_k80, k80.relext_k80, k80.rlssta_k80
+        FROM kaj_tab kaj
+        JOIN k80_tab k80 ON k80.idnk80_k80 = kaj.idnk80_kaj
+        WHERE kaj.idnkaj_kaj = ${multiKajIds[0]}
+      `);
+      kajLookup.recordset.push(detail.recordset[0]);
+    }
+  }
   if (kajLookup.recordset.length === 0) {
     throw new Error(`no shipped kaj found for contract '${contractNo}' total $${total}`);
   }
@@ -1082,18 +1120,21 @@ async function writeOneInvoice(
   const m = kajLookup.recordset[0];
   const idnkaj: number = m.idnkaj_kaj;
   const idnk80: number = m.idnk80_k80;
+  // For multi-kaj, all the additional kajs to update (kaj.shpsta, k81 status,
+  // ka9 link, kbr per-kaj) — primary kaj is idnkaj, additional are these.
+  const additionalKajIds = multiKajIds.filter(id => id !== idnkaj);
 
-  // Guard against the kbr UNIQUE (itttbl, idnitt, idnkap) constraint: if this
-  // kaj already has a WAWF 810 or 856 row, someone (probably Abe manually)
-  // already transmitted it. Don't try to post a duplicate — DLA would dedup
-  // it server-side and our local kbr INSERT would error.
+  // Guard against the kbr UNIQUE (itttbl, idnitt, idnkap) constraint: if any
+  // of the bundled kajs already has a WAWF 810 or 856 row, someone (probably
+  // Abe manually) already transmitted it. Don't try to post a duplicate.
+  const allKajIdsForCheck = [idnkaj, ...additionalKajIds];
   const existingTrans = await pool.request().query(`
-    SELECT idnkap_kbr, xtcsta_kbr FROM kbr_tab
-    WHERE itttbl_kbr = 'kaj' AND idnitt_kbr = ${idnkaj} AND idnkap_kbr IN (24, 25)
+    SELECT idnitt_kbr, idnkap_kbr, xtcsta_kbr FROM kbr_tab
+    WHERE itttbl_kbr = 'kaj' AND idnitt_kbr IN (${allKajIdsForCheck.join(",")}) AND idnkap_kbr IN (24, 25)
   `);
   if (existingTrans.recordset.length > 0) {
-    const types = existingTrans.recordset.map((r: any) => `${r.idnkap_kbr}:${String(r.xtcsta_kbr).trim()}`).join(", ");
-    throw new Error(`kaj=${idnkaj} already has WAWF transmissions [${types}] — likely posted manually. Skip.`);
+    const types = existingTrans.recordset.map((r: any) => `kaj=${r.idnitt_kbr}:${r.idnkap_kbr}:${String(r.xtcsta_kbr).trim()}`).join(", ");
+    throw new Error(`kaj(s) already have WAWF transmissions [${types}] — likely posted manually. Skip.`);
   }
 
   // 2. Resolve customer + cinnum + cinno
@@ -1176,11 +1217,13 @@ async function writeOneInvoice(
 
     // 4a. Flip kaj.shpsta from 'Packing' to 'Shipped' (idempotent if already
     // Shipped). Mirrors Abe's manual "click Shipped" UI step. Packing-state
-    // shipments wouldn't transmit otherwise.
+    // shipments wouldn't transmit otherwise. For multi-kaj invoices, flip
+    // ALL kajs in the bundle.
+    const allKajIds = [idnkaj, ...additionalKajIds];
     await req.query(`
       UPDATE kaj_tab
       SET shpsta_kaj = 'Shipped', uptime_kaj = GETDATE()
-      WHERE idnkaj_kaj = ${idnkaj}
+      WHERE idnkaj_kaj IN (${allKajIds.join(",")})
         AND LTRIM(RTRIM(shpsta_kaj)) <> 'Shipped'
     `);
 
@@ -1198,28 +1241,35 @@ async function writeOneInvoice(
     // jln_no = i+1. Filter for ka9 rows that haven't been linked to a kae
     // yet (idnkae_ka9 = 0) — those are the unspoken-for rows for this
     // shipment. Discovered 2026-04-29 on SPE2DS-26-V-4327's second partial.
+    // For multi-kaj, link ka9 across all kajs. Each ka9 from each kaj gets
+    // assigned to a kae round-robin (most invoices have 1 kae for many ka9
+    // rows when multiple shipments invoice as one line). Single-kaj is the
+    // common case where ka9 count == kae count.
     const ka9Rows = await req.query(`
-      SELECT idnka9_ka9 FROM ka9_tab
-      WHERE idnkaj_ka9 = ${idnkaj}
+      SELECT idnka9_ka9, idnkaj_ka9 FROM ka9_tab
+      WHERE idnkaj_ka9 IN (${allKajIds.join(",")})
         AND (idnkae_ka9 IS NULL OR idnkae_ka9 = 0)
-      ORDER BY jln_no_ka9
+      ORDER BY idnkaj_ka9, jln_no_ka9
     `);
     if (ka9Rows.recordset.length < lines.length) {
       throw new Error(
-        `kaj=${idnkaj} has ${ka9Rows.recordset.length} unlinked ka9 row(s) but invoice has ${lines.length} kae line(s) — cannot pair`
+        `kajs [${allKajIds.join(",")}] have ${ka9Rows.recordset.length} unlinked ka9 row(s) but invoice has ${lines.length} kae line(s) — cannot pair`
       );
     }
-    for (let i = 0; i < lines.length; i++) {
+    // Map each ka9 to a kae. If 1 kae, all ka9 rows link to it. Otherwise
+    // pair sequentially (1st ka9 → 1st kae, etc.).
+    for (let i = 0; i < ka9Rows.recordset.length; i++) {
       const idnka9 = ka9Rows.recordset[i].idnka9_ka9;
+      const kaeIdx = lines.length === 1 ? 0 : Math.min(i, lines.length - 1);
       const ur = await req.query(`
         UPDATE ka9_tab
-        SET idnkae_ka9 = ${idnkaeIds[i]},
+        SET idnkae_ka9 = ${idnkaeIds[kaeIdx]},
             jlnsta_ka9 = 'Shipped',
             uptime_ka9 = GETDATE()
         WHERE idnka9_ka9 = ${idnka9}
       `);
       if ((ur.rowsAffected?.[0] || 0) !== 1) {
-        throw new Error(`failed to link ka9=${idnka9} → kae=${idnkaeIds[i]} (${ur.rowsAffected?.[0] || 0} rows affected)`);
+        throw new Error(`failed to link ka9=${idnka9} → kae=${idnkaeIds[kaeIdx]} (${ur.rowsAffected?.[0] || 0} rows affected)`);
       }
     }
 
@@ -1266,22 +1316,28 @@ async function writeOneInvoice(
     // so we use prev_val for our xtcscn.
     const xtcscnFor810 = String(trnAlloc.recordset[0].prev_val).trim();
 
+    // For multi-kaj, create kbr 810+856 per-kaj so each shipment's
+    // transmission is recorded against its own kaj. Single-kaj reduces
+    // to the original one-pair behavior.
     const idnkbrIds: number[] = [];
-    for (const kap of [24, 25]) {
-      const xtcsta = kap === 24 ? "WAWF 810 sent  " : "WAWF 856 sent  ";
-      const xtcscn = kap === 24 ? xtcscnFor810 : "0";
-      const kbrRes = await req.query(`
-        INSERT INTO kbr_tab (
-          addtme_kbr, addnme_kbr, itttbl_kbr, idnitt_kbr, idnkap_kbr,
-          xtcscn_kbr, xtcsta_kbr, xtctme_kbr
-        )
-        OUTPUT inserted.idnkbr_kbr AS newId
-        VALUES (
-          GETDATE(), 'ajoseph   ', 'kaj', ${idnkaj}, ${kap},
-          '${xtcscn}', '${xtcsta}', GETDATE()
-        )
-      `);
-      idnkbrIds.push(kbrRes.recordset[0].newId);
+    for (const kbrKaj of allKajIds) {
+      for (const kap of [24, 25]) {
+        const xtcsta = kap === 24 ? "WAWF 810 sent  " : "WAWF 856 sent  ";
+        // Only the primary kaj's 810 gets the trn_id sequence; others use 0
+        const xtcscn = (kap === 24 && kbrKaj === idnkaj) ? xtcscnFor810 : "0";
+        const kbrRes = await req.query(`
+          INSERT INTO kbr_tab (
+            addtme_kbr, addnme_kbr, itttbl_kbr, idnitt_kbr, idnkap_kbr,
+            xtcscn_kbr, xtcsta_kbr, xtctme_kbr
+          )
+          OUTPUT inserted.idnkbr_kbr AS newId
+          VALUES (
+            GETDATE(), 'ajoseph   ', 'kaj', ${kbrKaj}, ${kap},
+            '${xtcscn}', '${xtcsta}', GETDATE()
+          )
+        `);
+        idnkbrIds.push(kbrRes.recordset[0].newId);
+      }
     }
 
     // 6. Write k20 log entries for the WAWF transmissions. LL UI parses
