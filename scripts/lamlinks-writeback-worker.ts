@@ -1518,24 +1518,29 @@ async function transmitWawfForKaj(
     parties,
   };
 
-  // Build DBF + FPT once — same content for both 810 and 856
-  const { dbf, fpt } = buildCk5Dbf(invoiceData, WAWF_TEMPLATE_DIR);
+  // Build TWO different DBF + FPT pairs — 810 (Commercial Invoice) and 856
+  // (Advance Ship Notice). They share most fields but the 856 has an extra
+  // 12 packaging fields and a different form-type code embedded at byte
+  // offset 1134 ("10" → "56"). Reverse-engineered 2026-04-29 by diffing
+  // captured ref-810.laz vs ref-856.laz from Abe's manual Post.
+  const ck810 = buildCk5Dbf(invoiceData, WAWF_TEMPLATE_DIR, 810);
+  const ck856 = buildCk5Dbf(invoiceData, WAWF_TEMPLATE_DIR, 856);
 
-  // Upload twice (810 then 856) — same payload, different filenames
+  // Upload twice (810 then 856) with proper distinct content
   const filename810 = buildLazFilename();
   await new Promise(r => setTimeout(r, 50)); // sequential timestamps
   const filename856 = buildLazFilename();
 
   if (dryRun) {
-    console.log(`  [DRY RUN] Would upload ${filename810} (810) + ${filename856} (856) to /incoming/`);
+    console.log(`  [DRY RUN] Would upload ${filename810} (810, ${ck810.dbf.length}b) + ${filename856} (856, ${ck856.dbf.length}b) to /incoming/`);
     return { filename810: `${filename810} (DRY RUN)`, filename856: `${filename856} (DRY RUN)` };
   }
 
-  console.log(`  Uploading 810: ${filename810} (${dbf.length + fpt.length} bytes pre-zip)`);
-  const r1 = await uploadLaz({ dbf, fpt }, { filename: filename810 });
+  console.log(`  Uploading 810: ${filename810} (${ck810.dbf.length + ck810.fpt.length} bytes pre-zip)`);
+  const r1 = await uploadLaz({ dbf: ck810.dbf, fpt: ck810.fpt }, { filename: filename810 });
   console.log(`  ✓ 810 uploaded: ${r1.remote} (${r1.bytes} bytes zipped)`);
-  console.log(`  Uploading 856: ${filename856}`);
-  const r2 = await uploadLaz({ dbf, fpt }, { filename: filename856 });
+  console.log(`  Uploading 856: ${filename856} (${ck856.dbf.length + ck856.fpt.length} bytes pre-zip)`);
+  const r2 = await uploadLaz({ dbf: ck856.dbf, fpt: ck856.fpt }, { filename: filename856 });
   console.log(`  ✓ 856 uploaded: ${r2.remote} (${r2.bytes} bytes zipped)`);
 
   return { filename810, filename856 };

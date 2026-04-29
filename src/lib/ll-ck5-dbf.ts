@@ -281,9 +281,18 @@ function serializeFpt(entries: FptBlock[]): { fpt: Buffer; idxMap: Map<number, n
 
 // ─── Main builder ──────────────────────────────────────────────────────
 
-const RECORD_LEN = 7976;
-const HEADER_LEN = 7880;
+// 810 (Commercial Invoice) — base ck5 schema, 236 fields
+// 856 (Advance Ship Notice / Receiving Report) — same first 235 fields PLUS
+// 12 packaging/box metadata fields at the end (QINBOX, BOXSEQ, BOXNUM, RFID,
+// etc.). Per-invoice patches apply identically since the extra fields are
+// appended after the existing schema.
+const RECORD_LEN_810 = 7976;
+const HEADER_LEN_810 = 7880;
+const RECORD_LEN_856 = 8071;
+const HEADER_LEN_856 = 8264;
 const FILE_TYPE_BYTE = 0x32;
+
+export type WawfFormType = 810 | 856;
 
 // All memo fields' offsets in the DBF record body. Each is a 4-byte LE int
 // storing the FPT block index (0 = empty).
@@ -302,17 +311,25 @@ const MEMO_FIELDS: Record<string, number> = {
   EDIXML_CK5: 7967,
 };
 
-export function buildCk5Dbf(invoice: Ck5InvoiceData, templatePath: string): { dbf: Buffer; fpt: Buffer } {
-  // 1. Read template files
-  const templateDbf = readFileSync(join(templatePath, "ck5_tab.dbf"));
-  const templateFpt = readFileSync(join(templatePath, "ck5_tab.FPT"));
+export function buildCk5Dbf(invoice: Ck5InvoiceData, templatePath: string, formType: WawfFormType = 810): { dbf: Buffer; fpt: Buffer } {
+  // 1. Read template files (different schema for 810 vs 856)
+  const dbfFilename = formType === 856 ? "ck5_tab_856.dbf" : "ck5_tab.dbf";
+  const fptFilename = formType === 856 ? "ck5_tab_856.FPT" : "ck5_tab.FPT";
+  const templateDbf = readFileSync(join(templatePath, dbfFilename));
+  const templateFpt = readFileSync(join(templatePath, fptFilename));
+
+  const expectedHeaderLen = formType === 856 ? HEADER_LEN_856 : HEADER_LEN_810;
+  const expectedRecordLen = formType === 856 ? RECORD_LEN_856 : RECORD_LEN_810;
 
   // 2. Sanity-check the template
   if (templateDbf[0] !== FILE_TYPE_BYTE) {
     throw new Error(`Template DBF has unexpected file type byte 0x${templateDbf[0].toString(16)}`);
   }
-  if (templateDbf.readUInt16LE(8) !== HEADER_LEN) {
-    throw new Error(`Template DBF header length unexpected: ${templateDbf.readUInt16LE(8)}`);
+  if (templateDbf.readUInt16LE(8) !== expectedHeaderLen) {
+    throw new Error(`Template DBF (${formType}) header length unexpected: ${templateDbf.readUInt16LE(8)} (expected ${expectedHeaderLen})`);
+  }
+  if (templateDbf.readUInt16LE(10) !== expectedRecordLen) {
+    throw new Error(`Template DBF (${formType}) record length unexpected: ${templateDbf.readUInt16LE(10)} (expected ${expectedRecordLen})`);
   }
 
   // 3. Clone the template buffer
@@ -325,7 +342,11 @@ export function buildCk5Dbf(invoice: Ck5InvoiceData, templatePath: string): { db
   dbf[3] = today.getDate();
 
   // 5. Patch per-invoice fields at fixed offsets
-  const recordStart = HEADER_LEN; // offset of first byte of record (which is delete flag)
+  // PER_INVOICE_FIELDS offsets are identical for 810 and 856 (the 12 extra
+  // 856 fields are at the END of the record body — fields 235-247 — so they
+  // don't shift the per-invoice fields we patch). The 856 template's
+  // packaging fields (BOXSEQ, BOXNUM, RFID, etc.) keep their template values.
+  const recordStart = expectedHeaderLen; // offset of first byte of record (which is delete flag)
 
   function setField(name: keyof typeof PER_INVOICE_FIELDS, buf: Buffer) {
     const f = PER_INVOICE_FIELDS[name];
