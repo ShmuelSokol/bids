@@ -1158,18 +1158,37 @@ async function writeOneInvoice(
     // on the shipment screen — without this update, the row appears as
     // 'Shipping' with a blank invoice number even though kad+kae+kbr exist.
     //
-    // Mapping: ka9.jln_no_ka9 ↔ kae.cil_no_kae (1-based line number).
-    // For our 1-line-per-invoice case (all observed DD219 invoices today),
-    // this is a simple UPDATE on the matching row.
+    // We pair ka9 rows to kae rows by ORDER (jln_no_ka9 ASC ↔ cil_no_kae
+    // ASC, both 1-based but with potentially different starting offsets).
+    // ka9 rows for partial shipments may not start at jln_no=1: when LL
+    // ships an order in two batches, the second kaj's ka9 row(s) continue
+    // the global jln_no count from the first batch. We can't assume
+    // jln_no = i+1. Filter for ka9 rows that haven't been linked to a kae
+    // yet (idnkae_ka9 = 0) — those are the unspoken-for rows for this
+    // shipment. Discovered 2026-04-29 on SPE2DS-26-V-4327's second partial.
+    const ka9Rows = await req.query(`
+      SELECT idnka9_ka9 FROM ka9_tab
+      WHERE idnkaj_ka9 = ${idnkaj}
+        AND (idnkae_ka9 IS NULL OR idnkae_ka9 = 0)
+      ORDER BY jln_no_ka9
+    `);
+    if (ka9Rows.recordset.length < lines.length) {
+      throw new Error(
+        `kaj=${idnkaj} has ${ka9Rows.recordset.length} unlinked ka9 row(s) but invoice has ${lines.length} kae line(s) — cannot pair`
+      );
+    }
     for (let i = 0; i < lines.length; i++) {
-      await req.query(`
+      const idnka9 = ka9Rows.recordset[i].idnka9_ka9;
+      const ur = await req.query(`
         UPDATE ka9_tab
         SET idnkae_ka9 = ${idnkaeIds[i]},
             jlnsta_ka9 = 'Shipped',
             uptime_ka9 = GETDATE()
-        WHERE idnkaj_ka9 = ${idnkaj}
-          AND jln_no_ka9 = ${i + 1}
+        WHERE idnka9_ka9 = ${idnka9}
       `);
+      if ((ur.rowsAffected?.[0] || 0) !== 1) {
+        throw new Error(`failed to link ka9=${idnka9} → kae=${idnkaeIds[i]} (${ur.rowsAffected?.[0] || 0} rows affected)`);
+      }
     }
 
     // 4b. UPDATE k80: release date + status='Closed' (matches Abe's flow).
