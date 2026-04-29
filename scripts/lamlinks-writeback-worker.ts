@@ -27,6 +27,11 @@
 import "./env";
 import sql from "mssql/msnodesqlv8";
 import { createClient } from "@supabase/supabase-js";
+import { join } from "path";
+import { buildCk5Dbf } from "../src/lib/ll-ck5-dbf";
+import { uploadLaz, buildLazFilename } from "../src/lib/ll-laz";
+
+const WAWF_TEMPLATE_DIR = join(__dirname, "..", "data", "ll-templates");
 
 const POLL_INTERVAL_MS = 30_000;   // 30s between polls in --loop mode
 const MAX_ROWS_PER_PASS = 10;      // avoid monopolising Abe's LamLinks session
@@ -800,12 +805,23 @@ async function processInvoiceQueue(): Promise<void> {
 
       try {
         const result = await writeOneInvoice(pool, row);
+
+        // SQL writeback succeeded — now do the WAWF SFTP upload (the step that
+        // actually transmits EDI to gov side). Without this, kad/kae/kbr/k20
+        // exist locally but DLA never receives the invoice. Discovered via
+        // procmon trace 2026-04-29 — see project_wawf_sftp_mechanism.md.
+        const wawfDryRun = process.env.LL_WAWF_DRY_RUN === "true";
+        const wawfResult = await transmitWawfForKaj(pool, result.kaj, result, wawfDryRun);
+
         await supabase.from("lamlinks_invoice_queue").update({
           state: "posted",
           posted_at: new Date().toISOString(),
           ll_idnkad: result.idnkad,
           ll_cin_no: String(result.cinNo),
           ll_kae_ids: result.idnkaeIds,
+          ll_wawf_810_filename: wawfResult.filename810,
+          ll_wawf_856_filename: wawfResult.filename856,
+          ll_wawf_dry_run: wawfDryRun,
           error_message: null,
         }).eq("id", row.id);
         console.log(`  ✓ ${row.ax_invoice_number} → kad=${result.idnkad} kae=[${result.idnkaeIds.join(",")}] kbr=[${result.idnkbrIds.join(",")}]`);
@@ -829,7 +845,7 @@ async function processInvoiceQueue(): Promise<void> {
 async function writeOneInvoice(
   pool: sql.ConnectionPool,
   row: any,
-): Promise<{ idnkad: number; idnkaeIds: number[]; idnkbrIds: number[]; cinNo: number }> {
+): Promise<{ idnkad: number; idnkaeIds: number[]; idnkbrIds: number[]; cinNo: number; kaj: number; trnId: number }> {
   // 1. Resolve kaj via contract # + invoice total.
   const orderRef = String(row.ax_customer_order_reference || "").trim();
   const contractNo = orderRef.split("[")[0].trim();
@@ -1076,11 +1092,121 @@ async function writeOneInvoice(
     }
 
     await tx.commit();
-    return { idnkad, idnkaeIds, idnkbrIds, cinNo };
+    return { idnkad, idnkaeIds, idnkbrIds, cinNo, kaj: idnkaj, trnId: parseInt(xtcscnFor810, 10) };
   } catch (e) {
     await tx.rollback();
     throw e;
   }
+}
+
+/**
+ * After SQL writeback commits, build the .laz (DBF + FPT) and SFTP-upload
+ * to sftp.lamlinks.com:/incoming. This is the step that actually transmits
+ * EDI to gov side. Discovered via procmon 2026-04-29 — see
+ * project_wawf_sftp_mechanism.md and docs/lamlinks-invoice-writeback.md.
+ *
+ * Per LL: 810 (invoice) goes first, then 856 (shipment notice) ~2 sec later.
+ * For DD219 the data is identical between the two — the gov-side processor
+ * differentiates by the kap=24 vs kap=25 already on the kbr rows we INSERTed.
+ *
+ * Returns filenames used (or "DRY RUN" markers) for audit.
+ */
+async function transmitWawfForKaj(
+  pool: sql.ConnectionPool,
+  kaj: number,
+  invoiceResult: { idnkad: number; cinNo: number; trnId: number },
+  dryRun: boolean,
+): Promise<{ filename810: string; filename856: string }> {
+  // Pull all the source data needed for the DBF
+  const r = await pool.request().query(`
+    SELECT
+      kaj.idnkaj_kaj AS idnkaj, kaj.shptme_kaj AS shptme, kaj.insdte_kaj AS insdte,
+      LTRIM(RTRIM(kaj.shpnum_kaj)) AS shpnum, LTRIM(RTRIM(kaj.packed_kaj)) AS packed,
+      kad.cin_no_kad AS cin_no, LTRIM(RTRIM(kad.cinnum_kad)) AS cinnum,
+      kad.cisdte_kad AS cindte, kad.ar_val_kad AS cinval,
+      kae.cilqty_kae AS shpqty, kae.cil_up_kae AS shp_up,
+      LTRIM(RTRIM(kae.cil_ui_kae)) AS shp_ui, kae.cilext_kae AS shpext,
+      LTRIM(RTRIM(kae.cildes_kae)) AS p_desc,
+      k81.idnk81_k81 AS idnk81, k81.clnqty_k81 AS clnqty, k81.cln_up_k81 AS cln_up,
+      LTRIM(RTRIM(k81.ordrno_k81)) AS ordrno, LTRIM(RTRIM(k81.tcn_k81)) AS tcn,
+      LTRIM(RTRIM(k81.pr_num_k81)) AS pr_num, k81.stadte_k81 AS reldte,
+      k81.idnk71_k81 AS idnk71,
+      LTRIM(RTRIM(k80.piidno_k80)) AS piidno,
+      LTRIM(RTRIM(k79.cntrct_k79)) AS cntrct,
+      k71.idnk08_k71 AS idnk08
+    FROM kaj_tab kaj
+    INNER JOIN ka9_tab ka9 ON ka9.idnkaj_ka9 = kaj.idnkaj_kaj
+    INNER JOIN kae_tab kae ON kae.idnkae_kae = ka9.idnkae_ka9
+    INNER JOIN kad_tab kad ON kad.idnkad_kad = kae.idnkad_kae
+    INNER JOIN k80_tab k80 ON k80.idnk80_k80 = kaj.idnk80_kaj
+    INNER JOIN k79_tab k79 ON k79.idnk79_k79 = k80.idnk79_k80
+    INNER JOIN k81_tab k81 ON k81.idnk80_k81 = k80.idnk80_k80
+    LEFT  JOIN k71_tab k71 ON k71.idnk71_k71 = k81.idnk71_k81
+    WHERE kaj.idnkaj_kaj = ${kaj}
+  `);
+  if (r.recordset.length === 0) throw new Error(`transmitWawf: no source data for kaj=${kaj}`);
+  const src = r.recordset[0];
+
+  // NSN from k08
+  let nsnStr = "";
+  if (src.idnk08) {
+    const k08r = await pool.request().query(`SELECT LTRIM(RTRIM(fsc_k08)) AS fsc, LTRIM(RTRIM(niin_k08)) AS niin FROM k08_tab WHERE idnk08_k08 = ${src.idnk08}`);
+    if (k08r.recordset[0]) nsnStr = `${k08r.recordset[0].fsc}-${k08r.recordset[0].niin}`;
+  }
+
+  const invoiceData = {
+    a_code: "96412",
+    cntrct: src.cntrct,
+    piidno: src.piidno || "",
+    reldte: src.reldte ? new Date(src.reldte) : undefined,
+    ordrno: src.ordrno,
+    tcn: src.tcn || src.ordrno,
+    pr_num: src.pr_num || "",
+    p_desc: src.p_desc || "",
+    idnk71: src.idnk71 || 0,
+    nsn: nsnStr,
+    pidtxt: "(template)",
+    idnkaj: src.idnkaj,
+    idnk81: src.idnk81,
+    cindte: src.cindte ? new Date(src.cindte) : new Date(),
+    cin_no: src.cin_no,
+    cinnum: src.cinnum,
+    shpqty: src.shpqty,
+    clnqty: src.clnqty,
+    cln_up: parseFloat(src.cln_up),
+    shp_up: parseFloat(src.shp_up),
+    shp_ui: src.shp_ui,
+    shpext: parseFloat(src.shpext),
+    shptme: src.shptme ? new Date(src.shptme) : new Date(),
+    shpnum: src.shpnum,
+    shpped: "",
+    packed: src.packed || "T",
+    cinval: parseFloat(src.cinval),
+    insdte: src.insdte ? new Date(src.insdte) : new Date(),
+    trn_id: invoiceResult.trnId,
+  };
+
+  // Build DBF + FPT once — same content for both 810 and 856
+  const { dbf, fpt } = buildCk5Dbf(invoiceData, WAWF_TEMPLATE_DIR);
+
+  // Upload twice (810 then 856) — same payload, different filenames
+  const filename810 = buildLazFilename();
+  await new Promise(r => setTimeout(r, 50)); // sequential timestamps
+  const filename856 = buildLazFilename();
+
+  if (dryRun) {
+    console.log(`  [DRY RUN] Would upload ${filename810} (810) + ${filename856} (856) to /incoming/`);
+    return { filename810: `${filename810} (DRY RUN)`, filename856: `${filename856} (DRY RUN)` };
+  }
+
+  console.log(`  Uploading 810: ${filename810} (${dbf.length + fpt.length} bytes pre-zip)`);
+  const r1 = await uploadLaz({ dbf, fpt }, { filename: filename810 });
+  console.log(`  ✓ 810 uploaded: ${r1.remote} (${r1.bytes} bytes zipped)`);
+  console.log(`  Uploading 856: ${filename856}`);
+  const r2 = await uploadLaz({ dbf, fpt }, { filename: filename856 });
+  console.log(`  ✓ 856 uploaded: ${r2.remote} (${r2.bytes} bytes zipped)`);
+
+  return { filename810, filename856 };
 }
 
 async function main() {
