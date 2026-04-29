@@ -119,6 +119,38 @@ async function bumpK07(pool: sql.ConnectionPool, label: string): Promise<void> {
 // side effect — invalidating the cache so the next read pulls our writes.
 // Discovered 2026-04-29 live test (CIN0066250): Abe had to manually click
 // Shipped + enter Invoice # before the SQL state surfaced in his UI.
+/**
+ * Normalize a UoM code from LL/AX → a WAWF-accepted Unit of Measure code.
+ * WAWF rejects codes outside its standard UoM table (e.g. 'B1') with:
+ *   "ERROR: Unit of Measure Code 'B1' was not found in WAWF Unit of Measure table"
+ *
+ * LL/AX uses internal "B<N>" codes for bulk packs (B1 = pack-of-1, B25 =
+ * pack-of-25, etc.). For invoicing purposes we ship in the underlying
+ * unit type — usually 'EA'. WAWF case-folds lowercase to upper, so 'ea'
+ * → 'EA' is accepted as-is, but unknown codes like 'B1' must be mapped.
+ *
+ * Discovered 2026-04-29 live test: CIN0066270 (SPE2DS26P1609) rejected
+ * by WAWF for UoM 'B1'.
+ */
+function normalizeWawfUom(uom: string | null | undefined): string {
+  if (!uom) return "EA";
+  const trimmed = String(uom).trim().toUpperCase();
+  if (!trimmed) return "EA";
+  // B-prefix bulk-pack codes → EA (each), the underlying ship unit
+  if (/^B\d+$/.test(trimmed)) return "EA";
+  // Standard WAWF codes pass through (EA, BX, PG, PR, DZ, KG, LB, FT, BT,
+  // TU, CN, BG, VL, etc.). If LL has anything else, log + default to EA
+  // so the invoice still ships rather than blocking on a 100% data issue.
+  const wawfStandard = new Set([
+    "EA", "BX", "PG", "PR", "DZ", "KG", "LB", "FT", "BT", "TU",
+    "CN", "BG", "VL", "RL", "ST", "SE", "PK", "JR", "GL", "QT",
+    "PT", "OZ", "MT", "CM", "MM", "M2", "M3", "GM", "MG", "L",
+  ]);
+  if (wawfStandard.has(trimmed)) return trimmed;
+  console.log(`  ⚠ unrecognized UoM '${uom}' — defaulting to 'EA' for WAWF transmission`);
+  return "EA";
+}
+
 async function bumpInvoiceK07(pool: sql.ConnectionPool): Promise<void> {
   const keys = [
     "PARTS_IN_BOXES_FORM_QUERY_VALUES_EXCEPTIONS",
@@ -1418,7 +1450,7 @@ async function transmitWawfForKaj(
     clnqty: src.clnqty,
     cln_up: parseFloat(src.cln_up),
     shp_up: parseFloat(src.shp_up),
-    shp_ui: src.shp_ui,
+    shp_ui: normalizeWawfUom(src.shp_ui),
     shpext: parseFloat(src.shpext),
     shptme: src.shptme ? new Date(src.shptme) : new Date(),
     shpnum: src.shpnum,
