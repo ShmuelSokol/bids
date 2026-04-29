@@ -210,6 +210,19 @@ We could. It's what "pure" DIBS write-back would look like — Abe doesn't need 
 
 Graduation to fresh-envelope mode requires: 5+ successful piggyback transmissions, then a test where we build a new `k33_tab` row by cloning all fields from the most recent posted envelope (with new id, timestamps, status strings).
 
+### Multi-bump k07 hypothesis (shipped 2026-04-28, untested live)
+
+The 2026-04-27 trace of LL native Post showed LL fires `UPDATE k07 SOL_FORM_PREFERENCES` **12+ times across a 6-min Post burst — once per UI interaction**. Our worker originally fired it ONCE at finalization. That single bump silenced piggyback's 9999806/9999607 (existing envelope cursor stays in sync) but NOT fresh-envelope's 9977720 (envelope-list cursor needs separate invalidation).
+
+The shipped fix interleaves bumps with the SQL steps:
+- `createFreshEnvelope()` bumps **2x** (post-kdy-alloc, post-k33-INSERT)
+- `appendBidLine()` bumps **4x** (post-kdy, post-k34-INSERT, post-k35-INSERT, post-itmcnt)
+- Total 6+ bumps per fresh-envelope creation, mirroring LL native cadence.
+
+Mechanism verified via `scripts/_test-multi-bump-k07.ts` (6 bumps in 72ms, k07 row updates). **Live cursor-error validation only possible when Abe creates a fresh envelope** with `lamlinks_fresh_envelope_enabled=true`. Currently false until validated.
+
+If multi-bump still doesn't silence 9977720, the fallback is to capture LL's own SQL during a fresh envelope creation via XE trace + diff against `createFreshEnvelope()`. Strategic alternative: Sally REST `put_client_quote` (bypasses cursors entirely; URL still unknown).
+
 ## Audit checklist for any write-back script
 
 Before running `--execute` on a new write-back:

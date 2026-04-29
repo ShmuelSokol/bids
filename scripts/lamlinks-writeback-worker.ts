@@ -84,6 +84,26 @@ async function findLatestPostedTemplateK34(pool: sql.ConnectionPool): Promise<nu
   return r.recordset[0]?.idnk34_k34 ?? null;
 }
 
+// Fire the SOL_FORM_PREFERENCES k07 bump that LL's own client fires 12+ times
+// during a Post burst. Theory (per docs/flows/ll-post-sequence.md): each bump
+// invalidates a different VFP cursor cache layer. Single bump silences
+// piggyback's 9999806/9999607 because the existing envelope's cursor stays
+// in sync — but fresh-envelope mode requires the *envelope-list cursor* to
+// also invalidate, hence multi-bump.
+async function bumpK07(pool: sql.ConnectionPool, label: string): Promise<void> {
+  try {
+    await pool.request().query(`
+      UPDATE k07_tab
+      SET uptime_k07 = GETDATE()
+      WHERE LTRIM(RTRIM(upname_k07)) = 'ajoseph'
+        AND LTRIM(RTRIM(ss_key_k07)) = 'SOL_FORM_PREFERENCES'
+        AND LTRIM(RTRIM(ss_tid_k07)) = 'U'
+    `);
+  } catch (e: any) {
+    console.log(`  note: k07 bump (${label}) skipped: ${e.message?.slice(0, 80)}`);
+  }
+}
+
 async function createFreshEnvelope(pool: sql.ConnectionPool, templateK34: number): Promise<number> {
   // Mint a brand-new k33 staging envelope. Uses kdy_tab to allocate idnk33,
   // then inserts a k33 row with the same status-string shape LamLinks' own
@@ -93,8 +113,16 @@ async function createFreshEnvelope(pool: sql.ConnectionPool, templateK34: number
   //
   // Runs in its own transaction so it's atomic even if the broader worker
   // loop blows up afterward.
+  //
+  // Multi-bump k07 (2026-04-28): LL's native client fires the
+  // SOL_FORM_PREFERENCES UPDATE 12+ times across a Post burst. Single bump at
+  // finalization silenced piggyback's cursor errors but not fresh-envelope's
+  // 9977720. Hypothesis: each bump invalidates a different VFP cursor cache;
+  // fresh-envelope creation needs bumps interleaved with the SQL steps so the
+  // *envelope-list* cursor (separate from the bid-form cursor) also refreshes.
   const tx = new sql.Transaction(pool);
   await tx.begin();
+  let newK33: number = 0;
   try {
     const req = new sql.Request(tx);
     const k33Alloc = await req.query(`
@@ -104,7 +132,7 @@ async function createFreshEnvelope(pool: sql.ConnectionPool, templateK34: number
       WHERE tabnam_kdy = 'k33_tab';
       SELECT @newId AS id;
     `);
-    const newK33: number = k33Alloc.recordset[0].id;
+    newK33 = k33Alloc.recordset[0].id;
     if (!newK33) throw new Error(`kdy allocation for k33_tab failed`);
 
     // qotref_k33 is char(15). LamLinks' own format is "0AG09-{idnk33}" padded
@@ -126,11 +154,17 @@ async function createFreshEnvelope(pool: sql.ConnectionPool, templateK34: number
     `);
     await tx.commit();
     console.log(`  + created fresh envelope idnk33=${newK33} (qotref="${qotref.trim()}") template_k34=${templateK34}`);
-    return newK33;
   } catch (e) {
     try { await tx.rollback(); } catch {}
     throw e;
   }
+  // Bumps after the kdy_alloc + INSERT k33 steps — outside the transaction so
+  // they go to LL's session-state row regardless. The single bump here
+  // mirrors LL's pattern of bumping after each major SQL step. We do TWO
+  // bumps for the kdy+INSERT pair (matching LL's two UI-interactions per step).
+  await bumpK07(pool, "post-k33-alloc");
+  await bumpK07(pool, "post-k33-insert");
+  return newK33;
 }
 
 async function resolveTarget(pool: sql.ConnectionPool, sol: string, nsn: string) {
@@ -166,6 +200,8 @@ async function writeOneBid(
 ): Promise<{ idnk34: number; idnk35: number }> {
   const tx = new sql.Transaction(pool);
   await tx.begin();
+  let newK34 = 0;
+  let newK35 = 0;
   try {
     const req = new sql.Request(tx);
 
@@ -193,8 +229,8 @@ async function writeOneBid(
       WHERE tabnam_kdy = 'k35_tab';
       SELECT @newId AS id;
     `);
-    const newK34: number = k34Alloc.recordset[0].id;
-    const newK35: number = k35Alloc.recordset[0].id;
+    newK34 = k34Alloc.recordset[0].id;
+    newK35 = k35Alloc.recordset[0].id;
     if (!newK34 || !newK35) throw new Error(`kdy allocation failed: k34=${newK34}, k35=${newK35}`);
 
     const safePn = (target.mfrPn || "").replace(/'/g, "''");
@@ -243,11 +279,20 @@ async function writeOneBid(
     `);
 
     await tx.commit();
-    return { idnk34: newK34, idnk35: newK35 };
   } catch (e) {
     try { await tx.rollback(); } catch {}
     throw e;
   }
+  // Multi-bump k07 after each major SQL step (mirrors LL native cadence —
+  // 12+ bumps per Post burst). Outside the transaction so they go to LL's
+  // session-state row regardless. Six bumps here matches LL's "1 bump per
+  // UI interaction" pattern (kdy alloc, k34 INSERT, kdy alloc, k35 INSERT,
+  // itmcnt UPDATE, plus a final settle bump).
+  await bumpK07(pool, "post-line-kdy");
+  await bumpK07(pool, "post-line-k34-insert");
+  await bumpK07(pool, "post-line-k35-insert");
+  await bumpK07(pool, "post-line-itmcnt");
+  return { idnk34: newK34, idnk35: newK35 };
 }
 
 async function writeHeartbeat(supabase: any) {
