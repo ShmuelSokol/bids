@@ -57,7 +57,9 @@ const TASKS: Task[] = [
 
   // Invoice state monitor — watches LamLinks kad_tab.cinsta_kad for transitions
   // so /invoicing/monitor surfaces "Abe posted invoice X" near-real-time.
-  { script: "sync-invoice-states", mode: "periodic", intervalMs: 5 * 60_000 },
+  // 30s cadence: Abe's manual LL posts surface in DIBS within ~30 sec average.
+  // (Tradeoff: slight extra LL SQL polling load, negligible in absolute terms.)
+  { script: "sync-invoice-states", mode: "periodic", intervalMs: 30_000 },
 
   // Worker-health alert — every 5 min, checks heartbeat + queue depth and
   // fires a WhatsApp alert if either goes bad during work hours. Debounced
