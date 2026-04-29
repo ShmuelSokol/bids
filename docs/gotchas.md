@@ -49,7 +49,7 @@ per the XE trace). End-to-end test:
 
 So **piggyback mode** (DIBS appends to Abe's staged envelope) is now production-clean. Use it as the default operational pattern.
 
-**Fresh-envelope mode (DIBS mints from scratch) — partial:** Same 2026-04-28 test, second envelope: DIBS minted a fresh k33, Abe added a line on top in LL (which LL routed to its OWN new envelope, not ours — meaning each envelope ends up standalone). On Post, DIBS's fresh envelope produced cursor error **9977720** (different from 9999806/9999607). Bid still transmitted to DLA per ack email — error is cosmetic, same as the others. The `lamlinks_fresh_envelope_enabled` flag (default true) gates this mode; flip false to require Abe-seeded envelopes only. UI on `/solicitations` shows an amber warning when fresh-envelope mode is enabled.
+**Fresh-envelope mode (DIBS mints from scratch) — disabled 2026-04-28 evening.** Test confirmed 9977720 cursor error on Post (different code from piggyback's 9999806/9999607). Bid still transmits to DLA but error is annoying. Root cause: LL's k33 cursor is loaded when Abe opens the form; our INSERT happens AFTER that, and **VFP cursors can't be remotely requeried** — no SQL signal exists to force a refresh on a client-side cursor. The k07 SOL_FORM_PREFERENCES bump that silences piggyback errors only refreshes the form-prefs cache, not the grid-data cursor. Conclusion from 2026-04-24 + 2026-04-28: "No pure-SQL path fully avoids it." `lamlinks_fresh_envelope_enabled = false` is the correct operating posture. Strategic fix: Sally REST `put_client_quote` (bypasses cursors entirely; worker exists on NYEVRVTC001, awaiting auth confirmation).
 
 See `docs/flows/ll-post-sequence.md` for the full bid-Post SQL sequence
 captured live.
