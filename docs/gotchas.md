@@ -2,6 +2,24 @@
 
 Things that broke, how we noticed, and what we learned. If you're about to touch one of these areas, read the relevant section first or you'll repeat our mistakes.
 
+## Invoice status LABEL is driven by k81.shpsta_k81, not kaj.shpsta_kaj
+
+> Symptom (2026-04-28): First live AX→LL invoice writeback test (CIN0066186, $43.77 against SPE2DS-26-V-4743). After the worker ran, the LL shipment screen showed "Shipped" CHECKBOX flipped on — but the STATUS LABEL still read "Shipping". We had updated kaj.shpsta_kaj, ka9.jlnsta_ka9, k80.rlssta_k80, kad.cinsta_kad, kbr (810+856), k20 logs — every status field we knew about. Status label still wrong.
+
+**The cause:** `k81_tab.shpsta_k81` (the AWARD/CLIN-level shipping status) is the source of the displayed status label. It transitions 'Shipping' → 'Shipped' separately from kaj. One k80 may have multiple k81 rows (one per CLIN); flip them all.
+
+**The fix in worker `writeOneInvoice()`:**
+```sql
+UPDATE k81_tab
+   SET shpsta_k81 = 'Shipped', stadte_k81 = GETDATE()
+ WHERE idnk80_k81 = <k80>
+   AND LTRIM(RTRIM(shpsta_k81)) = 'Shipping'
+```
+
+Discovery method: scanned all `INFORMATION_SCHEMA.COLUMNS` where DATA_TYPE was char/varchar and name matched `%sta_%`/`%status%` for values 'Shipping'/'Shipped'. Two tables had both: `kaj_tab.shpsta_kaj` (already handled) and `k81_tab.shpsta_k81` (the missing one). Diff'd k81 row of our kaj vs Abe's manual posts confirmed only this field differed.
+
+See `project_lamlinks_invoice_writeback.md` in user memory for the full 8-table transaction shape.
+
 ## LL VFP cursor errors 9999806 / 9999607 are cosmetic — don't panic-nuke
 
 > Symptom (2026-04-24): DIBS writeback inserted k33/k34/k35 rows for envelope 46896 (sol `SPE2DS-26-T-009G` @ $239). Abe saw `9999806` on LL reopen and `9999607` on his manual Post. I nuked the DIBS-inserted rows assuming the transmit had failed. DLA's ack email came back confirming BOTH the DIBS-created envelope AND Abe's re-post had actually reached Sally (standard dedup kept the later one). I'd deleted valid sent data.
@@ -65,18 +83,23 @@ Test script at `https://jzgvdfzboknpcrhymjob.supabase.co/storage/v1/object/publi
 
 **Creds live in `.env` on GLOVE** (`LL_SALLY_LOGIN`, `LL_API_KEY`, `LL_API_SECRET`, `LL_E_CODE`). Never commit `.env`. Will be duplicated to NYEVRVTC001 once the worker is built.
 
-## UoM B-prefix codes (B25, B10, etc.) are sellable units, not multipliers
+## UoM B-prefix codes are AX pack sizes — convert to per-each when sol is EA
 
-> Symptom (2026-04-28): `SPE2DS-26-T-021J` had AX UoM `B25` (pack of 25). DIBS suggested $110.99 (~5× the LL estimated $20.40). DIBS appeared to be multiplying by 25 as a case-of-25 factor when `B25` is itself the sold unit.
+> Symptom (2026-04-28): `SPE2DS-26-T-021J` had AX UoM `B25` (pack of 25). DIBS suggested $110.99 vs DLA estimated $20.40 (5.4× over market). Initial misdiagnosis was that DIBS was multiplying by 25; actual cause was that AX cost ($100.90/B25) was being treated as if it were per-EA when DLA's solicitation UoM was EA.
 
-**Cause:** DIBS's pricing logic treats certain UoM codes as multipliers (e.g. `BX` of N units = price-per-unit × N), but DLA convention is that `B<NN>` codes (B25, B10, B100, etc.) are the *sellable unit* — one B25 = one pack of 25, sold as a single line-item.
+**Real cause:** AX stores cost per its internal pack UoM (`B25` = pack of 25). DLA solicitations use the buyer's UoM (typically `EA`). When AX UoM is `B<NN>` and sol UoM is `EA`, the per-EA cost is `cost / NN` ($100.90 / 25 = $4.04/EA), not $100.90/EA.
 
-**Fix needed (not yet shipped):** UoM mapping in pricing logic should treat B-prefix codes as `unit_qty=1`, not as multipliers. Audit `src/lib/pricing/` and the cost-waterfall code that reads AX `unitId`. Likely needs a small lookup table:
-- `EA`, `PR`, `PG`, `BG` etc. → multiplier 1 (sold individually)
-- `BX`, `CN`, `PK` → may need pack count from another field
-- `B<NN>` → multiplier 1 (the bundle IS the unit)
+**Fix shipped 2026-04-28:**
+- `src/lib/uom.ts` — `parseUomMultiplier()` recognises `B<NN>` codes (returns NN) vs single-unit UoMs (EA/PR/PG/etc., returns 1) vs unknown packs (BX/CN/PK, returns 1 with low confidence).
+- `nsn_costs` + `nsn_vendor_prices` — added `cost_per_each` + `pack_multiplier` columns. Migration in `scripts/sql/nsn-costs-per-each.sql`. 3,807 NSN rows with B-prefix UoMs were backfilled.
+- `dibbs_solicitations.sol_uom` — new column carrying DLA's UoM (from LL `k11.sol_um_k11`). Backfilled via `scripts/backfill-sol-uom-from-ll.ts`.
+- `enrich/route.ts` + `reprice/route.ts` — when AX UoM matches `/^B\d+$/` AND `sol_uom = 'EA'`, use `cost_per_each` for pricing. Otherwise raw AX cost passes through (PG/BX/PK are typically equivalent to our pack).
+- `generate-pos/route.ts` — `costTrustworthy()` now allows the `EA ↔ B<NN>` case (per-each split is reliable). New `effectiveUnitCost()` helper picks per-each cost when warranted, eliminating spurious "COST UNVERIFIED" flags on legit lines.
+- `populate-nsn-costs-from-ax.ts` — computes `cost_per_each` and `pack_multiplier` going forward.
 
-**For now:** when Abe sees a B-prefix UoM in the modal, he should override the suggested price manually before submitting. Don't bid B-prefix sols via DIBS without checking.
+**Validation:** SPE2DS-26-T-021J flipped from $110.99 → $4.44/EA (cost $4.04/EA × 1.10), 80% margin headroom against the $20.40/EA market price.
+
+**Why we DON'T divide for `BX`/`PG`/`PK`:** distribution check showed 0% of B-prefix AX UoMs map to B-prefix LL UoMs. 23% map to EA (the dividing case), 77% map to PG/BX/PK/CT — which are typically the same physical bundle as our B<NN> (vendor pack = DLA pack). Converting those would over-divide. Empirical: SPE2DS-26-T-9496 has AX=B25 ($100.90) and LL=BX ($129.99) — clearly equivalent units, no division needed.
 
 ## LL imports only 1 CLIN of multi-CLIN DIBBS sols
 

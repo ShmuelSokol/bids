@@ -713,6 +713,7 @@ async function getInvoiceWritebackEnabled(supabase: any): Promise<boolean> {
  *      cin_no_kad = LL counter MAX+1; cinnum_kad = AX invoice digits.
  *   3. INSERT kae line(s) under the kad.
  *   4. UPDATE k80 to release: rlsdte_k80=GETDATE(), rlssta_k80='Closed'.
+ *   4c. UPDATE k81.shpsta_k81 'Shipping'→'Shipped' (drives UI status label).
  *   5. INSERT 2 kbr rows: WAWF 810 (idnkap=24) + WAWF 856 (idnkap=25),
  *      itttbl_kbr='kaj', idnitt_kbr=<kaj_id>, xtcsta_kbr='WAWF X sent'.
  *
@@ -946,6 +947,19 @@ async function writeOneInvoice(
       UPDATE k80_tab
       SET rlsdte_k80 = GETDATE(), rlssta_k80 = 'Closed'
       WHERE idnk80_k80 = ${idnk80}
+    `);
+
+    // 4c. UPDATE k81 (award/CLIN level): flip shpsta_k81 'Shipping' → 'Shipped'
+    // and stamp stadte_k81. The LL shipment screen reads its STATUS LABEL from
+    // k81.shpsta_k81 (NOT kaj.shpsta_kaj). Without this, the checkbox flips
+    // 'Shipped' but the status text still reads 'Shipping'. Discovered
+    // 2026-04-28 while debugging CIN0066186. One k80 may have multiple k81
+    // CLIN rows; flip them all.
+    await req.query(`
+      UPDATE k81_tab
+      SET shpsta_k81 = 'Shipped', stadte_k81 = GETDATE()
+      WHERE idnk80_k81 = ${idnk80}
+        AND LTRIM(RTRIM(shpsta_k81)) = 'Shipping'
     `);
 
     // 5. INSERT 2 kbr rows for WAWF 810 + 856.

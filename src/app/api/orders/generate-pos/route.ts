@@ -94,6 +94,8 @@ export async function POST(req: NextRequest) {
   //      were imported before we started storing bid_vendor)
   type CostRow = {
     cost: number;
+    costPerEach?: number;
+    packMult?: number;
     source: string | null;
     vendor: string | null;
     uom: string | null;
@@ -123,17 +125,19 @@ export async function POST(req: NextRequest) {
   if (nsnsNeedingFallback.length > 0) {
     const { data: costs } = await supabase
       .from("nsn_costs")
-      .select("nsn, cost, cost_source, vendor, unit_of_measure, item_number")
+      .select("nsn, cost, cost_per_each, pack_multiplier, cost_source, vendor, unit_of_measure, item_number")
       .in("nsn", nsnsNeedingFallback)
       .gt("cost", 0);
     for (const c of costs || []) {
       waterfallByNsn.set(c.nsn, {
         cost: c.cost,
+        costPerEach: c.cost_per_each ?? c.cost,
+        packMult: c.pack_multiplier ?? 1,
         source: c.cost_source,
         vendor: c.vendor,
         uom: c.unit_of_measure,
         itemNumber: c.item_number,
-      });
+      } as CostRow);
     }
   }
 
@@ -171,12 +175,26 @@ export async function POST(req: NextRequest) {
   }
   // Is the cost calculation trustworthy for this line? Yes if UoMs match OR
   // if either UoM is missing (can't verify, but can't disprove either).
-  // No if both are present AND differ (e.g. award="PG" vs vendor="B10") —
-  // multiplying cost × qty would produce a wrong total in that case.
+  // Also yes for the AX-bundle ↔ EA case — we have cost_per_each from the
+  // pack split (B25→/25), which IS trustworthy. No otherwise.
   function costTrustworthy(awardUom: any, vendorUom: any): boolean {
     const a = normUom(awardUom), v = normUom(vendorUom);
     if (!a || !v) return true;  // can't verify; default to trust
-    return a === v;
+    if (a === v) return true;
+    // AX bundle (B<NN>) vs sol EA — per-each split is reliable
+    if (a === "EA" && /^B\d+$/.test(v)) return true;
+    return false;
+  }
+  // Pick the right unit cost for an award given the AX-side cost row.
+  // - When award UoM = EA and cost UoM = B<NN>, use the per-each split.
+  // - Otherwise pass through the raw AX cost (assumed equivalent unit).
+  function effectiveUnitCost(awardUom: any, c: CostRow): number {
+    const a = normUom(awardUom);
+    const v = normUom(c.uom);
+    if (a === "EA" && v && /^B\d+$/.test(v) && (c.packMult || 1) > 1 && c.costPerEach != null) {
+      return c.costPerEach;
+    }
+    return c.cost;
   }
 
   type Routing = { supplier: string; reason: string; cost: CostRow | null };
@@ -268,7 +286,12 @@ export async function POST(req: NextRequest) {
       // group by vendor for routing, but don't multiply an incompatible
       // cost × qty that would produce a negative-margin PO.
       const costUnverified = (routing?.reason || "").includes("COST UNVERIFIED");
-      const unitCost = onRealSupplier && !costUnverified ? routing?.cost?.cost ?? 0 : 0;
+      // Use per-each split when award is EA but cost is in B<NN> (otherwise
+      // raw AX cost passes through). costTrustworthy() now allows this case.
+      const rawUnitCost = onRealSupplier && !costUnverified && routing?.cost
+        ? effectiveUnitCost(a.unit_of_measure, routing.cost)
+        : 0;
+      const unitCost = rawUnitCost;
       const qty = a.quantity || 1;
       return {
         award: a,

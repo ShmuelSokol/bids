@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase-server";
+import { parseUomMultiplier } from "@/lib/uom";
 
 /**
  * POST /api/dibbs/enrich
@@ -102,16 +103,24 @@ export async function POST(req: Request) {
   // Load NSN costs with vendor + item_number + UoM (also paginate).
   // These fields get stored on the solicitation so PO generation uses
   // the SAME vendor the bid was based on, not a re-queried waterfall.
-  const costMap = new Map<string, { cost: number; source: string; vendor: string | null; itemNumber: string | null; uom: string | null }>();
+  const costMap = new Map<string, { cost: number; costPerEach: number | null; packMult: number; source: string; vendor: string | null; itemNumber: string | null; uom: string | null }>();
   let costPage = 0;
   while (true) {
     const { data } = await supabase
       .from("nsn_costs")
-      .select("nsn, cost, cost_source, vendor, item_number, unit_of_measure")
+      .select("nsn, cost, cost_per_each, pack_multiplier, cost_source, vendor, item_number, unit_of_measure")
       .range(costPage * 1000, (costPage + 1) * 1000 - 1);
     if (!data || data.length === 0) break;
     data.forEach((c) => {
-      if (c.cost > 0) costMap.set(c.nsn, { cost: c.cost, source: c.cost_source, vendor: c.vendor || null, itemNumber: c.item_number || null, uom: c.unit_of_measure || null });
+      if (c.cost > 0) costMap.set(c.nsn, {
+        cost: c.cost,
+        costPerEach: c.cost_per_each ?? c.cost,
+        packMult: c.pack_multiplier ?? 1,
+        source: c.cost_source,
+        vendor: c.vendor || null,
+        itemNumber: c.item_number || null,
+        uom: c.unit_of_measure || null,
+      });
     });
     costPage++;
   }
@@ -263,12 +272,13 @@ export async function POST(req: Request) {
     quantity: number;
     fsc: string;
     solicitation_number: string;
+    sol_uom: string | null;
   }> = [];
   let solPage = 0;
   while (solPage < MAX_PAGES) {
     let q = supabase
       .from("dibbs_solicitations")
-      .select("id, nsn, nomenclature, quantity, fsc, solicitation_number")
+      .select("id, nsn, nomenclature, quantity, fsc, solicitation_number, sol_uom")
       .order("id", { ascending: false })
       .range(solPage * 1000, (solPage + 1) * 1000 - 1);
     if (repriceMode) {
@@ -314,10 +324,23 @@ export async function POST(req: Request) {
 
     if (!source) continue;
 
-    // Cost lookup
+    // Cost lookup — convert to per-each when AX UoM is a pack (B25, B10, ...)
+    // and the SOL is in EA. Otherwise the AX cost basis already matches the
+    // sol UoM (PG/BX/PK are typically equivalent to our pack).
     const costData = costMap.get(nsn);
-    const cost = costData?.cost || null;
-    const costSource = costData?.source || null;
+    const axUom = costData?.uom || null;
+    const solUomRaw = (sol.sol_uom || "").trim().toUpperCase();
+    const axParse = parseUomMultiplier(axUom);
+    const isAxBundle = /^B\d+$/i.test(axUom || "") && axParse.mult > 1;
+    const useCostPerEach = isAxBundle && solUomRaw === "EA";
+    const cost = costData
+      ? (useCostPerEach ? (costData.costPerEach ?? costData.cost / axParse.mult) : costData.cost)
+      : null;
+    const costSource = costData
+      ? (useCostPerEach
+          ? `${costData.source} ($${costData.cost.toFixed(2)}/${axUom} → $${cost!.toFixed(2)}/EA, ÷${axParse.mult})`
+          : costData.source)
+      : null;
     const lastAward = pricingMap.get(nsn);
 
     // Pricing logic — three tiers of history:

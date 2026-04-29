@@ -99,27 +99,35 @@ export async function POST() {
     bp++;
   }
 
-  // Costs (for floor calc).
-  const costs = new Map<string, number>();
+  // Costs (for floor calc) — also pull per-each + UoM so we can convert when
+  // the sol is in EA but our cost is per-pack (B25 etc.).
+  const costs = new Map<string, { cost: number; costPerEach: number; uom: string | null; packMult: number }>();
   let costPage = 0;
   while (true) {
     const { data } = await supabase
       .from("nsn_costs")
-      .select("nsn, cost")
+      .select("nsn, cost, cost_per_each, unit_of_measure, pack_multiplier")
       .range(costPage * 1000, (costPage + 1) * 1000 - 1);
     if (!data || data.length === 0) break;
-    for (const c of data) if (c.cost > 0) costs.set(c.nsn, c.cost);
+    for (const c of data) {
+      if (c.cost > 0) costs.set(c.nsn, {
+        cost: c.cost,
+        costPerEach: c.cost_per_each ?? c.cost,
+        uom: c.unit_of_measure || null,
+        packMult: c.pack_multiplier ?? 1,
+      });
+    }
     if (data.length < 1000) break;
     costPage++;
   }
 
-  // Sourceable sols — pull current quantity so we can apply qty-scale.
+  // Sourceable sols — pull current quantity + sol_uom so we can apply qty-scale + UoM conversion.
   const sols: any[] = [];
   let sPage = 0;
   while (true) {
     const { data } = await supabase
       .from("dibbs_solicitations")
-      .select("id, nsn, suggested_price, our_cost, quantity, price_source")
+      .select("id, nsn, suggested_price, our_cost, quantity, price_source, sol_uom")
       .eq("is_sourceable", true)
       .range(sPage * 1000, (sPage + 1) * 1000 - 1);
     if (!data || data.length === 0) break;
@@ -148,7 +156,15 @@ export async function POST() {
   const strategies: Record<string, number> = {};
 
   for (const sol of sols) {
-    const cost = costs.get(sol.nsn) || Number(sol.our_cost) || 0;
+    const costInfo = costs.get(sol.nsn);
+    // Convert to per-each when AX UoM is a pack (B25, B10, ...) and SOL is EA.
+    // Otherwise the AX cost basis already matches the sol UoM.
+    const solUom = (sol.sol_uom || "").trim().toUpperCase();
+    const isAxBundle = costInfo && /^B\d+$/i.test(costInfo.uom || "") && (costInfo.packMult || 1) > 1;
+    const useCostPerEach = !!isAxBundle && solUom === "EA";
+    const cost = costInfo
+      ? (useCostPerEach ? costInfo.costPerEach : costInfo.cost)
+      : (Number(sol.our_cost) || 0);
     const recent = mostRecent.get(sol.nsn);
     const ourRecent = ourMostRecent.get(sol.nsn);
     const bids = recentBidsByNsn.get(sol.nsn) || [];
@@ -236,7 +252,14 @@ export async function POST() {
       suggested_price: newPrice,
       price_source: priceSource,
       margin_pct: marginPct,
+      // Keep our_cost / bid_cost in sync with the per-each cost we used,
+      // so PO generation + UI match what we suggested.
+      our_cost: cost,
+      bid_cost: cost,
     };
+    if (useCostPerEach && costInfo) {
+      updateFields.bid_cost_source = `${costInfo.uom}@$${costInfo.cost.toFixed(2)} → EA@$${cost.toFixed(4)} (÷${costInfo.packMult})`;
+    }
     if (recent && !recent.isOurs) {
       updateFields.last_award_winner = recent.cage;
       updateFields.competitor_cage = recent.cage;

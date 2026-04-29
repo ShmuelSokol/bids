@@ -222,9 +222,17 @@ async function main() {
       return a.cost - b.cost; // within same source, cheapest wins
     });
     const winner = cands[0];
+    // Compute pack multiplier from UoM (e.g. "B25" → 25). When AX UoM is a
+    // bundle, cost_per_each lets pricing logic compare apples-to-apples
+    // against per-EA solicitations. See `src/lib/uom.ts`.
+    const uomStr = (winner.uom || "").trim().toUpperCase();
+    const m = uomStr.match(/^B(\d+)$/);
+    const packMult = m ? parseInt(m[1], 10) : 1;
     nsnCostsRows.push({
       nsn,
       cost: winner.cost,
+      cost_per_each: packMult > 1 ? winner.cost / packMult : winner.cost,
+      pack_multiplier: packMult,
       cost_source: winner.source,
       vendor: winner.vendor,
       unit_of_measure: winner.uom,
@@ -256,10 +264,15 @@ async function main() {
   }
   const vendorPriceRows = Array.from(byNsnVendor.entries()).map(([key, c]) => {
     const [nsn] = key.split("__");
+    const uomStr = (c.uom || "").trim().toUpperCase();
+    const mm = uomStr.match(/^B(\d+)$/);
+    const packMult = mm ? parseInt(mm[1], 10) : 1;
     return {
       nsn,
       vendor: c.vendor!,
       price: c.cost,
+      price_per_each: packMult > 1 ? c.cost / packMult : c.cost,
+      pack_multiplier: packMult,
       price_source: c.source,
       unit_of_measure: c.uom,
       item_number: c.itemNumber,

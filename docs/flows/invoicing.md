@@ -3,9 +3,9 @@
 Two distinct things live under "invoicing" in DIBS, and they are NOT the same:
 
 1. **EDI 810 to DLA / WAWF** — already built at `/invoicing`. This invoices the *government* for goods we shipped. Output: an X12 810C file the user pastes into Mil-Pac VAN. No LamLinks writes.
-2. **LamLinks internal invoice posting (ka8→kae chain)** — NOT built yet. This is the step Yosef wants DIBS to drive: write rows to LamLinks' own invoicing tables so the LamLinks client sees a posted invoice without anyone clicking through the desktop app. Mirrors what the bid-chain write-back (`scripts/generate-bid-insert-sql.ts`) does for bids.
+2. **LamLinks internal invoice posting (kad/kae/kbr/k81 chain)** — **LIVE as of 2026-04-28.** Worker drains AX DD219 invoices into LL via `scripts/lamlinks-writeback-worker.ts` `writeOneInvoice()`; UI at `/invoicing/post-batch`. See **[LamLinks Invoice Write-Back](../lamlinks-invoice-writeback.md)** for the full 8-table transaction shape and gotchas (especially `k81.shpsta_k81` driving the UI status label).
 
-The rest of this page is about #1. #2 is detailed in [LamLinks internal invoicing](#lamlinks-internal-invoicing-yosef-test).
+The rest of this page is about #1. #2 is detailed in [LamLinks internal invoicing](#lamlinks-internal-invoicing-yosef-test) below — kept for historical context.
 
 Generate EDI 810 files for government invoicing (WAWF via Mil-Pac VAN). Import DLA payment remittances.
 
@@ -177,7 +177,11 @@ No automated transmission — user manually uploads to Mil-Pac portal.
 
 ## LamLinks internal invoicing (Yosef test)
 
-Not live. This section is the recon and plan; the write-back tooling is not yet built.
+**LIVE as of 2026-04-28** — first invoice (CIN0066186, $43.77 against SPE2DS-26-V-4743) posted end-to-end via `scripts/lamlinks-writeback-worker.ts`. Authoritative reference: **[LamLinks Invoice Write-Back](../lamlinks-invoice-writeback.md)**. The recon below is preserved for historical context.
+
+The actual implementation diverged from the original plan in two key ways:
+1. **Skipped the "Not Posted" draft state.** Worker writes `cinsta_kad='Posted'` directly — no human checkpoint in the LL UI. Lifecycle is gated in DIBS (queue state machine + per-row test/skip buttons) instead.
+2. **8-table transaction, not just kad+kae+ka9.** The original Q6/Q7 from Yosef were answered empirically by procmon-tracing one of his manual posts: kad/kae alone are not sufficient. k80 release, k81 status flip (drives the UI label!), kbr × 2 (WAWF 810/856), k20 × 2 (audit log), and atomic k07 counter bumps for both `CIN_NO` and `TRN_ID_CK5` are all required.
 
 ### The chain
 

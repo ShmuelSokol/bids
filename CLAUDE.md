@@ -57,6 +57,18 @@ When you learn something new that future sessions would benefit from, add it to 
 - **RDP paste mangles `--` to em-dash `–`** in PowerShell. When sharing curl one-liners, save them to a `.ps1` file via Notepad (Notepad doesn't autocorrect) and run with `powershell -File`.
 - **Pipeline observability** at `/ops/dibs-pipeline` — watches write queue + latest LL-side snapshot (table `ll_pipeline_snapshots`, populated every 5min by `scripts/snapshot-ll-pipeline.ts` on NYEVRVSQL001).
 
+## LAMLINKS INVOICE WRITEBACK (DD219 → kad/kae) RULES (2026-04-28 first live test)
+- **First successful AX→LL invoice writeback: CIN0066186** ($43.77 against SPE2DS-26-V-4743, kaj=353349). End-to-end pattern lives in `scripts/lamlinks-writeback-worker.ts` `writeOneInvoice()`. **Read `docs/lamlinks-invoice-writeback.md` before changing anything in that function.**
+- **8-table transaction**, NOT just kad+kae: kad → kae → kaj → ka9 → k80 → **k81** → kbr × 2 → k20 × 2, plus two atomic k07 counter bumps (`CIN_NO` and `TRN_ID_CK5`). Each missing piece I discovered cost a debugging round.
+- **`k81.shpsta_k81` is the UI status LABEL — separate from `kaj.shpsta_kaj`.** Without flipping k81 'Shipping'→'Shipped', the LL shipment screen shows "Shipped" checkbox flipped but the status text still reads "Shipping". One k80 may have multiple k81 CLIN rows — flip them all + stamp `stadte_k81=GETDATE()`.
+- **`ka9.idnkae_ka9` + `ka9.jlnsta_ka9='Shipped'`** drives the "Invoice #" column AND Shipped checkbox. Without it: blank invoice column.
+- **NEVER use MAX+1 for `cin_no_kad` or `xtcscn_kbr`** — use the atomic `UPDATE k07 SET ss_val=ss_val+1 OUTPUT deleted/inserted` pattern. LL's client preallocates from k07 at form-open and collides with MAX+1 from external scripts.
+- **`kbr` UNIQUE on `(itttbl, idnitt, idnkap)`** — at most ONE 810 (kap=24) + ONE 856 (kap=25) per kaj. Pre-check before INSERT.
+- **`kae` requires `uptime_kae` + `upname_kae`** NOT NULL. **`k20` requires `llptyp_k20` + `idnllp_k20`** NOT NULL; `logmsg_k20` is char(80) — truncate. **`k80` has NO `uptime_k80`** — `rlsdte_k80` IS the touched-time signal.
+- **`kaj.shpsta` may be 'Packing'** when warehouse-fresh. The worker UPDATE is idempotent — handles both 'Packing' and 'Shipped' states.
+- **Lifecycle**: `lamlinks_invoice_queue` state machine `pending → approved → processing → posted` (or `error`). CHECK constraint must include `'approved'` — original schema didn't; see `scripts/sql/fix-invoice-queue-state-check.sql`.
+- **UI**: `/invoicing/post-batch` — Import (AX→queue) + Post All (queue→LL), per-row Test/Skip buttons. Auto-refreshes while in-flight.
+
 ## SUPABASE QUERY RULES (learned the hard way)
 - **Supabase default limit is 1,000 rows** — `.limit(5000)` does NOT work, you MUST paginate with `.range()` or use parallel range queries.
 - **NEVER use `unstable_cache`** — it breaks silently on Railway serverless (returns empty data, no error).
