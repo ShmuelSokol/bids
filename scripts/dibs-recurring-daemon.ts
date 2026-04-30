@@ -144,6 +144,17 @@ const TASKS: Task[] = [
   // since we only upsert AX-sourced fields.
   { script: "sync-suppliers-from-ax", args: ["--apply"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
 
+  // Inbox-mining email discovery — sweeps Sent Items + Inbox via EWS
+  // for the last 14 days, extracts supplier email addresses with display
+  // name + send/receive counts, scores them, and inserts new rows into
+  // dibs_suppliers (or fills in email on AX-known rows that lacked one).
+  // Weekly cadence — slow EWS pull (~6 min) + new contacts trickle in
+  // gradually, so daily would just spin without yielding much. Using
+  // --days 14 (overlap from last weekly run + new) instead of full 365
+  // for speed; the script's name+email dedup keeps it idempotent.
+  // Daemon-side ONLY (Railway can't reach Exchange).
+  { script: "discover-emails-from-inbox", args: ["--apply", "--min-score", "0.7", "--days", "14"], mode: "periodic", intervalMs: 7 * 24 * 60 * 60_000, skipInitialRun: true },
+
   // Supplier email discovery — for each unmapped supplier in
   // nsn_research_findings, fetch contact pages and try to extract emails.
   // Polite (2-sec delay between suppliers, 15s timeout per fetch). Caps
