@@ -101,7 +101,7 @@ async function bumpK07(pool: sql.ConnectionPool, label: string): Promise<void> {
   try {
     await pool.request().query(`
       UPDATE k07_tab
-      SET uptime_k07 = GETDATE()
+      SET uptime_k07 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
       WHERE LTRIM(RTRIM(upname_k07)) = 'ajoseph'
         AND LTRIM(RTRIM(ss_key_k07)) = 'SOL_FORM_PREFERENCES'
         AND LTRIM(RTRIM(ss_tid_k07)) = 'U'
@@ -162,7 +162,7 @@ async function bumpInvoiceK07(pool: sql.ConnectionPool): Promise<void> {
   for (const key of keys) {
     try {
       await pool.request().query(`
-        UPDATE k07_tab SET uptime_k07 = GETDATE()
+        UPDATE k07_tab SET uptime_k07 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
         WHERE LTRIM(RTRIM(upname_k07)) = 'ajoseph'
           AND LTRIM(RTRIM(ss_key_k07)) = '${key.replace(/'/g, "''")}'
       `);
@@ -214,9 +214,9 @@ async function createFreshEnvelope(pool: sql.ConnectionPool, templateK34: number
         o_stme_k33, t_stme_k33, a_stme_k33, s_stme_k33,
         itmcnt_k33
       ) VALUES (
-        ${newK33}, GETDATE(), 'ajoseph   ', '${qotref}',
+        ${newK33}, DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), 'ajoseph   ', '${qotref}',
         'adding quotes   ', 'not sent        ', 'not acknowledged', 'adding quotes   ',
-        GETDATE(), GETDATE(), GETDATE(), GETDATE(),
+        DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()),
         0
       )
     `);
@@ -377,7 +377,7 @@ async function writeOneBid(
         altadr_k34, chlbor_k34, qtek14_k34, ctlxml_k34
       )
       SELECT
-        ${newK34}, GETDATE(), upname_k34, ${target.idnk11}, ${envelope.idnk33},
+        ${newK34}, DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), upname_k34, ${target.idnk11}, ${envelope.idnk33},
         CAST('${safePn}' AS CHAR(32)), pn_rev_k34,
         scage_k34, sname_k34, saddr1_k34, saddr2_k34, scitys_k34, szip_k34, sfax_k34,
         sphone_k34, semail_k34, sattn_k34, stitle_k34, staxid_k34, bizsiz_k34, disadv_k34,
@@ -396,11 +396,11 @@ async function writeOneBid(
 
     await req.query(`
       INSERT INTO k35_tab (idnk35_k35, uptime_k35, upname_k35, idnk34_k35, qty_k35, up_k35, daro_k35, clin_k35)
-      VALUES (${newK35}, GETDATE(), 'ajoseph   ', ${newK34}, ${bidQty}, ${bidPrice}, ${deliveryDays}, '      ')
+      VALUES (${newK35}, DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), 'ajoseph   ', ${newK34}, ${bidQty}, ${bidPrice}, ${deliveryDays}, '      ')
     `);
 
     await req.query(`
-      UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 + 1, uptime_k33 = GETDATE()
+      UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 + 1, uptime_k33 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
       WHERE idnk33_k33 = ${envelope.idnk33}
     `);
 
@@ -600,7 +600,7 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
     }
 
     // Finalize the envelope: flip o_stat_k33 + s_stat_k33 to 'quotes added'
-    // (Post-equivalent) AND t_stat_k33='sent' + t_stme_k33=GETDATE()
+    // (Post-equivalent) AND t_stat_k33='sent' + t_stme_k33=DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
     // (Process-File-equivalent). Captured 2026-04-29 via procmon: LL UI's
     // Process File click does (a) re-zip + SFTP and (b) UPDATE k33 to flip
     // t_stat='sent'. Since our worker already SFTP'd directly, we only
@@ -615,8 +615,8 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
           SET o_stat_k33 = 'quotes added',
               s_stat_k33 = 'quotes added',
               t_stat_k33 = 'sent',
-              t_stme_k33 = GETDATE(),
-              uptime_k33 = GETDATE()
+              t_stme_k33 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()),
+              uptime_k33 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
           WHERE idnk33_k33 = ${envelope.idnk33}
             AND LTRIM(RTRIM(o_stat_k33)) = 'adding quotes'
         `);
@@ -637,7 +637,7 @@ async function processOnePass(): Promise<{ processed: number; failed: number; wa
       try {
         const k07 = await pool.request().query(`
           UPDATE k07_tab
-          SET uptime_k07 = GETDATE()
+          SET uptime_k07 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
           WHERE LTRIM(RTRIM(upname_k07)) = 'ajoseph'
             AND LTRIM(RTRIM(ss_key_k07)) = 'SOL_FORM_PREFERENCES'
             AND LTRIM(RTRIM(ss_tid_k07)) = 'U'
@@ -737,7 +737,7 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       if (String(env.recordset[0].t_stat_k33 || "").trim() === "sent") return { noop: true, reason: "already sent" };
       if (dry) return { would_update: { o_stat_k33: "quotes added", t_stat_k33: "sent", a_stat_k33: "acknowledged", s_stat_k33: "acknowledged" } };
       await pool.request().input("id", sql.Int, idnk33).query(`
-        UPDATE k33_tab SET o_stat_k33='quotes added', t_stat_k33='sent', a_stat_k33='acknowledged', s_stat_k33='acknowledged', uptime_k33=GETDATE()
+        UPDATE k33_tab SET o_stat_k33='quotes added', t_stat_k33='sent', a_stat_k33='acknowledged', s_stat_k33='acknowledged', uptime_k33=DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
         WHERE idnk33_k33 = @id
       `);
       return { updated: true };
@@ -749,7 +749,7 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       if (String(env.recordset[0].t_stat_k33 || "").trim() === "sent") throw new Error("t_stat='sent' — refusing to touch real post");
       if (String(env.recordset[0].o_stat_k33 || "").trim() === "quotes added") return { noop: true, reason: "already quotes added" };
       if (dry) return { would_update: { o_stat_k33: "quotes added", s_stat_k33: "quotes added" } };
-      await pool.request().input("id", sql.Int, idnk33).query(`UPDATE k33_tab SET o_stat_k33='quotes added', s_stat_k33='quotes added', uptime_k33=GETDATE() WHERE idnk33_k33 = @id`);
+      await pool.request().input("id", sql.Int, idnk33).query(`UPDATE k33_tab SET o_stat_k33='quotes added', s_stat_k33='quotes added', uptime_k33=DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()) WHERE idnk33_k33 = @id`);
       return { updated: true };
     }
     case "remove_k34": {
@@ -764,7 +764,7 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       try {
         await new sql.Request(tx).input("id", sql.Int, idnk34).query("DELETE FROM k35_tab WHERE idnk34_k35 = @id");
         await new sql.Request(tx).input("id", sql.Int, idnk34).query("DELETE FROM k34_tab WHERE idnk34_k34 = @id");
-        await new sql.Request(tx).input("id", sql.Int, row.recordset[0].idnk33_k34).query("UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 - 1, uptime_k33 = GETDATE() WHERE idnk33_k33 = @id");
+        await new sql.Request(tx).input("id", sql.Int, row.recordset[0].idnk33_k34).query("UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 - 1, uptime_k33 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()) WHERE idnk33_k33 = @id");
         await tx.commit();
       } catch (e) { try { await tx.rollback(); } catch {} throw e; }
       return { deleted: true };
@@ -780,9 +780,9 @@ async function runRescueAction(pool: sql.ConnectionPool, a: RescueAction, dry: b
       await tx.begin();
       try {
         const r1 = new sql.Request(tx); ids.forEach((id, i) => r1.input(`k${i}`, sql.Int, id)); r1.input("to", sql.Int, to);
-        await r1.query(`UPDATE k34_tab SET idnk33_k34 = @to, uptime_k34 = GETDATE() WHERE idnk34_k34 IN (${ph})`);
-        await new sql.Request(tx).input("from", sql.Int, from).input("n", sql.Int, ids.length).query(`UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 - @n, uptime_k33 = GETDATE() WHERE idnk33_k33 = @from`);
-        await new sql.Request(tx).input("to", sql.Int, to).input("n", sql.Int, ids.length).query(`UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 + @n, uptime_k33 = GETDATE() WHERE idnk33_k33 = @to`);
+        await r1.query(`UPDATE k34_tab SET idnk33_k34 = @to, uptime_k34 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()) WHERE idnk34_k34 IN (${ph})`);
+        await new sql.Request(tx).input("from", sql.Int, from).input("n", sql.Int, ids.length).query(`UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 - @n, uptime_k33 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()) WHERE idnk33_k33 = @from`);
+        await new sql.Request(tx).input("to", sql.Int, to).input("n", sql.Int, ids.length).query(`UPDATE k33_tab SET itmcnt_k33 = itmcnt_k33 + @n, uptime_k33 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()) WHERE idnk33_k33 = @to`);
         await tx.commit();
       } catch (e) { try { await tx.rollback(); } catch {} throw e; }
       return { moved: ids.length };
@@ -939,7 +939,7 @@ async function getInvoiceWritebackEnabled(supabase: any): Promise<boolean> {
  *   2. INSERT kad header (cinsta_kad='Posted' directly — no draft step).
  *      cin_no_kad = LL counter MAX+1; cinnum_kad = AX invoice digits.
  *   3. INSERT kae line(s) under the kad.
- *   4. UPDATE k80 to release: rlsdte_k80=GETDATE(), rlssta_k80='Closed'.
+ *   4. UPDATE k80 to release: rlsdte_k80=DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), rlssta_k80='Closed'.
  *   4c. UPDATE k81.shpsta_k81 'Shipping'→'Shipped' (drives UI status label).
  *   5. INSERT 2 kbr rows: WAWF 810 (idnkap=24) + WAWF 856 (idnkap=25),
  *      itttbl_kbr='kaj', idnitt_kbr=<kaj_id>, xtcsta_kbr='WAWF X sent'.
@@ -1163,7 +1163,7 @@ async function writeOneInvoice(
     const cinAlloc = await req.query(`
       UPDATE k07_tab WITH (UPDLOCK, ROWLOCK)
       SET ss_val_k07 = CAST(TRY_CAST(LTRIM(RTRIM(ss_val_k07)) AS BIGINT) + 1 AS VARCHAR(32)),
-          uptime_k07 = GETDATE()
+          uptime_k07 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
       OUTPUT deleted.ss_val_k07 AS prev_val, inserted.ss_val_k07 AS next_val
       WHERE LTRIM(RTRIM(ss_key_k07)) = 'CIN_NO' AND LTRIM(RTRIM(ss_tid_k07)) = 'G'
     `);
@@ -1185,8 +1185,8 @@ async function writeOneInvoice(
       )
       OUTPUT inserted.idnkad_kad AS newId
       VALUES (
-        'Posted         ', '${cinnum}', '${cinNo}', GETDATE(), GETDATE(),
-        'ajoseph   ', GETDATE(), ${idnk31}, 1,
+        'Posted         ', '${cinnum}', '${cinNo}', DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()),
+        'ajoseph   ', DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), ${idnk31}, 1,
         0, 0, ${total}, 0, 0,
         0, 0, 0, ${total}, 1
       )
@@ -1208,7 +1208,7 @@ async function writeOneInvoice(
         )
         OUTPUT inserted.idnkae_kae AS newId
         VALUES (
-          GETDATE(), 'ajoseph   ', ${idnkad}, 'Material  ', ${i + 1}, '${desc}',
+          DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), 'ajoseph   ', ${idnkad}, 'Material  ', ${i + 1}, '${desc}',
           ${qty}, ${up}, '${ui}', ${ext}, 0, 0
         )
       `);
@@ -1222,7 +1222,7 @@ async function writeOneInvoice(
     const allKajIds = [idnkaj, ...additionalKajIds];
     await req.query(`
       UPDATE kaj_tab
-      SET shpsta_kaj = 'Shipped', uptime_kaj = GETDATE()
+      SET shpsta_kaj = 'Shipped', uptime_kaj = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
       WHERE idnkaj_kaj IN (${allKajIds.join(",")})
         AND LTRIM(RTRIM(shpsta_kaj)) <> 'Shipped'
     `);
@@ -1265,7 +1265,7 @@ async function writeOneInvoice(
         UPDATE ka9_tab
         SET idnkae_ka9 = ${idnkaeIds[kaeIdx]},
             jlnsta_ka9 = 'Shipped',
-            uptime_ka9 = GETDATE()
+            uptime_ka9 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
         WHERE idnka9_ka9 = ${idnka9}
       `);
       if ((ur.rowsAffected?.[0] || 0) !== 1) {
@@ -1277,7 +1277,7 @@ async function writeOneInvoice(
     // k80_tab has no uptime_k80 — rlsdte_k80 IS the touched-time signal.
     await req.query(`
       UPDATE k80_tab
-      SET rlsdte_k80 = GETDATE(), rlssta_k80 = 'Closed'
+      SET rlsdte_k80 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), rlssta_k80 = 'Closed'
       WHERE idnk80_k80 = ${idnk80}
     `);
 
@@ -1289,7 +1289,7 @@ async function writeOneInvoice(
     // CLIN rows; flip them all.
     await req.query(`
       UPDATE k81_tab
-      SET shpsta_k81 = 'Shipped', stadte_k81 = GETDATE()
+      SET shpsta_k81 = 'Shipped', stadte_k81 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
       WHERE idnk80_k81 = ${idnk80}
         AND LTRIM(RTRIM(shpsta_k81)) = 'Shipping'
     `);
@@ -1303,7 +1303,7 @@ async function writeOneInvoice(
     const trnAlloc = await req.query(`
       UPDATE k07_tab WITH (UPDLOCK, ROWLOCK)
       SET ss_val_k07 = CAST(TRY_CAST(LTRIM(RTRIM(ss_val_k07)) AS BIGINT) + 1 AS VARCHAR(32)),
-          uptime_k07 = GETDATE()
+          uptime_k07 = DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
       OUTPUT deleted.ss_val_k07 AS prev_val, inserted.ss_val_k07 AS next_val
       WHERE LTRIM(RTRIM(ss_key_k07)) = 'TRN_ID_CK5' AND LTRIM(RTRIM(ss_tid_k07)) = 'G'
     `);
@@ -1332,8 +1332,8 @@ async function writeOneInvoice(
           )
           OUTPUT inserted.idnkbr_kbr AS newId
           VALUES (
-            GETDATE(), 'ajoseph   ', 'kaj', ${kbrKaj}, ${kap},
-            '${xtcscn}', '${xtcsta}', GETDATE()
+            DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), 'ajoseph   ', 'kaj', ${kbrKaj}, ${kap},
+            '${xtcscn}', '${xtcsta}', DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
           )
         `);
         idnkbrIds.push(kbrRes.recordset[0].newId);
@@ -1362,7 +1362,7 @@ async function writeOneInvoice(
           logmsg_k20, llptyp_k20, idnllp_k20, logtxt_k20
         )
         VALUES (
-          GETDATE(), 'ajoseph   ', 'WAWF_edi_upload', 102, 'routine',
+          DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()), 'ajoseph   ', 'WAWF_edi_upload', 102, 'routine',
           '${safeMsg80}', '', 0, '${safeFull}'
         )
       `);
