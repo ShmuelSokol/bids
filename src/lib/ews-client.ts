@@ -151,6 +151,97 @@ export async function fetchFromSender(
   return results;
 }
 
+export type SentEmail = {
+  uid: string;
+  sentAt: Date;
+  subject: string;
+  bodyText: string;
+  toRecipients: string[];
+  ccRecipients: string[];
+};
+
+/**
+ * Fetch emails from a folder (Inbox / SentItems / etc.) within a lookback
+ * window, optionally filtered by subject keywords. Used by the RFQ
+ * tone-learning pass: pull the user's outbound RFQs for analysis.
+ */
+export async function fetchFromFolder(opts: {
+  folder: "inbox" | "sentitems";
+  lookbackDays?: number;          // default 90
+  maxItems?: number;              // default 200
+  subjectContains?: string[];     // OR-match — at least one keyword in subject
+}): Promise<SentEmail[]> {
+  const service = buildService();
+  const lookbackDays = opts.lookbackDays ?? 90;
+  const maxItems = opts.maxItems ?? 200;
+  const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60_000);
+  const folder = opts.folder === "sentitems"
+    ? WellKnownFolderName.SentItems
+    : WellKnownFolderName.Inbox;
+  const dateField = opts.folder === "sentitems"
+    ? ItemSchema.DateTimeSent
+    : ItemSchema.DateTimeReceived;
+
+  // Date filter only — keyword filter applied client-side after fetch
+  // because EWS subject-substring filtering is awkward with multi-keyword OR
+  const filter = new SearchFilter.IsGreaterThan(dateField, since.toISOString());
+
+  const view = new ItemView(maxItems);
+  view.PropertySet = new PropertySet(BasePropertySet.IdOnly);
+  const findResult = await service.FindItems(folder, filter, view);
+  if (!findResult.Items || findResult.Items.length === 0) return [];
+
+  const fullPropSet = new PropertySet(BasePropertySet.IdOnly, [
+    EmailMessageSchema.Subject,
+    EmailMessageSchema.DateTimeSent,
+    EmailMessageSchema.DateTimeReceived,
+    EmailMessageSchema.ToRecipients,
+    EmailMessageSchema.CcRecipients,
+    EmailMessageSchema.Body,
+  ]);
+  fullPropSet.RequestedBodyType = BodyType.Text;
+  await service.LoadPropertiesForItems(findResult.Items, fullPropSet);
+
+  const results: SentEmail[] = [];
+  for (const item of findResult.Items) {
+    const subject = item.Subject || "";
+    if (opts.subjectContains && opts.subjectContains.length > 0) {
+      const lower = subject.toLowerCase();
+      const matched = opts.subjectContains.some((kw) => lower.includes(kw.toLowerCase()));
+      if (!matched) continue;
+    }
+    const bodyText = item.Body?.Text || (item.Body && item.Body.toString && item.Body.toString()) || "";
+    // ToRecipients/CcRecipients are EmailAddressCollection — try the
+    // documented .Items accessor first, fall back to direct iteration
+    const extractAddrs = (coll: any): string[] => {
+      if (!coll) return [];
+      const items = coll.Items || coll.items || coll;
+      const out: string[] = [];
+      try {
+        for (const r of items) {
+          const addr = r?.Address || r?.address || r?.EmailAddress?.Address;
+          if (addr) out.push(addr);
+        }
+      } catch { /* */ }
+      return out;
+    };
+    const to = extractAddrs(item.ToRecipients);
+    const cc = extractAddrs(item.CcRecipients);
+
+    results.push({
+      uid: item.Id?.UniqueId || "",
+      sentAt: item.DateTimeSent
+        ? new Date(item.DateTimeSent)
+        : item.DateTimeReceived ? new Date(item.DateTimeReceived) : new Date(),
+      subject,
+      bodyText: typeof bodyText === "string" ? bodyText : String(bodyText),
+      toRecipients: to,
+      ccRecipients: cc,
+    });
+  }
+  return results;
+}
+
 /**
  * Send an email (Phase 2 — RFQ outbound, etc.).
  * Plain-text body, single recipient. Multi-recipient + HTML in next iteration.
