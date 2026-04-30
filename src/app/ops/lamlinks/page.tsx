@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Activity } from "lucide-react";
+import { Activity, Mail } from "lucide-react";
 import { getCurrentUser } from "@/lib/supabase-server";
 import { OpsLamlinks } from "./ops-lamlinks";
 
@@ -38,6 +38,12 @@ export default async function OpsLamlinksPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-card-border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
           >
             <Activity className="h-4 w-4" /> EDI Transmissions
+          </Link>
+          <Link
+            href="/ops/wawf-emails"
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 px-3 py-1.5 text-sm font-medium hover:bg-blue-100"
+          >
+            <Mail className="h-4 w-4" /> WAWF Emails
           </Link>
         </div>
       </div>
