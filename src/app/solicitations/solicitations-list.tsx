@@ -634,6 +634,61 @@ export function SolicitationsList({
     }
   }
 
+  async function handleGenerateRfqsForSelected() {
+    if (selectedSourceable.size === 0) return;
+    const selected = solicitations.filter((s) => selectedSourceable.has(s.id));
+    // Group needs across all selected sols. The generator will dedup per
+    // (NSN, supplier) on the backend, so duplicates here are harmless.
+    const needs = selected
+      .filter((s) => s.nsn && (s.quantity ?? 0) > 0)
+      .map((s) => ({
+        nsn: s.nsn,
+        qty: s.quantity,
+      }));
+    if (needs.length === 0) {
+      setMessage("Nothing to RFQ — selected rows have no NSN or qty.");
+      return;
+    }
+    setBulkQuoting(true);
+    try {
+      // POST per-sol-id since the generator wants 1 sol_id per call.
+      // Group needs by sol_id (one POST per distinct solicitation).
+      const bySol = new Map<string, { nsn: string; qty: number }[]>();
+      for (const s of selected) {
+        if (!s.nsn || !(s.quantity > 0)) continue;
+        const key = s.solicitation_number;
+        if (!bySol.has(key)) bySol.set(key, []);
+        bySol.get(key)!.push({ nsn: s.nsn, qty: s.quantity });
+      }
+      let totalCreated = 0;
+      let totalSkipped = 0;
+      const skipReasons: Record<string, number> = {};
+      for (const [solId, solNeeds] of Array.from(bySol.entries())) {
+        const r = await fetch("/api/rfq", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ needs: solNeeds, solId, source: "sol_bulk" }),
+        });
+        if (!r.ok) continue;
+        const d = await r.json();
+        totalCreated += d.draftsCreated || 0;
+        totalSkipped += d.skipped || 0;
+        for (const [k, v] of Object.entries(d.byReason || {})) {
+          skipReasons[k] = (skipReasons[k] || 0) + (v as number);
+        }
+      }
+      const reasonStr = Object.entries(skipReasons).map(([k, v]) => `${k}=${v}`).join(", ");
+      setMessage(
+        `RFQs queued: ${totalCreated} created, ${totalSkipped} skipped${reasonStr ? ` (${reasonStr})` : ""}. ` +
+        `Review at /rfq/queue.`
+      );
+    } catch (err: any) {
+      setMessage(`RFQ generation failed: ${err?.message || "unknown error"}`);
+    } finally {
+      setBulkQuoting(false);
+    }
+  }
+
   async function handleSubmitAll() {
     if (selectedQuoted.size === 0) return;
     setSubmitting(true);
@@ -1798,6 +1853,15 @@ export function SolicitationsList({
                         {withoutPrice} selected row{withoutPrice !== 1 ? "s" : ""} {withoutPrice !== 1 ? "have" : "has"} no suggested price — open {withoutPrice !== 1 ? "them" : "it"} to enter a manual bid
                       </span>
                     )}
+                    <button
+                      onClick={handleGenerateRfqsForSelected}
+                      disabled={bulkQuoting || selectedSourceable.size === 0}
+                      title="Queue draft RFQs to all eligible suppliers from auto-research findings for the selected solicitations. Drafts go to /rfq/queue for review before send."
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white disabled:opacity-50 hover:bg-purple-700"
+                    >
+                      <Send className="h-3 w-3" />
+                      Generate RFQs ({selectedSourceable.size})
+                    </button>
                   </>
                 );
               })()}
