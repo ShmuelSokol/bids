@@ -144,6 +144,13 @@ const TASKS: Task[] = [
   // since we only upsert AX-sourced fields.
   { script: "sync-suppliers-from-ax", args: ["--apply"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
 
+  // RFQ send worker — drains rfq_drafts.status='pending_send' rows by
+  // calling EWS sendMail for each. Persistent (long-running, internal
+  // 60s poll loop) since spawning a fresh node.exe for each tick wastes
+  // EWS connection setup. Daemon-side ONLY (Railway can't reach
+  // mail.everreadygroup.com).
+  { script: "send-rfq-drafts", mode: "persistent" },
+
   // WAWF email auto-parse — reads Abe's inbox via EWS for WAWF noreply
   // emails, parses each (810/856 accept/reject), updates kbr.xtcscn with
   // the real WAWF TCN on accept, deletes false kbr + WhatsApp alerts on

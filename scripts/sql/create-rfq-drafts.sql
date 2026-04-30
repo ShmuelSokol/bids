@@ -18,7 +18,7 @@
 CREATE TABLE IF NOT EXISTS rfq_drafts (
   id              bigserial PRIMARY KEY,
   status          text NOT NULL DEFAULT 'draft'
-                    CHECK (status IN ('draft', 'sent', 'responded', 'expired', 'cancelled')),
+                    CHECK (status IN ('draft', 'pending_send', 'sending', 'sent', 'send_failed', 'responded', 'expired', 'cancelled')),
   supplier_id     bigint REFERENCES dibs_suppliers(id) ON DELETE SET NULL,
   supplier_email  text NOT NULL,
   supplier_name   text NOT NULL,
@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS rfq_drafts (
   response_summary text,
   notes           text,
   -- Skip-reason if generator decided not to actually send (rate-limit, dedup, etc.)
-  skip_reason     text
+  skip_reason     text,
+  -- Send error message if EWS send failed
+  send_error      text
 );
 
 CREATE INDEX IF NOT EXISTS rfq_drafts_status_idx ON rfq_drafts (status);
