@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 interface QueueRow {
   id: number;
@@ -29,6 +30,7 @@ const STATE_PILL: Record<string, string> = {
 };
 
 export function PostBatchClient({ date, initialRows }: { date: string; initialRows: QueueRow[] }) {
+  const router = useRouter();
   const [rows, setRows] = useState<QueueRow[]>(initialRows);
   const [importing, startImport] = useTransition();
   const [posting, startPost] = useTransition();
@@ -146,8 +148,41 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
     startPost(async () => { await submitIds(null, "Post all"); });
   };
 
+  // Date picker helpers — invoice batches are filtered by ax_invoice_date.
+  // Default is today, but Abe often needs to catch up yesterday's shipments.
+  const today = new Date().toISOString().slice(0, 10);
+  const yest = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
+  const navTo = (d: string) => router.push(`/invoicing/post-batch?date=${d}`);
+
   return (
     <>
+      <div className="mb-4 rounded-xl border border-card-border bg-white p-3 flex items-center gap-3 flex-wrap">
+        <div className="text-sm font-semibold text-muted">Invoice date:</div>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => e.target.value && navTo(e.target.value)}
+          className="rounded-md border border-card-border px-2 py-1 text-sm font-mono"
+        />
+        <button
+          onClick={() => navTo(today)}
+          disabled={date === today}
+          className={`rounded-md border px-3 py-1 text-xs font-medium ${date === today ? "bg-blue-100 border-blue-300 text-blue-800" : "bg-white border-card-border hover:bg-gray-50"}`}
+        >
+          Today ({today})
+        </button>
+        <button
+          onClick={() => navTo(yest)}
+          disabled={date === yest}
+          className={`rounded-md border px-3 py-1 text-xs font-medium ${date === yest ? "bg-blue-100 border-blue-300 text-blue-800" : "bg-white border-card-border hover:bg-gray-50"}`}
+        >
+          Yesterday ({yest})
+        </button>
+        <div className="text-xs text-muted ml-auto">
+          Filters by AX <code className="font-mono bg-gray-100 px-1 rounded">ax_invoice_date</code>. Import + queue both respect this date.
+        </div>
+      </div>
+
       <div className="grid md:grid-cols-3 gap-4 mb-6">
         <div className="rounded-xl border-2 border-blue-300 bg-blue-50/30 p-4">
           <div className="text-xs font-bold text-blue-900 mb-2">STEP 1: Import from AX</div>
@@ -229,7 +264,7 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
         </div>
 
         <div className="rounded-xl border border-card-border bg-white p-4 text-sm">
-          <div className="text-xs font-bold text-muted mb-2">Today&apos;s batch</div>
+          <div className="text-xs font-bold text-muted mb-2">{date === today ? "Today's batch" : `Batch for ${date}`}</div>
           <div className="grid grid-cols-2 gap-2 text-[12px]">
             <div><span className="text-muted">Total:</span> <span className="font-semibold">{total}</span> invoices</div>
             <div><span className="text-muted">$:</span> <span className="font-semibold">${totalDollars.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></div>
@@ -247,7 +282,7 @@ export function PostBatchClient({ date, initialRows }: { date: string; initialRo
 
       {rows.length === 0 ? (
         <div className="rounded-xl border border-card-border bg-card-bg p-12 text-center">
-          <div className="text-muted">No DD219 invoices in queue for {date} yet. Click <strong>Import</strong> to pull today&apos;s from AX.</div>
+          <div className="text-muted">No DD219 invoices in queue for {date} yet. Click <strong>Import</strong> to pull {date === today ? "today's" : `${date}'s`} from AX.</div>
         </div>
       ) : (
         <div className="rounded-xl border border-card-border bg-card-bg overflow-hidden">
