@@ -132,6 +132,58 @@ async function bumpK07(pool: sql.ConnectionPool, label: string): Promise<void> {
  * Discovered 2026-04-29 live test: CIN0066270 (SPE2DS26P1609) rejected
  * by WAWF for UoM 'B1'.
  */
+/**
+ * Look up the EXPECTED Unit of Measure for a contract from the LL solicitation
+ * record (k11.sol_um_k11). That's what DLA published in the RFQ — using it
+ * matches DLA's contract-side UoM in EDA and eliminates the
+ * "Unit of Measure does not match the contract in EDA" warning WAWF emits
+ * when the invoice UoM differs from the contract.
+ *
+ * Match strategy:
+ *   1. Find the k10 (sol header) by sol_no = contract number
+ *   2. Find the matching k11 (sol-item line) for the NSN, via k71 if available
+ *   3. Return its sol_um_k11
+ *
+ * If no match (orphan contract, k11 missing, etc.), returns null and caller
+ * falls back to kae.cil_ui_kae as before.
+ */
+async function lookupExpectedUom(
+  pool: sql.ConnectionPool,
+  contractNo: string | null | undefined,
+  idnk71: number | null | undefined,
+): Promise<string | null> {
+  const c = String(contractNo || "").trim();
+  if (!c) return null;
+  try {
+    // Prefer k11 matched on both sol AND k71 (NSN catalog id) — most precise.
+    if (idnk71) {
+      const r1 = await pool.request().query(`
+        SELECT TOP 1 LTRIM(RTRIM(k11.sol_um_k11)) AS uom
+        FROM k11_tab k11
+        INNER JOIN k10_tab k10 ON k11.idnk10_k11 = k10.idnk10_k10
+        INNER JOIN k08_tab k08 ON k11.idnk08_k11 = k08.idnk08_k08
+        WHERE LTRIM(RTRIM(k10.sol_no_k10)) = '${c.replace(/'/g, "''")}'
+          AND k08.idnk71_k08 = ${idnk71}
+      `);
+      const u = r1.recordset[0]?.uom;
+      if (u) return u;
+    }
+    // Fallback: any k11 row for this sol — for single-item contracts this is
+    // unambiguous; multi-item contracts MIGHT pick the wrong line but the
+    // worst-case is the same UoM mismatch we'd have without this lookup.
+    const r2 = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(k11.sol_um_k11)) AS uom
+      FROM k11_tab k11
+      INNER JOIN k10_tab k10 ON k11.idnk10_k11 = k10.idnk10_k10
+      WHERE LTRIM(RTRIM(k10.sol_no_k10)) = '${c.replace(/'/g, "''")}'
+    `);
+    return r2.recordset[0]?.uom || null;
+  } catch (e: any) {
+    console.log(`  note: UoM lookup for contract ${c} skipped: ${e.message?.slice(0, 80)}`);
+    return null;
+  }
+}
+
 function normalizeWawfUom(uom: string | null | undefined): string {
   if (!uom) return "EA";
   const trimmed = String(uom).trim().toUpperCase();
@@ -1506,7 +1558,11 @@ async function transmitWawfForKaj(
     clnqty: src.clnqty,
     cln_up: parseFloat(src.cln_up),
     shp_up: parseFloat(src.shp_up),
-    shp_ui: normalizeWawfUom(src.shp_ui),
+    // UoM precedence: solicitation's expected UoM (k11.sol_um_k11) > kae's UoM.
+    // The solicitation's UoM is what DLA published in the RFQ and embedded in
+    // the contract — matching it eliminates WAWF "UoM does not match contract
+    // in EDA" warnings. Falls back to kae if no matching k11 (orphan invoice).
+    shp_ui: normalizeWawfUom(await lookupExpectedUom(pool, src.cntrct, src.idnk71) || src.shp_ui),
     shpext: parseFloat(src.shpext),
     shptme: src.shptme ? new Date(src.shptme) : new Date(),
     shpnum: src.shpnum,
