@@ -126,22 +126,44 @@ function splitEmails(raw: string): { primary: string; alternates: string[] } {
   }
   console.log(`Diff vs current dibs_suppliers (source=ax): add=${toAdd}, update=${toUpdate}, unchanged=${unchanged}`);
 
-  // Bulk upsert in chunks
+  // Manual dedup against existing AX rows (avoids needing a Postgres
+  // unique constraint that matches the upsert conflict key — partial
+  // indexes with WHERE don't satisfy ON CONFLICT cleanly).
+  const { data: full } = await sb
+    .from("dibs_suppliers")
+    .select("id, ax_vendor_account, ax_data_area")
+    .eq("source", "ax");
+  const idMap = new Map(
+    (full || []).map((r: any) => [`${r.ax_vendor_account}|${r.ax_data_area}`, r.id])
+  );
+
+  let inserted = 0, updated = 0;
+  const toInsert: any[] = [];
+  for (const u of upserts) {
+    const existingId = idMap.get(`${u.ax_vendor_account}|${u.ax_data_area}`);
+    if (existingId) {
+      const { error } = await sb.from("dibs_suppliers").update(u).eq("id", existingId);
+      if (error) { console.error(`update id=${existingId} failed:`, error.message); process.exit(2); }
+      updated++;
+    } else {
+      toInsert.push(u);
+    }
+  }
+
+  // Bulk insert new rows in chunks of 200
   const CHUNK = 200;
-  let written = 0;
-  for (let i = 0; i < upserts.length; i += CHUNK) {
-    const slice = upserts.slice(i, i + CHUNK);
-    const { error } = await sb
-      .from("dibs_suppliers")
-      .upsert(slice, { onConflict: "ax_vendor_account,ax_data_area" });
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    const slice = toInsert.slice(i, i + CHUNK);
+    const { error } = await sb.from("dibs_suppliers").insert(slice);
     if (error) {
-      console.error(`upsert chunk @${i} failed:`, error.message);
+      console.error(`insert chunk @${i} failed:`, error.message);
       process.exit(2);
     }
-    written += slice.length;
-    process.stdout.write(`  upserted ${written}/${upserts.length}\r`);
+    inserted += slice.length;
+    process.stdout.write(`  inserted ${inserted}/${toInsert.length}, updated ${updated}\r`);
   }
-  console.log(`\n✓ Upserted ${written} AX-sourced suppliers`);
+  console.log(`\n✓ Inserted ${inserted}, updated ${updated} AX-sourced suppliers`);
+  const written = inserted + updated;
 
   await sb.from("sync_log").insert({
     action: "sync_suppliers_from_ax",

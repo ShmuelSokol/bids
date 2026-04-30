@@ -91,10 +91,16 @@ function parseEmailBody(subject: string, body: string): ParsedEmail {
     return result;
   }
 
-  // Old format: parse from body
-  const isReject = /failed import\(s\)/i.test(subject) || /had no successful imports/i.test(body);
+  // Old format: subject is "WAWF Import: N Successful Import(s), M Failed Import(s)"
+  // — note it ALWAYS contains both "Successful" and "Failed" strings, so word-
+  // matching isn't enough. Extract the integer counts.
+  const successMatch = subject.match(/(\d+)\s+successful\s+import/i);
+  const failMatch = subject.match(/(\d+)\s+failed\s+import/i);
+  const successCount = successMatch ? parseInt(successMatch[1], 10) : 0;
+  const failCount = failMatch ? parseInt(failMatch[1], 10) : 0;
+  const isReject = failCount > 0 && successCount === 0;
   const isAcceptWithMods = /successful imports with modifications/i.test(body);
-  const isAccept = /successful import\(s\)/i.test(subject) && !isReject;
+  const isAccept = successCount > 0 && failCount === 0;
 
   // Form type: "Form Type: CI" = 810, "Form Type: RR" = 856
   const formTypeMatch = body.match(/Form Type:\s*(CI|RR)/i);
@@ -192,7 +198,7 @@ async function applyKbrAction(
         INSERT INTO kbr_tab (addtme_kbr, addnme_kbr, itttbl_kbr, idnitt_kbr, idnkap_kbr, xtcscn_kbr, xtcsta_kbr, xtctme_kbr)
         VALUES (
           DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE()),
-          'wawf-parser', 'kaj', ${kaj}, ${kap},
+          'wawfparser', 'kaj', ${kaj}, ${kap},
           '${parsed.wawfTcn || "1"}', '${stateLabel}',
           DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())
         )
@@ -221,6 +227,13 @@ async function applyKbrAction(
 }
 
 async function sendWhatsAppAlert(message: string): Promise<void> {
+  // Backfill / re-process safety: set WAWF_PARSER_SKIP_ALERTS=1 to suppress
+  // alert sends (still records `alerted: true` in the log so daemon runs
+  // know the alert decision was made; just skips actual outbound notify).
+  if (process.env.WAWF_PARSER_SKIP_ALERTS === "1") {
+    console.log(`  (alert suppressed by WAWF_PARSER_SKIP_ALERTS): ${message.slice(0, 60)}`);
+    return;
+  }
   const url = process.env.DIBS_WHATSAPP_ALERT_URL || "https://dibs-gov-production.up.railway.app/api/whatsapp/send";
   try {
     await fetch(url, {
@@ -252,7 +265,11 @@ async function sendWhatsAppAlert(message: string): Promise<void> {
 
   console.log(`Fetching WAWF emails (last ${lookbackMin} min)...`);
   const emails = await fetchFromSender(WAWF_SENDER, lookbackMin, 200);
-  console.log(`Found ${emails.length} candidate emails`);
+  // CRITICAL: process in chronological order (oldest first) so when a CIN
+  // has both a reject AND a later accept, the accept fires last and "wins"
+  // — reject DELETEs kbr, accept re-INSERTs. Wrong order leaves kbr deleted.
+  emails.sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime());
+  console.log(`Found ${emails.length} candidate emails (sorted oldest → newest)`);
 
   let processed = 0, skippedDup = 0, alerts = 0;
 
