@@ -1046,11 +1046,36 @@ async function processInvoiceQueue(): Promise<void> {
         await bumpInvoiceK07(pool);
 
         // SQL writeback succeeded — now do the WAWF SFTP upload (the step that
-        // actually transmits EDI to gov side). Without this, kad/kae/kbr/k20
-        // exist locally but DLA never receives the invoice. Discovered via
-        // procmon trace 2026-04-29 — see project_wawf_sftp_mechanism.md.
+        // actually transmits EDI to gov side). Without this, kad/kae exist
+        // locally but DLA never receives the invoice. Discovered via procmon
+        // trace 2026-04-29 — see project_wawf_sftp_mechanism.md.
+        //
+        // Improvement #1 (2026-04-30): kbr_tab + k20 inserts are NOW deferred
+        // to AFTER the SFTP upload returns. If the upload throws, kbr is
+        // recorded as 'WAWF X upfail' so reconciliation can flag it; if it
+        // succeeds, kbr records the canonical 'WAWF X sent'. Yesterday's
+        // CIN0066268 had kbr saying 'sent' against a .laz Sally never
+        // received — that pattern is no longer possible.
         const wawfDryRun = process.env.LL_WAWF_DRY_RUN === "true";
-        const wawfResult = await transmitWawfForKaj(pool, result.kaj, result, wawfDryRun);
+        let wawfResult: { filename810: string; filename856: string };
+        try {
+          wawfResult = await transmitWawfForKaj(pool, result.kaj, result, wawfDryRun);
+        } catch (e: any) {
+          // Mark kbr 'upload failed' so reconciliation flags it; do NOT
+          // claim 'sent'. Best-effort: if the kbr write itself fails (e.g.
+          // SQL pool dropped), we still surface the original SFTP error
+          // on the queue row via the outer catch.
+          try {
+            const failResult = await writeKbrAndK20Rows(pool, result.kbrInfo, "upload failed");
+            console.log(`  ⚠ ${row.ax_invoice_number}: SFTP failed, kbr recorded as 'upfail' [${failResult.idnkbrIds.join(",")}]`);
+          } catch (kbrErr: any) {
+            console.error(`  ⚠ ${row.ax_invoice_number}: SFTP failed AND kbr-failure-write failed: ${kbrErr.message}`);
+          }
+          throw new Error(`WAWF SFTP upload failed (kbr marked upfail): ${e.message}`);
+        }
+
+        // SFTP succeeded — record the kbr 'sent' rows + matching k20 log.
+        const kbrResult = await writeKbrAndK20Rows(pool, result.kbrInfo, "sent");
 
         // Bump again after SFTP so any UI element that reads kbr/SFTP
         // state (e.g. the 810/856 sent indicators) refreshes too.
@@ -1067,7 +1092,7 @@ async function processInvoiceQueue(): Promise<void> {
           ll_wawf_dry_run: wawfDryRun,
           error_message: null,
         }).eq("id", row.id);
-        console.log(`  ✓ ${row.ax_invoice_number} → kad=${result.idnkad} kae=[${result.idnkaeIds.join(",")}] kbr=[${result.idnkbrIds.join(",")}]`);
+        console.log(`  ✓ ${row.ax_invoice_number} → kad=${result.idnkad} kae=[${result.idnkaeIds.join(",")}] kbr=[${kbrResult.idnkbrIds.join(",")}]`);
       } catch (e: any) {
         await supabase.from("lamlinks_invoice_queue").update({
           state: "error",
@@ -1082,13 +1107,34 @@ async function processInvoiceQueue(): Promise<void> {
 }
 
 /**
- * Single-invoice writeback (kad+kae+k80+kbr) in one SQL transaction.
- * Returns the new LL ids on success. Throws on any mismatch or DB error.
+ * Info needed by `writeKbrAndK20Rows()` to record the WAWF transmission AFTER
+ * the SFTP upload completes (or fails). Carried out of the main SQL transaction
+ * so a silent SFTP failure can't leave kbr_tab claiming "WAWF X sent" against
+ * a .laz that never reached Sally. See improvement #1 — 2026-04-30.
+ */
+type KbrPostInfo = {
+  allKajIds: number[];
+  primaryKaj: number;
+  xtcscnFor810: string;
+  contractNo: string;
+  cinnum: string;
+  shpnum: string;
+};
+
+/**
+ * Single-invoice writeback (kad+kae+kaj+ka9+k80+k81 + atomic k07 counter
+ * bumps) in one SQL transaction. Returns the new LL ids + a `kbrInfo`
+ * payload that the caller passes to `writeKbrAndK20Rows()` AFTER the SFTP
+ * upload (success or fail). Throws on any mismatch or DB error.
+ *
+ * Improvement #1 (2026-04-30): the kbr_tab + k20 INSERTs that used to live
+ * inside this transaction are now split out so kbr's status reflects the
+ * actual outcome of the SFTP upload (see writeKbrAndK20Rows for rationale).
  */
 async function writeOneInvoice(
   pool: sql.ConnectionPool,
   row: any,
-): Promise<{ idnkad: number; idnkaeIds: number[]; idnkbrIds: number[]; cinNo: number; kaj: number; trnId: number }> {
+): Promise<{ idnkad: number; idnkaeIds: number[]; cinNo: number; kaj: number; trnId: number; kbrInfo: KbrPostInfo }> {
   // 1. Resolve kaj via contract # + invoice total.
   const orderRef = String(row.ax_customer_order_reference || "").trim();
   const contractNo = orderRef.split("[")[0].trim();
@@ -1346,12 +1392,15 @@ async function writeOneInvoice(
         AND LTRIM(RTRIM(shpsta_k81)) = 'Shipping'
     `);
 
-    // 5. INSERT 2 kbr rows for WAWF 810 + 856.
-    // The 810 carries an EDI transaction control number (xtcscn_kbr) which
-    // LL allocates from the k07 TRN_ID_CK5 counter (Global). The 856 stores
-    // '0' for xtcscn (per observed LL behavior). Without atomic allocation
-    // here we'd risk duplicate xtcscn collisions with other simultaneous
-    // EDI transmissions on the box.
+    // 5. Allocate the EDI transaction-control number from k07 TRN_ID_CK5 (Global).
+    // Atomic counter bump — must be inside the txn so a parallel run can't
+    // grab the same number. The actual kbr 810/856 rows + k20 log rows are
+    // INTENTIONALLY deferred to AFTER the SFTP upload (see writeKbrAndK20Rows
+    // below). Until 2026-04-30 we wrote kbr 'WAWF X sent' inside this txn,
+    // which meant a silent SFTP failure (e.g. CIN0066268 yesterday) left
+    // kbr claiming "sent" against a .laz Sally never received and Abe never
+    // got an ack email for. Improvement #1 ties kbr's status to actual SFTP
+    // outcome.
     const trnAlloc = await req.query(`
       UPDATE k07_tab WITH (UPDLOCK, ROWLOCK)
       SET ss_val_k07 = CAST(TRY_CAST(LTRIM(RTRIM(ss_val_k07)) AS BIGINT) + 1 AS VARCHAR(32)),
@@ -1364,19 +1413,86 @@ async function writeOneInvoice(
     }
     // Use prev_val so we line up with LL's pattern: LL stores the most-recently-
     // allocated value in k07.ss_val (i.e. the value just used by the kbr we're
-    // about to INSERT). Wait — LL's actual behavior is k07 holds NEXT-FREE pre-bump,
-    // so we use prev_val for our xtcscn.
+    // about to INSERT later). LL's actual behavior is k07 holds NEXT-FREE
+    // pre-bump, so we use prev_val for our xtcscn.
     const xtcscnFor810 = String(trnAlloc.recordset[0].prev_val).trim();
 
-    // For multi-kaj, create kbr 810+856 per-kaj so each shipment's
-    // transmission is recorded against its own kaj. Single-kaj reduces
-    // to the original one-pair behavior.
+    // Capture the shpnum needed by k20 log messages (read inside the txn so
+    // we see the post-update kaj state). Used by writeKbrAndK20Rows after
+    // SFTP success/failure.
+    const shpnumQ = await req.query(`SELECT shpnum_kaj FROM kaj_tab WHERE idnkaj_kaj = ${idnkaj}`);
+    const shpnum = String(shpnumQ.recordset[0]?.shpnum_kaj || "").trim();
+
+    await tx.commit();
+    return {
+      idnkad,
+      idnkaeIds,
+      cinNo,
+      kaj: idnkaj,
+      trnId: parseInt(xtcscnFor810, 10),
+      kbrInfo: {
+        allKajIds,
+        primaryKaj: idnkaj,
+        xtcscnFor810,
+        contractNo,
+        cinnum,
+        shpnum,
+      },
+    };
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
+/**
+ * Insert the kbr 'WAWF X sent' (or 'WAWF X upload failed') rows + the matching
+ * k20 log rows — AFTER the SFTP upload to sftp.lamlinks.com:/incoming returns.
+ *
+ * Why separated from writeOneInvoice (improvement #1, 2026-04-30):
+ *   Yesterday's batch silently lost CIN0066268: SFTP upload failed but the
+ *   inner SQL transaction had already INSERTed kbr_tab rows saying
+ *   "WAWF 810 sent" / "WAWF 856 sent". Abe never got the WAWF email because
+ *   Sally never received the .laz, but our DIBS UI happily showed the
+ *   invoice as transmitted. By writing kbr only after we've confirmed the
+ *   SFTP put() returned, we keep kbr_tab honest about what's actually in
+ *   transit. The reconcile-wawf-vs-kbr.ts script (improvement #2) flags
+ *   any 'upload failed' rows + any AX invoices missing a kbr entirely.
+ *
+ * Status passed in is either:
+ *   "sent"          — SFTP upload returned cleanly
+ *   "upload failed" — SFTP threw; record the failure so reconciliation
+ *                     can spot it, but don't claim the bid was transmitted.
+ *
+ * Whole-second timestamps via DATEADD(MS,-DATEPART(MS,GETDATE()),GETDATE())
+ * per the LL CAS-precision rule (CLAUDE.md).
+ */
+async function writeKbrAndK20Rows(
+  pool: sql.ConnectionPool,
+  info: KbrPostInfo,
+  status: "sent" | "upload failed",
+): Promise<{ idnkbrIds: number[] }> {
+  const { allKajIds, primaryKaj, xtcscnFor810, contractNo, cinnum, shpnum } = info;
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const req = new sql.Request(tx);
     const idnkbrIds: number[] = [];
+    // kbr_tab.xtcsta_kbr is a fixed-width 16-char field. Existing 'sent'
+    // values use "WAWF 810 sent  " (15 chars, trailing space matches LL).
+    // The failure label uses the same width so reconciliation can scan
+    // for the 'upload failed' substring without column-width concerns.
+    const labelFor = (kap: 24 | 25) => {
+      if (status === "sent") return kap === 24 ? "WAWF 810 sent  " : "WAWF 856 sent  ";
+      // 'upload failed' fits in 16 chars: "WAWF 810 upfail" / "WAWF 856 upfail" — abbrev to keep <= LL field width.
+      return kap === 24 ? "WAWF 810 upfail" : "WAWF 856 upfail";
+    };
     for (const kbrKaj of allKajIds) {
-      for (const kap of [24, 25]) {
-        const xtcsta = kap === 24 ? "WAWF 810 sent  " : "WAWF 856 sent  ";
-        // Only the primary kaj's 810 gets the trn_id sequence; others use 0
-        const xtcscn = (kap === 24 && kbrKaj === idnkaj) ? xtcscnFor810 : "0";
+      for (const kap of [24, 25] as const) {
+        const xtcsta = labelFor(kap);
+        // Only the primary kaj's 810 carries the allocated trn_id; multi-kaj
+        // siblings + all 856 rows store '0' (matches LL UI behavior).
+        const xtcscn = (kap === 24 && kbrKaj === primaryKaj) ? xtcscnFor810 : "0";
         const kbrRes = await req.query(`
           INSERT INTO kbr_tab (
             addtme_kbr, addnme_kbr, itttbl_kbr, idnitt_kbr, idnkap_kbr,
@@ -1392,19 +1508,16 @@ async function writeOneInvoice(
       }
     }
 
-    // 6. Write k20 log entries for the WAWF transmissions. LL UI parses
-    // these to show the invoice number against the shipment row. Without
-    // k20 entries, the shipment screen's "Invoice #" field reads blank
-    // even though kad+kbr are correctly populated.
-    //
-    // Observed format (from 2026-04-28 manual trace):
-    //   810: "WAWF 810 for <contract>, invoice '<cinnum>, shipment <shpnum> has been uploaded to the Lamlinks Corp Server"
-    //   856: "WAWF 856 for , invoice ', shipment  has been uploaded to the Lamlinks Corp Server"
-    //   (the 856 has empty fields by LL's own design — match it)
-    const shpnumQ = await req.query(`SELECT shpnum_kaj FROM kaj_tab WHERE idnkaj_kaj = ${idnkaj}`);
-    const shpnum = String(shpnumQ.recordset[0]?.shpnum_kaj || "").trim();
-    const log810 = `WAWF 810 for ${contractNo}, invoice '${cinnum}, shipment ${shpnum} has been uploaded to the Lamlinks Corp Server`;
-    const log856 = `WAWF 856 for , invoice ', shipment  has been uploaded to the Lamlinks Corp Server`;
+    // k20 log entries. LL UI parses these to show the invoice # against the
+    // shipment row. On 'sent' we mirror LL's exact wording so the UI matches
+    // a manual Post; on 'upload failed' we substitute a clearly distinct
+    // line so an operator scanning k20 sees the failure inline.
+    const log810 = status === "sent"
+      ? `WAWF 810 for ${contractNo}, invoice '${cinnum}, shipment ${shpnum} has been uploaded to the Lamlinks Corp Server`
+      : `WAWF 810 SFTP upload FAILED for ${contractNo}, invoice '${cinnum}, shipment ${shpnum} — kbr marked upload failed`;
+    const log856 = status === "sent"
+      ? `WAWF 856 for , invoice ', shipment  has been uploaded to the Lamlinks Corp Server`
+      : `WAWF 856 SFTP upload FAILED for ${contractNo}, invoice '${cinnum}, shipment ${shpnum} — kbr marked upload failed`;
     for (const msg of [log810, log856]) {
       const safeMsg80 = msg.slice(0, 80).replace(/'/g, "''");
       const safeFull = msg.replace(/'/g, "''");
@@ -1421,7 +1534,7 @@ async function writeOneInvoice(
     }
 
     await tx.commit();
-    return { idnkad, idnkaeIds, idnkbrIds, cinNo, kaj: idnkaj, trnId: parseInt(xtcscnFor810, 10) };
+    return { idnkbrIds };
   } catch (e) {
     await tx.rollback();
     throw e;
