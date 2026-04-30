@@ -122,6 +122,12 @@ const TASKS: Task[] = [
   // 5 min is a comfortable cadence; the UI shows latest snapshot + age.
   { script: "snapshot-ll-pipeline", mode: "periodic", intervalMs: 5 * 60_000, skipInitialRun: false },
 
+  // DD219 DODAAC sync — mirrors AX CustomerPostalAddresses (DD219) into
+  // Supabase dodaac_map so the /so validation flow has every gov ship-to
+  // without Abe maintaining the mapping in two places. Daily is plenty —
+  // new DODAACs are added once or twice a week at most.
+  { script: "sync-dodaac-from-ax", args: ["--apply"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
+
   // WAWF-vs-kbr reconciliation — pulls last 7 days of DD219 invoices from
   // AX and cross-checks each against LL kad/kaj/kbr state. Flags missing-kad
   // and 'WAWF X upfail' rows so we catch silent SFTP failures the morning
@@ -129,6 +135,16 @@ const TASKS: Task[] = [
   // logs to sync_log. Doesn't (yet) verify WAWF acks — that's pending the
   // inbox integration. See reconcile-wawf-vs-kbr.ts docstring for scope.
   { script: "reconcile-wawf-vs-kbr", args: ["--days", "7"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
+
+  // WAWF email auto-parse — reads Abe's inbox via EWS for WAWF noreply
+  // emails, parses each (810/856 accept/reject), updates kbr.xtcscn with
+  // the real WAWF TCN on accept, deletes false kbr + WhatsApp alerts on
+  // real reject (UoM/dup/contract), restores kbr on benign "no Acceptor"
+  // rejects. Persists every parsed email to wawf_email_log table.
+  // 10-min cadence — fast enough for Abe to see status changes near-real-
+  // time, slow enough not to hammer Exchange. Daemon-side ONLY (Railway
+  // can't reach mail.everreadygroup.com).
+  { script: "parse-wawf-emails", mode: "periodic", intervalMs: 10 * 60_000, skipInitialRun: true },
 
   // WAWF 810 ack digest — computes inferred ack status per transmission.
   // Once daily at morning roll-up time. --alert --min 5 fires a WhatsApp
