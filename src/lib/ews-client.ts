@@ -160,6 +160,123 @@ export type SentEmail = {
   ccRecipients: string[];
 };
 
+export type EmailContact = {
+  email: string;
+  displayName: string;
+  domain: string;
+  asSender: number;     // count of emails received from this address
+  asRecipient: number;  // count of emails Abe sent to this address
+  lastSeen: Date;
+  bodySnippet?: string; // first ~500 chars of most recent message body
+};
+
+/**
+ * Pull contacts (email + display name + counts) from a folder for the
+ * last N days. Unlike fetchFromFolder, this is OPTIMIZED FOR HEADERS —
+ * doesn't pull full body. Used by supplier discovery to mine the user's
+ * inbox/sent for known supplier contacts.
+ */
+export async function harvestContactsFromFolder(opts: {
+  folder: "inbox" | "sentitems";
+  lookbackDays: number;
+  pageSize?: number;
+  maxPages?: number;
+}): Promise<Map<string, EmailContact>> {
+  const service = buildService();
+  const pageSize = opts.pageSize ?? 500;
+  const maxPages = opts.maxPages ?? 100; // cap at 50K emails per folder
+  const since = new Date(Date.now() - opts.lookbackDays * 24 * 60 * 60_000);
+  const folder = opts.folder === "sentitems"
+    ? WellKnownFolderName.SentItems
+    : WellKnownFolderName.Inbox;
+  const dateField = opts.folder === "sentitems"
+    ? ItemSchema.DateTimeSent
+    : ItemSchema.DateTimeReceived;
+  const isSent = opts.folder === "sentitems";
+
+  const filter = new SearchFilter.IsGreaterThan(dateField, since.toISOString());
+  const contacts = new Map<string, EmailContact>();
+
+  let offset = 0;
+  for (let page = 0; page < maxPages; page++) {
+    const view = new ItemView(pageSize, offset);
+    view.PropertySet = new PropertySet(BasePropertySet.IdOnly);
+    const findResult = await service.FindItems(folder, filter, view);
+    if (!findResult.Items || findResult.Items.length === 0) break;
+
+    // Bulk-load just the headers we need
+    const propSet = new PropertySet(BasePropertySet.IdOnly, [
+      EmailMessageSchema.Subject,
+      EmailMessageSchema.DateTimeSent,
+      EmailMessageSchema.DateTimeReceived,
+      EmailMessageSchema.From,
+      EmailMessageSchema.ToRecipients,
+      EmailMessageSchema.CcRecipients,
+    ]);
+    await service.LoadPropertiesForItems(findResult.Items, propSet);
+
+    const extractAddrs = (coll: any): { email: string; name: string }[] => {
+      if (!coll) return [];
+      const items = coll.Items || coll.items || coll;
+      const out: { email: string; name: string }[] = [];
+      try {
+        for (const r of items) {
+          const addr = r?.Address || r?.address;
+          const name = r?.Name || r?.name || "";
+          if (addr) out.push({ email: addr.toLowerCase(), name });
+        }
+      } catch { /* */ }
+      return out;
+    };
+
+    for (const item of findResult.Items) {
+      const when = (item.DateTimeSent || item.DateTimeReceived) ? new Date(item.DateTimeSent || item.DateTimeReceived) : new Date();
+
+      // Process the From and the To/Cc set
+      const allParties: { email: string; name: string; role: "from" | "to" }[] = [];
+      const fromAddr = item.From?.Address;
+      const fromName = item.From?.Name || "";
+      if (fromAddr) allParties.push({ email: String(fromAddr).toLowerCase(), name: fromName, role: "from" });
+      for (const r of extractAddrs(item.ToRecipients)) allParties.push({ ...r, role: "to" });
+      for (const r of extractAddrs(item.CcRecipients)) allParties.push({ ...r, role: "to" });
+
+      for (const p of allParties) {
+        if (!p.email || !p.email.includes("@")) continue;
+        const domain = p.email.split("@")[1];
+        let c = contacts.get(p.email);
+        if (!c) {
+          c = {
+            email: p.email,
+            displayName: p.name || "",
+            domain,
+            asSender: 0,
+            asRecipient: 0,
+            lastSeen: when,
+          };
+          contacts.set(p.email, c);
+        }
+        // Update display name if we have a better (longer/non-empty) one
+        if (p.name && p.name.length > c.displayName.length) c.displayName = p.name;
+        // Update lastSeen
+        if (when > c.lastSeen) c.lastSeen = when;
+        // Count direction
+        if (isSent) {
+          if (p.role === "to") c.asRecipient++;
+          // (sender is us in sent items, so skip)
+        } else {
+          if (p.role === "from") c.asSender++;
+          // (recipients are us in inbox, so skip)
+        }
+      }
+    }
+
+    offset += pageSize;
+    if (findResult.Items.length < pageSize) break;
+  }
+
+  return contacts;
+}
+
 /**
  * Fetch emails from a folder (Inbox / SentItems / etc.) within a lookback
  * window, optionally filtered by subject keywords. Used by the RFQ

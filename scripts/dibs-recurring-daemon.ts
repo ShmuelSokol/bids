@@ -144,6 +144,15 @@ const TASKS: Task[] = [
   // since we only upsert AX-sourced fields.
   { script: "sync-suppliers-from-ax", args: ["--apply"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
 
+  // Supplier email discovery — for each unmapped supplier in
+  // nsn_research_findings, fetch contact pages and try to extract emails.
+  // Polite (2-sec delay between suppliers, 15s timeout per fetch). Caps
+  // at 30 per run to avoid hammering. Daily cadence is plenty — new
+  // research findings show up in batches, and discovery doesn't need to
+  // be real-time. Skips suppliers already attempted within last 30 days
+  // (whether they yielded an email or not).
+  { script: "discover-supplier-emails", args: ["--apply", "--max", "30"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
+
   // RFQ send worker — drains rfq_drafts.status='pending_send' rows by
   // calling EWS sendMail for each. Persistent (long-running, internal
   // 60s poll loop) since spawning a fresh node.exe for each tick wastes
