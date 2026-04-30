@@ -47,6 +47,13 @@ When you learn something new that future sessions would benefit from, add it to 
 - **DD219 = `CustomerRequisitionNumber`** on PO lines (field `purchline.custreq`). Case variants exist — always use `toupper(CustomerRequisitionNumber) eq 'DD219'` or an OR filter.
 - See `docs/gotchas.md` for full details on discovery and the detection heuristic.
 
+## LL TIMESTAMP PRECISION RULE (2026-04-29 — root cause of all "cursor errors")
+- **NEVER write `GETDATE()` directly to any LL column we share with LL UI.** LL is VFP-on-ODBC and its datetime type is whole-second precision. SQL Server's GETDATE() has milliseconds. LL UI uses CAS (compare-and-swap) for sequence allocation: `UPDATE k07 SET val=new WHERE id=? AND uptime=<old> AND val=<old>`. The WHERE clause sends a whole-second timestamp; if our worker wrote the row with milliseconds, the comparison fails forever, LL UI loops, and Abe sees "wait 496 of 30 for CIN_NO" → cursor error.
+- **ALWAYS use whole-second timestamps in worker writes**: `DATEADD(MILLISECOND, -DATEPART(MILLISECOND, GETDATE()), GETDATE())`. Applies to all `uptime_*`, `*_stme_*`, `cindte_*`, `shptme_*`, `rlsdte_*`, etc. on k07, k33, k34, k35, kad, kae, ka9, k81, kbr, k20, k80.
+- **Bidding side wasn't affected** because kdy_tab uses atomic UPDATE-OUTPUT, not CAS. Only LL UI's CAS pattern (k07.CIN_NO and similar) is sensitive to timestamp precision.
+- **Discovery 2026-04-29 via XE trace**: 993 failed CAS retries from Abe's UI in <30 sec, all WHERE `uptime='2026-04-29 18:56:19'` against DB value `'18:56:19.527'` written by our worker. Manual fix `UPDATE k07 SET uptime=DATEADD(MS,-DATEPART(MS,uptime),uptime)` immediately unblocked Abe. Worker patched in commit 4210093.
+- **All "cursor errors" Abe saw during invoicing (commit_kad-1526, wait X of 30 for CIN_NO, etc.) trace back to this single bug.** Not LL bugs, not worker concurrency, not stale UI cache — just timestamp precision mismatch.
+
 ## LL BID + INVOICE SFTP TRANSMISSION (2026-04-29)
 - **Bids and invoices both auto-transmit via SFTP** to `sftp.lamlinks.com:/incoming/` (Sally → DLA). Captured via procmon during Abe's UI clicks.
 - **Invoices**: `ck5_tab.dbf` + `ck5_tab.FPT` zipped as `.laz`, TWO uploads per CIN (810 then 856). See `src/lib/ll-ck5-dbf.ts`.
