@@ -136,6 +136,14 @@ const TASKS: Task[] = [
   // inbox integration. See reconcile-wawf-vs-kbr.ts docstring for scope.
   { script: "reconcile-wawf-vs-kbr", args: ["--days", "7"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
 
+  // AX vendors → dibs_suppliers — mirrors AX-known vendor emails into the
+  // suppliers registry that drives the RFQ outbound flow. AX has ~5,597
+  // vendors total; ~217 have a non-empty PrimaryEmailAddress today. Daily
+  // sync — Abe (or someone) adds new vendor emails in AX a few per week.
+  // Manual edits in DIBS (notes, blocked, last_verified) are preserved
+  // since we only upsert AX-sourced fields.
+  { script: "sync-suppliers-from-ax", args: ["--apply"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
+
   // WAWF email auto-parse — reads Abe's inbox via EWS for WAWF noreply
   // emails, parses each (810/856 accept/reject), updates kbr.xtcscn with
   // the real WAWF TCN on accept, deletes false kbr + WhatsApp alerts on
