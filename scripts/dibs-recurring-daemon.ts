@@ -66,6 +66,13 @@ const TASKS: Task[] = [
   // to 30 min to avoid spam.
   { script: "check-worker-health-alert", mode: "periodic", intervalMs: 5 * 60_000, skipInitialRun: true },
 
+  // Sally-down alert — polls sftp.lamlinks.com:/incoming/ for our .laz
+  // files older than 30 min. If found → Sally is backlogged or down on
+  // LL's side, fire WhatsApp alert + log to sync_log. Debounced 60 min.
+  // Discovered need 2026-04-30 when Sally went silent for 4+ hours and
+  // we sat unaware while files piled up.
+  { script: "check-sally-stuck-files", mode: "periodic", intervalMs: 10 * 60_000, skipInitialRun: true },
+
   // LL EDI transmissions — kbr_tab → ll_edi_transmissions. Abe ships many
   // times a day; the /shipping page's WAWF pills + stale-810 alerts only
   // refresh as fast as this sync. 5 min keeps them near-real-time. 14-day
