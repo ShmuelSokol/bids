@@ -60,8 +60,38 @@ function parseEmailBody(subject: string, body: string): ParsedEmail {
     wawfTcn: null, outcome: "unparseable", errorText: null,
   };
 
-  // Form type from subject + body
-  const subjLower = subject.toLowerCase();
+  // WAWF sends two subject styles:
+  //  1) Old: "WAWF Import: N Successful Import(s), M Failed Import(s)"
+  //     — structured info lives only in body
+  //  2) New: "<CONTRACT>\ \<CAGE>\ \<FORM>\<SHIP>\<CIN>\ \ \Processed"
+  //     — backslash-delimited; structured info IS the subject; body
+  //     repeats it. "\Processed" suffix = WAWF accepted (their EDI
+  //     pipeline processed it). Failures use a different suffix.
+
+  // First: try the structured backslash-subject (new format)
+  // Whitespace between backslashes is meaningful (means "empty field").
+  const structured = subject.match(/^([A-Z0-9-]+)\\.*?\\([A-Z0-9]+)\\.*?\\(CI|RR)\\([A-Z0-9]+)\\(\d+[A-Z]?)\\.*?\\(\w+)\s*$/i);
+  if (structured) {
+    result.contractNo = structured[1];
+    result.formType = structured[3].toUpperCase() === "CI" ? "810" : "856";
+    result.shipmentNo = structured[4];
+    result.cin = structured[5];
+    const status = structured[6].toLowerCase();
+    if (status === "processed") {
+      result.outcome = "accepted";  // \Processed = WAWF accepted the file
+    } else if (status === "rejected" || status === "failed") {
+      result.outcome = "rejected";
+    } else {
+      result.outcome = "accepted_with_modifications";
+    }
+    // The new-format subject contains everything we need — extract TCN
+    // from body if present, else leave null.
+    const tcnMatch = body.match(/Transaction Set Control Number:\s*(\d+)/i);
+    if (tcnMatch) result.wawfTcn = tcnMatch[1].trim();
+    return result;
+  }
+
+  // Old format: parse from body
   const isReject = /failed import\(s\)/i.test(subject) || /had no successful imports/i.test(body);
   const isAcceptWithMods = /successful imports with modifications/i.test(body);
   const isAccept = /successful import\(s\)/i.test(subject) && !isReject;
@@ -122,15 +152,23 @@ function parseEmailBody(subject: string, body: string): ParsedEmail {
 }
 
 async function findKajForCin(pool: sql.ConnectionPool, cinNum: string): Promise<number | null> {
+  // Strip any non-digit suffix (e.g. "0066397A" → "0066397")
   const padded = cinNum.replace(/\D/g, "").padStart(7, "0");
-  const r = await pool.request().query(`
-    SELECT TOP 1 ka9.idnkaj_ka9
-    FROM kad_tab kad
-    JOIN kae_tab kae ON kae.idnkad_kae = kad.idnkad_kad
-    JOIN ka9_tab ka9 ON ka9.idnkae_ka9 = kae.idnkae_kae
-    WHERE LTRIM(RTRIM(kad.cinnum_kad)) = '${padded}'
-  `);
-  return r.recordset[0]?.idnkaj_ka9 || null;
+  try {
+    const req = pool.request();
+    (req as any).timeout = 15000;  // 15s per query — fail fast on lock contention
+    const r = await req.query(`
+      SELECT TOP 1 ka9.idnkaj_ka9
+      FROM kad_tab kad
+      JOIN kae_tab kae ON kae.idnkad_kae = kad.idnkad_kad
+      JOIN ka9_tab ka9 ON ka9.idnkae_ka9 = kae.idnkae_kae
+      WHERE LTRIM(RTRIM(kad.cinnum_kad)) = '${padded}'
+    `);
+    return r.recordset[0]?.idnkaj_ka9 || null;
+  } catch (e: any) {
+    console.log(`  ⚠ kaj lookup failed for cin=${cinNum}: ${e.message?.slice(0, 80)} — will retry next run`);
+    return null;
+  }
 }
 
 async function applyKbrAction(
@@ -199,6 +237,7 @@ async function sendWhatsAppAlert(message: string): Promise<void> {
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
   const pool = await sql.connect({
     connectionString: "Driver={SQL Server};Server=NYEVRVSQL001;Database=llk_db1;Trusted_Connection=yes;",
+    requestTimeout: 30000,
   });
 
   // Decide lookback based on most recent log
@@ -235,12 +274,17 @@ async function sendWhatsAppAlert(message: string): Promise<void> {
     if (parsed.cin && parsed.formType) {
       matchedKaj = await findKajForCin(pool, parsed.cin);
       if (matchedKaj) {
-        const result = await applyKbrAction(pool, matchedKaj, parsed);
-        kbrAction = result.action;
-        if (result.alerted && result.alertMessage) {
-          await sendWhatsAppAlert(result.alertMessage);
-          alerted = true;
-          alerts++;
+        try {
+          const result = await applyKbrAction(pool, matchedKaj, parsed);
+          kbrAction = result.action;
+          if (result.alerted && result.alertMessage) {
+            await sendWhatsAppAlert(result.alertMessage);
+            alerted = true;
+            alerts++;
+          }
+        } catch (e: any) {
+          console.log(`  ⚠ kbr action failed for kaj=${matchedKaj}: ${e.message?.slice(0, 80)}`);
+          kbrAction = "error";
         }
       }
     }

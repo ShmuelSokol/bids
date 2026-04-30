@@ -105,28 +105,39 @@ export async function fetchFromSender(
   const service = buildService();
   const since = new Date(Date.now() - lookbackMinutes * 60_000);
 
-  // Server-side filter: from sender + received after `since`
+  // Server-side filter: from sender + received after `since`.
+  // EWS lib needs ISO string, not Date object; lib internally builds the
+  // <t:Constant Value=".."/> XML.
   const filterFromSender = new SearchFilter.IsEqualTo(EmailMessageSchema.From, senderEmail);
-  const filterReceivedAfter = new SearchFilter.IsGreaterThan(ItemSchema.DateTimeReceived, since);
+  const filterReceivedAfter = new SearchFilter.IsGreaterThan(
+    ItemSchema.DateTimeReceived,
+    since.toISOString(),
+  );
   const filter = new SearchFilter.SearchFilterCollection(
     (ews as any).LogicalOperator.And,
     [filterFromSender, filterReceivedAfter],
   );
 
+  // EWS limitation: Body can't be in FindItem PropertySet. Fetch IDs only,
+  // then bulk-load all properties (Subject, DateTime, From, Body) in one
+  // LoadPropertiesForItems call (replaces the FindItem propset entirely).
   const view = new ItemView(maxItems);
-  view.PropertySet = new PropertySet(BasePropertySet.IdOnly, [
+  view.PropertySet = new PropertySet(BasePropertySet.IdOnly);
+
+  const findResult = await service.FindItems(WellKnownFolderName.Inbox, filter, view);
+  if (!findResult.Items || findResult.Items.length === 0) return [];
+
+  const fullPropSet = new PropertySet(BasePropertySet.IdOnly, [
     EmailMessageSchema.Subject,
     EmailMessageSchema.DateTimeReceived,
     EmailMessageSchema.From,
     EmailMessageSchema.Body,
   ]);
-  view.PropertySet.RequestedBodyType = BodyType.Text;
-
-  const findResult = await service.FindItems(WellKnownFolderName.Inbox, filter, view);
+  fullPropSet.RequestedBodyType = BodyType.Text;
+  await service.LoadPropertiesForItems(findResult.Items, fullPropSet);
 
   const results: WawfFetchedEmail[] = [];
   for (const item of findResult.Items) {
-    // Body comes back as MessageBody; need .ToString() in EWS managed API land
     const bodyText = item.Body?.Text || (item.Body && item.Body.toString && item.Body.toString()) || "";
     const fromAddr = item.From?.Address || "";
     results.push({
