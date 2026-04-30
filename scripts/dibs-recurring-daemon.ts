@@ -122,6 +122,14 @@ const TASKS: Task[] = [
   // 5 min is a comfortable cadence; the UI shows latest snapshot + age.
   { script: "snapshot-ll-pipeline", mode: "periodic", intervalMs: 5 * 60_000, skipInitialRun: false },
 
+  // WAWF-vs-kbr reconciliation — pulls last 7 days of DD219 invoices from
+  // AX and cross-checks each against LL kad/kaj/kbr state. Flags missing-kad
+  // and 'WAWF X upfail' rows so we catch silent SFTP failures the morning
+  // after they happen (CIN0066268 pattern from 2026-04-29). Daily cadence;
+  // logs to sync_log. Doesn't (yet) verify WAWF acks — that's pending the
+  // inbox integration. See reconcile-wawf-vs-kbr.ts docstring for scope.
+  { script: "reconcile-wawf-vs-kbr", args: ["--days", "7"], mode: "periodic", intervalMs: 24 * 60 * 60_000, skipInitialRun: true },
+
   // WAWF 810 ack digest — computes inferred ack status per transmission.
   // Once daily at morning roll-up time. --alert --min 5 fires a WhatsApp
   // to Yosef if 5+ invoices cross the 30-day staleness line without
