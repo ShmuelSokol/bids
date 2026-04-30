@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Send, Edit2, Save, X, Trash2, Mail, CheckCircle2, Clock, AlertCircle, Ban } from "lucide-react";
+import { Send, Edit2, Save, X, Trash2, Mail, CheckCircle2, Clock, AlertCircle, Ban, Plus } from "lucide-react";
 
 type Draft = {
   id: number;
@@ -43,6 +43,10 @@ export function RfqQueueDashboard({ drafts, counts }: { drafts: Draft[]; counts:
   const [editDraft, setEditDraft] = useState<Partial<Draft>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [showGenForm, setShowGenForm] = useState(false);
+  const [genInput, setGenInput] = useState("");
+  const [genSolId, setGenSolId] = useState("");
+  const [genResult, setGenResult] = useState<any>(null);
 
   const filtered = useMemo(() => {
     let r = drafts;
@@ -94,6 +98,46 @@ export function RfqQueueDashboard({ drafts, counts }: { drafts: Draft[]; counts:
     setTimeout(() => location.reload(), 200);
   }
 
+  async function generateDrafts() {
+    // Parse "NSN qty" lines from textarea
+    const lines = genInput.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const needs: { nsn: string; qty: number }[] = [];
+    const errors: string[] = [];
+    for (const ln of lines) {
+      // Accept "NSN qty" or "NSN, qty" or "NSN<TAB>qty"
+      const parts = ln.split(/[\s,\t]+/).filter(Boolean);
+      if (parts.length < 2) { errors.push(`Skipped (need NSN + qty): "${ln}"`); continue; }
+      const qty = parseInt(parts[1], 10);
+      if (!Number.isFinite(qty) || qty <= 0) { errors.push(`Bad qty: "${ln}"`); continue; }
+      needs.push({ nsn: parts[0], qty });
+    }
+    if (needs.length === 0) {
+      setGenResult({ error: `No valid lines. ${errors.join("; ")}` });
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await fetch("/api/rfq", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          needs,
+          solId: genSolId.trim() || undefined,
+          source: "manual",
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setGenResult({ error: d.error || `HTTP ${r.status}` });
+        return;
+      }
+      setGenResult(d);
+      if (d.draftsCreated > 0) {
+        setTimeout(() => location.reload(), 1500);
+      }
+    } finally { setBusy(false); }
+  }
+
   async function saveEdit(id: number) {
     setBusy(true);
     try {
@@ -119,6 +163,14 @@ export function RfqQueueDashboard({ drafts, counts }: { drafts: Draft[]; counts:
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Mail className="h-6 w-6" /> RFQ Queue
         </h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowGenForm(!showGenForm); setGenResult(null); }}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> {showGenForm ? "Hide" : "New RFQ"}
+          </button>
+        </div>
         {selected.size > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted">{selected.size} selected</span>
@@ -136,6 +188,70 @@ export function RfqQueueDashboard({ drafts, counts }: { drafts: Draft[]; counts:
 
       {msg && (
         <div className="mb-3 p-2 text-sm bg-amber-50 border border-amber-200 rounded">{msg}</div>
+      )}
+
+      {showGenForm && (
+        <div className="mb-4 p-4 border rounded bg-blue-50/40">
+          <div className="font-semibold mb-2 text-sm">Generate RFQs</div>
+          <div className="text-xs text-muted mb-2">
+            One per line: <code className="bg-white px-1">NSN qty</code> (or <code className="bg-white px-1">NSN, qty</code>).
+            Examples: <code className="bg-white px-1">6510-01-697-2974 50</code>
+          </div>
+          <textarea
+            value={genInput}
+            onChange={(e) => setGenInput(e.target.value)}
+            rows={5}
+            placeholder={"6510-01-697-2974 50\n8145-01-735-6125 25"}
+            className="w-full px-2 py-1 border rounded font-mono text-sm mb-2"
+          />
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              type="text"
+              value={genSolId}
+              onChange={(e) => setGenSolId(e.target.value)}
+              placeholder="Solicitation # (optional)"
+              className="flex-1 px-2 py-1 border rounded text-sm"
+            />
+            <button
+              onClick={generateDrafts}
+              disabled={busy || !genInput.trim()}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              Generate
+            </button>
+          </div>
+          {genResult && (
+            <div className="mt-2 p-2 text-sm bg-white border rounded">
+              {genResult.error ? (
+                <div className="text-red-700">{genResult.error}</div>
+              ) : (
+                <>
+                  <div className="font-medium">
+                    Created {genResult.draftsCreated} draft(s); skipped {genResult.skipped}
+                  </div>
+                  {genResult.byReason && Object.keys(genResult.byReason).length > 0 && (
+                    <div className="text-xs text-muted mt-1">
+                      Skips: {Object.entries(genResult.byReason).map(([k, v]) => `${k}=${v}`).join(", ")}
+                    </div>
+                  )}
+                  {genResult.details && genResult.details.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs text-blue-700">Per-supplier breakdown</summary>
+                      <ul className="text-xs mt-1 space-y-1">
+                        {genResult.details.map((d: any, i: number) => (
+                          <li key={i}>
+                            {d.supplierName} ({d.supplierEmail}) — {d.nsns.length} NSN(s)
+                            {d.skipped && <span className="text-red-700"> ⊘ {d.skipped}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       <div className="grid grid-cols-3 md:grid-cols-7 gap-2 mb-4">

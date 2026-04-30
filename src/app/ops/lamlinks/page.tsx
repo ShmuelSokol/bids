@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Activity, Mail } from "lucide-react";
-import { getCurrentUser } from "@/lib/supabase-server";
+import { getCurrentUser, hasAdminAccess } from "@/lib/supabase-server";
 import { OpsLamlinks } from "./ops-lamlinks";
 
 export default async function OpsLamlinksPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.profile?.role !== "superadmin") redirect("/settings");
+  if (!hasAdminAccess(user.profile?.role)) redirect("/settings");
 
   return (
     <div className="p-6 md:p-8">
